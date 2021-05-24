@@ -59,6 +59,9 @@ def main():
     parser.add_argument("--quadrant-s1",
                         metavar="QUADRANT_S1",
                         help="Name of S1 quadrant template file (output)")
+    parser.add_argument("--xilinx-bootrom-sv",
+                        metavar="XILINX_BOOTROM_SV",
+                        help="Name of the Xilinx Boot ROM wrapper file (output).")
     parser.add_argument("--xilinx-sv",
                         metavar="XILINX_SV",
                         help="Name of the Xilinx wrapper file (output).")
@@ -373,6 +376,16 @@ def main():
                    outdir,
                    solder=solder,
                    package=solder.code_package)
+
+    ###########################
+    # Xilinx Boot ROM Wrapper #
+    ###########################
+    write_template(
+        args.xilinx_bootrom_sv,
+        outdir,
+        solder=solder,
+        soc_regbus_periph_xbar=soc_regbus_periph_xbar,
+    )
 
     ##################
     # Xilinx Wrapper #
