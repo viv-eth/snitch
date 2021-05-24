@@ -11,18 +11,18 @@ ROOT        := ${MKFILE_DIR}../../..
 
 include $(ROOT)/util/Makefrag
 
-VLT_FLAGS 	  += -Wno-SYMRSVDWORD
+VLT_FLAGS			+= -Wno-SYMRSVDWORD
 REGGEN        ?= ${ROOT}/util/regtool.py
 
 QUESTA_64BIT	= -64
-VSIM      		= vsim ${QUESTA_64BIT}
-VLOG      		= vlog ${QUESTA_64BIT}
+VSIM					= vsim ${QUESTA_64BIT}
+VLOG					= vlog ${QUESTA_64BIT}
 
-VLOG_FLAGS 	  += -svinputport=compat
-VLOG_FLAGS 	  += -override_timescale 1ns/1ps
-VLOG_FLAGS 	  += -suppress 2583
-VLOG_FLAGS 	  += -suppress 13314
-VLOG_FLAGS 	  += ${QUESTA_64BIT}
+VLOG_FLAGS		+= -svinputport=compat
+VLOG_FLAGS		+= -override_timescale 1ns/1ps
+VLOG_FLAGS		+= -suppress 2583
+VLOG_FLAGS		+= -suppress 13314
+VLOG_FLAGS		+= ${QUESTA_64BIT}
 
 all: update-source update-plic update-socreg
 
@@ -48,6 +48,7 @@ update-source:
 		--top-sv src/occamy_top.sv.tpl \
 		--pkg-sv src/occamy_pkg.sv.tpl \
 		--quadrant-s1 src/occamy_quadrant_s1.sv.tpl \
+		--xilinx-bootrom-sv src/occamy_xilinx_bootrom_wrap.sv.tpl \
 		--xilinx-sv src/occamy_xilinx.sv.tpl \
 		--cva6-sv src/occamy_cva6.sv.tpl
 	@echo "[SOLDER]  Testbench"

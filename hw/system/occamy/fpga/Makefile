@@ -16,11 +16,15 @@ include $(ROOT)/util/Makefrag
 vivado_ips/occamy_xilinx:
 	${MAKE} -C vivado_ips occamy_xilinx
 
-bootrom/bootrom.coe:
-	${MAKE} -C bootrom bootrom.coe
+bootrom/bootrom.sv:
+	${MAKE} -C bootrom bootrom.sv
 
-occamy_vcu128: vivado_ips/occamy_xilinx define_defines_includes_no_simset.tcl bootrom/bootrom.coe
+occamy_vcu128: bootrom/bootrom.sv vivado_ips/occamy_xilinx define_defines_includes_no_simset.tcl
 	${VIVADO} -source occamy_vcu128.tcl -tclargs $(DEBUG)
+
+# Generate a new bistream with updated bootcode. The old bistream is replaced (no backup) by the new one @ same location
+occamy_update_bistream:
+	make -C bootrom occamy_splice_bootrom
 
 define_defines_includes_no_simset.tcl: $(BENDER_FILES)
 	${BENDER} script vivado --only-defines --only-includes --no-simset > $@
