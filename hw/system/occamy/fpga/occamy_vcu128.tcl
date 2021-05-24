@@ -27,9 +27,18 @@ update_ip_catalog
 source occamy_vcu128_bd.tcl
 
 # Add constraint files
+
+## Package differential clock PINs
 add_files -fileset constrs_1 -norecurse occamy_vcu128_impl.xdc
 import_files -fileset constrs_1 occamy_vcu128_impl.xdc
 set_property used_in_synthesis false [get_files occamy_vcu128/occamy_vcu128.srcs/constrs_1/imports/fpga/occamy_vcu128_impl.xdc]
+
+## Check if Vivado infers BRAMs from RTL Boot ROM
+source occamy_check_rom_inference.tcl
+
+### Specify placement of Occamy's Boot ROM. It is needed for correctly splice a new Boot ROM into an existing bitstream
+add_files -fileset constrs_1 -norecurse occamy_rom_placement.xdc
+import_files -fileset constrs_1 occamy_rom_placement.xdc
 
 # Generate wrapper
 make_wrapper -files [get_files ./occamy_vcu128/occamy_vcu128.srcs/sources_1/bd/occamy_vcu128/occamy_vcu128.bd] -top
