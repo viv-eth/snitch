@@ -82,5 +82,9 @@ package occamy_pkg;
 
   ${package}
 
+  /// Boot ROM parameters
+  localparam int unsigned DepthRom = 2048;
+  localparam int unsigned WidthRom = 32;
+
 endpackage
 // verilog_lint: waive-off line-length
