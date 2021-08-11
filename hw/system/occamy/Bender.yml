@@ -42,6 +42,8 @@ sources:
 # # Level 3:
 - target: xilinx
   files:
+  - src/occamy_xilinx_bootrom.sv
+  - src/occamy_xilinx_bootrom_wrap.sv
   - src/occamy_xilinx.sv
 - target: any(simulation, verilator)
   files:
