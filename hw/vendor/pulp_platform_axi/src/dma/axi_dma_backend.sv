@@ -40,6 +40,9 @@ module axi_dma_backend #(
     ///   every read request. This mode can improve performance of unaligned transfers when crossing
     ///   the AXI page boundaries.
     /// - `deburst`: if set, the DMA will split all bursts in single transfers
+    /// - `serialize`: if set, the DMA will only send AX belonging to a given Arbitrary 1D burst request
+    ///              at a time. This is default behavior to prevent deadlocks. Setting `serialize` to
+    ///              zero violates the AXI4+ATOP specification.
     parameter type         burst_req_t = logic,
     /// Give each DMA backend a unique id
     parameter int unsigned DmaIdWidth = -1,
@@ -137,8 +140,8 @@ module axi_dma_backend #(
     initial begin
         assert (DataWidth inside {16, 32, 64, 128, 256, 512, 1024}) 
             else $fatal(1, "16 <= DataWidth <= 1024");
-        assert (AddrWidth >= 32 & AddrWidth <=   64) 
-            else $fatal(1, " 8 <= AddrWidth <=   64");
+        assert (AddrWidth >= 32 & AddrWidth <=   128)
+            else $fatal(1, " 8 <= AddrWidth <=   128");
     end
     `endif
     // pragma translate_on
@@ -182,6 +185,23 @@ module axi_dma_backend #(
     logic        write_req_valid;
     logic        write_req_ready;
 
+    // send the next burst either immediately or once the last burst
+    // has been completed. The former mode is not AXI4+ATOP spec
+    // conform and may result in deadlocks!
+    logic in_flight_d, in_flight_q;
+    logic burst_valid;
+    always_comb begin : proc_select_burst_valid
+        if (burst_req.serialize) begin
+            // AXI4-conform behavior. As both the buffer and the memory system
+            // assume in-order operation.
+            burst_valid = ~burst_req_empty & (~in_flight_q | trans_complete_o);
+        end else begin
+            // legacy, non-AXI4-conform behavior. Send as many AX as possible
+            // This can lead to deadlocks due to in-memory reordering
+            burst_valid = ~burst_req_empty;
+        end
+    end
+
     // transforms arbitrary burst into AXI conform bursts
     axi_dma_burst_reshaper #(
         .DataWidth     ( DataWidth     ),
@@ -194,7 +214,7 @@ module axi_dma_backend #(
         .clk_i         ( clk_i              ),
         .rst_ni        ( rst_ni             ),
         .burst_req_i   ( burst_req          ),
-        .valid_i       ( ~burst_req_empty   ),
+        .valid_i       ( burst_valid        ),
         .ready_o       ( burst_req_pop      ),
         .write_req_o   ( write_req          ),
         .read_req_o    ( read_req           ),
@@ -232,6 +252,35 @@ module axi_dma_backend #(
         .data_mover_idle_o ( backend_idle_o    ),
         .trans_complete_o  ( trans_complete_o  )
     );
+
+    //--------------------------------------
+    // In-flight check
+    //--------------------------------------
+    // to conform to the AXI4+ATOP spec: only send a burst
+    // once the last one has been completed . This check can be overridden
+    always_comb begin : proc_in_flight_check
+
+        // default: last state
+        in_flight_d = in_flight_q;
+
+        // new transfer: set in-flight to one
+        if (burst_req_pop & ~burst_req_empty) begin
+            in_flight_d = 1;
+        end else begin
+            // no new transfer and the old retires -> idle
+            if (trans_complete_o) begin
+                in_flight_d = 0;
+            end
+        end
+    end
+
+    always_ff @(posedge clk_i or negedge rst_ni) begin : proc_in_flight_check_state
+        if(~rst_ni) begin
+            in_flight_q <= 0;
+        end else begin
+            in_flight_q <= in_flight_d;
+        end
+    end
 
     //--------------------------------------
     // Tracer
