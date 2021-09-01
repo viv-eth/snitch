@@ -97,6 +97,7 @@ module axi_dma_twod_ext #(
             burst_req_o.burst_dst    = twod_req_current.burst_dst;
             burst_req_o.decouple_rw  = twod_req_current.decouple_rw;
             burst_req_o.deburst      = twod_req_current.deburst;
+            burst_req_o.serialize    = twod_req_current.serialize;
 
             // handshaking
             req_fifo_pop      = burst_req_ready_i & ~req_fifo_empty;
@@ -117,6 +118,7 @@ module axi_dma_twod_ext #(
             burst_req_o.burst_dst    = twod_req_current.burst_dst;
             burst_req_o.decouple_rw  = twod_req_current.decouple_rw;
             burst_req_o.deburst      = twod_req_current.deburst;
+            burst_req_o.serialize    = twod_req_current.serialize;
 
             // check if the counter can be loaded
             if ((num_bursts_q == '0) & !req_fifo_empty & burst_req_ready_i) begin

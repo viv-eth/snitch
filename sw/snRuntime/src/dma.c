@@ -3,6 +3,9 @@
 // SPDX-License-Identifier: Apache-2.0
 #include <snrt.h>
 
+#define ONEDOPTIONS SNRT_DMA_DEFAULT
+#define TWODOPTIONS SNRT_DMA_TWOD | SNRT_DMA_DEFAULT
+
 /// Initiate an asynchronous 1D DMA transfer with wide 64-bit pointers.
 snrt_dma_txid_t snrt_dma_start_1d_wideptr(uint64_t dst, uint64_t src,
                                           size_t size) {
@@ -34,13 +37,13 @@ snrt_dma_txid_t snrt_dma_start_1d_wideptr(uint64_t dst, uint64_t src,
     register uint32_t reg_txid asm("a0");  // 10
     asm volatile(
         ".word (0b0000010 << 25) | \
-               (  0b00000 << 20) | \
+               (       %2 << 20) | \
                (     (14) << 15) | \
                (    0b000 << 12) | \
                (     (10) <<  7) | \
                (0b0101011 <<  0)   \n"
         : "=r"(reg_txid)
-        : "r"(reg_size));
+        : "r"(reg_size), "i"(ONEDOPTIONS));
 
     return reg_txid;
 }
@@ -104,13 +107,13 @@ snrt_dma_txid_t snrt_dma_start_2d_wideptr(uint64_t dst, uint64_t src,
     register uint32_t reg_txid asm("a0");  // 10
     asm volatile(
         ".word (0b0000010 << 25) | \
-               (  0b00010 << 20) | \
+               (       %2 << 20) | \
                (     (14) << 15) | \
                (    0b000 << 12) | \
                (     (10) <<  7) | \
                (0b0101011 <<  0)   \n"
         : "=r"(reg_txid)
-        : "r"(reg_size));
+        : "r"(reg_size), "i"(TWODOPTIONS));
 
     return reg_txid;
 }

@@ -66,6 +66,14 @@ extern void snrt_bcast_recv(void *data, size_t len);
 extern void *snrt_memcpy(void *dst, const void *src, size_t n);
 
 /// DMA runtime functions.
+/// DMA options
+enum snrt_dma_options {
+    SNRT_DMA_DEFAULT = 0,
+    SNRT_DMA_DECOUPLED = 1,
+    SNRT_DMA_TWOD = 2,
+    SNRT_DMA_DEBURST = 4,
+    SNRT_DMA_SERIALIZED = 8,
+};
 /// A DMA transfer identifier.
 typedef uint32_t snrt_dma_txid_t;
 /// Initiate an asynchronous 1D DMA transfer with wide 64-bit pointers.

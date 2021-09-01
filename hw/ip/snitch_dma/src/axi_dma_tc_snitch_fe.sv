@@ -62,6 +62,7 @@ module axi_dma_tc_snitch_fe #(
         axi_pkg::burst_t  burst_src, burst_dst;
         logic             decouple_rw;
         logic             deburst;
+        logic             serialize;
     } burst_req_t;
 
     typedef struct packed {
@@ -72,6 +73,7 @@ module axi_dma_tc_snitch_fe #(
         axi_pkg::burst_t  burst_src, burst_dst;
         logic             decouple_rw;
         logic             deburst;
+        logic             serialize;
         logic             is_twod;
     } twod_req_t;
 
@@ -260,7 +262,7 @@ module axi_dma_tc_snitch_fe #(
               // start the DMA
               riscv_instr::DMCPYI,
               riscv_instr::DMCPY : begin
-                  automatic logic [1:0] cfg;
+                  automatic logic [3:0] cfg;
 
                   // Parse the transfer parameters from the register or immediate.
                   unique casez (acc_qdata_op_i)
@@ -274,6 +276,8 @@ module axi_dma_tc_snitch_fe #(
                   twod_req_d.num_bytes   = acc_qdata_arga_i;
                   twod_req_d.decouple_rw = cfg[0];
                   twod_req_d.is_twod     = cfg[1];
+                  twod_req_d.deburst     = cfg[2];
+                  twod_req_d.serialize   = cfg[3];
 
                   // Perform the following sequence:
                   // 1. wait for acc response channel to be ready (pready)
