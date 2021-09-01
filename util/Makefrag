@@ -2,6 +2,7 @@
 BENDER		   ?= bender
 DASM 	       ?= spike-dasm
 VLT			   ?= verilator
+PYTHON         ?= python3
 
 VERILATOR_ROOT ?= $$(dirname $$(which $(VLT)))/../share/verilator
 VLT_ROOT	   ?= ${VERILATOR_ROOT}
@@ -101,3 +102,8 @@ logs/trace_hart_%.txt: logs/trace_hart_%.dasm ${ROOT}/util/gen_trace.py
 	$(DASM) < $< | $(PYTHON) ${ROOT}/util/gen_trace.py > $@
 
 traces: $(shell (ls logs/trace_hart_*.dasm 2>/dev/null | sed 's/\.dasm/\.txt/') || echo "")
+
+logs/dma_trace_%.txt: logs/dma_trace_%.log ${ROOT}/util/dma_trace.py ${ROOT}/util/dma_backend.py
+	$(PYTHON) ${ROOT}/util/dma_trace.py --silent logs/dma_trace_$*.log > $@
+
+dma_traces: $(shell (ls logs/dma_trace_*.log 2>/dev/null | sed 's/\.log/\.txt/') || echo "")
