@@ -297,9 +297,9 @@ module axi_dma_backend #(
         // open file
         initial begin
             #1;
-            $sformat(fn, "dma_trace_%05x.log", dma_id_i);
+            $sformat(fn, "logs/dma_trace_%05x.log", dma_id_i);
             f = $fopen(fn, "w");
-            $display("[Tracer] Logging DMA %d to %s", dma_id_i, fn);
+            $display("[Tracer] Logging DMA  %d to %s", dma_id_i, fn);
         end
 
         // access buffer memory storage
