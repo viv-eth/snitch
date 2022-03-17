@@ -694,7 +694,11 @@ module occamy_soc
       .AXI_DATA_WIDTH(64),
       .AXI_ID_WIDTH(8),
       .AXI_USER_WIDTH(1),
+      .AXI_MAX_READ_TXNS(16),
       .AXI_MAX_WRITE_TXNS(16),
+      .AXI_USER_AS_ID(1),
+      .AXI_USER_ID_MSB(8),
+      .AXI_USER_ID_LSB(0),
       .RISCV_WORD_WIDTH(64)
   ) i_soc_narrow_wide_amo_adapter (
       .clk_i(clk_i),
@@ -1831,7 +1835,11 @@ module occamy_soc
       .AXI_DATA_WIDTH(64),
       .AXI_ID_WIDTH(8),
       .AXI_USER_WIDTH(1),
+      .AXI_MAX_READ_TXNS(16),
       .AXI_MAX_WRITE_TXNS(16),
+      .AXI_USER_AS_ID(1),
+      .AXI_USER_ID_MSB(8),
+      .AXI_USER_ID_LSB(0),
       .RISCV_WORD_WIDTH(64)
   ) i_spm_amo_adapter (
       .clk_i(clk_i),

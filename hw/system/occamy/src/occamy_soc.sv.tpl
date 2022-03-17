@@ -138,7 +138,7 @@ module ${name}_soc
     #// narrow xbar -> wide xbar & wide xbar -> narrow xbar
     soc_narrow_xbar.out_soc_wide \
       .cut(context, cuts_narrow_and_wide) \
-      .atomic_adapter(context, max_atomics_narrow, "soc_narrow_wide_amo_adapter") \
+      .atomic_adapter(context, max_trans=max_atomics_narrow, user_as_id=1, user_id_msb=8 , user_id_lsb=0, name="soc_narrow_wide_amo_adapter") \
       .change_iw(context, soc_wide_xbar.in_soc_narrow.iw, "soc_narrow_wide_iwc", max_txns_per_id=txns_narrow_and_wide) \
       .change_dw(context, soc_wide_xbar.in_soc_narrow.dw, "soc_narrow_wide_dw", to=soc_wide_xbar.in_soc_narrow)
     soc_wide_xbar.out_soc_narrow \
@@ -233,7 +233,7 @@ module ${name}_soc
   // SPM //
   //////////
   <% narrow_spm_mst = soc_narrow_xbar.out_spm \
-                      .atomic_adapter(context, max_atomics_narrow, "spm_amo_adapter") \
+                      .atomic_adapter(context, max_trans=max_atomics_narrow, user_as_id=1, user_id_msb=8 , user_id_lsb=0, name="spm_amo_adapter") \
                       .cut(context, cuts_narrow_conv_to_spm)
   %>\
 
