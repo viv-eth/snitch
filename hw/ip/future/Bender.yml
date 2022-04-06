@@ -19,3 +19,6 @@ sources:
 - src/axi_iw_converter.sv
 - src/axi_xp.sv
 - src/axi_zero_mem.sv
+- target: test
+  files:
+  - src/axi_sim_mem.sv
