@@ -280,6 +280,7 @@ module ${name}_soc
     .ByteWidth (8),
     .EnableInputPipeline (1'b1),
     .EnableOutputPipeline (1'b1),
+    .EnableECC (1'b1),
     .sram_cfg_t (sram_cfg_t)
   ) i_spm_narrow_cut (
     .clk_i (${narrow_spm_mst.clk}),
@@ -300,7 +301,6 @@ module ${name}_soc
   // SPM WIDE //
   //////////////
   <% wide_spm_mst = soc_wide_xbar.out_spm_wide \
-                    .atomic_adapter(context, max_atomics_wide, "spm_wide_amo_adapter") \
                     .cut(context, cuts_wide_conv_to_spm_wide)
   %>\
 
@@ -346,6 +346,7 @@ module ${name}_soc
     .ByteWidth (8),
     .EnableInputPipeline (1'b1),
     .EnableOutputPipeline (1'b1),
+    .EnableECC (1'b1),
     .sram_cfg_t (sram_cfg_t)
   ) i_spm_wide_cut (
     .clk_i (${wide_spm_mst.clk}),
