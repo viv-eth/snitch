@@ -5,9 +5,12 @@
 # Noah Huetter <huettern@iis.ee.ethz.ch>
 #
 # Create and package a Vivado IP core to use in a block-design.
-# Reads ${ip_name}/${ip_name}.tcl to read metadata and call modify_ip after createion
+# Reads ${ip_name}/${ip_name}.tcl to read metadata and call modify_ip after creation
 #
-# Argunents: ip_name build_dir
+# Arguments: 
+# 1 ip_name    Name of IP, must coincide with the directory name
+# 2 build_dir  Output directory. This is path can then be added to the IP Repository in Vivad
+#              to use the packaged IP.
 
 # Arguments
 set ip_name [lindex $argv 0]
