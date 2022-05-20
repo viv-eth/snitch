@@ -26,12 +26,15 @@ pub struct Configuration {
     pub ssr: Ssr,
     #[serde(default)]
     pub interrupt_latency: u32,
+    // #[serde(default)]
+    // pub dataset: Dataset,
 }
 
 impl Default for Configuration {
     fn default() -> Configuration {
         Configuration {
             architecture: Default::default(),
+            // dataset: Default::default(),
             bootrom: Default::default(),
             memory: Default::default(),
             address: Default::default(),
@@ -52,6 +55,7 @@ impl Configuration {
     pub fn new(num_clusters: usize, num_cores: usize, base_hartid: usize) -> Self {
         Self {
             architecture: Architecture::new(num_clusters, num_cores, base_hartid),
+            //dataset: Dataset::new(train_file_path, start_address),
             bootrom: Default::default(),
             memory: vec![Default::default(); num_clusters],
             address: Default::default(),
@@ -69,6 +73,10 @@ impl Configuration {
         has_num_cores: bool,
         base_hartid: usize,
         has_base_hartid: bool,
+        // train_file_path: String,
+        // has_train_file_path: bool,
+        // start_address: u64,
+        // has_start_addr: bool,
     ) -> Configuration {
         let config: String = std::fs::read_to_string(name)
             .unwrap_or_else(|_| panic!("Could not open file {}", name))
@@ -90,6 +98,12 @@ impl Configuration {
             config.memory.resize_with(num_clusters, Default::default);
             config.architecture.num_clusters = num_clusters;
         }
+        // if has_train_file_path {
+        //     config.dataset.train_file_path = train_file_path;
+        // }
+        // if has_start_addr {
+        //     config.dataset.start_address = start_address;
+        // }
         config
     }
 
@@ -269,3 +283,28 @@ impl Default for Architecture {
         }
     }
 }
+
+// // INFO: VIVI EDIT for dataset field
+// #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+// pub struct Dataset {
+//     pub train_file_path: String,
+//     pub start_address: u64,
+// }
+
+// impl Dataset {
+//     pub fn new(train_file_path: String, start_address: u64) -> Self {
+//         Self {
+//             train_file_path: train_file_path,
+//             start_address: start_address,
+//         }
+//     }
+// }
+
+// impl Default for Dataset {
+//     fn default() -> Dataset {
+//         Dataset {
+//             train_file_path: "".to_string(),
+//             start_address: 0x0,
+//         }
+//     }
+// }

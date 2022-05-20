@@ -14,7 +14,7 @@ use clap::Arg;
 use llvm_sys::{
     bit_writer::*, core::*, execution_engine::*, initialization::*, support::*, target::*,
 };
-use std::{ffi::CString, os::raw::c_int, path::Path, ptr::null_mut};
+use std::{ffi::CString, os::raw::c_int, path::Path, ptr::null_mut, fs::File};
 
 pub mod bootroms;
 pub mod configuration;
@@ -137,6 +137,19 @@ fn main() -> Result<()> {
                 .multiple(true)
                 .help("Pass command line arguments to LLVM"),
         )
+        // INFO: VIVI edit --> approved
+        .arg(
+            Arg::with_name("train-file-path")
+                .long("train-file-path")
+                .takes_value(true)
+                .help("Path to data files for training."),
+        )
+        .arg(
+            Arg::with_name("start-address")
+                .long("start-address")
+                .takes_value(true)
+                .help("Start address where to store dataset DRAM."),
+        )
         .get_matches();
 
     // Configure the logger.
@@ -205,6 +218,9 @@ fn main() -> Result<()> {
     let has_num_cores = matches.is_present("num-cores");
     let has_num_clusters = matches.is_present("num-clusters");
     let has_base_hartid = matches.is_present("base-hartid");
+    // INFO: VIVI edit --> approved
+    let has_train_file_path = matches.is_present("train-file-path");
+    let has_start_addr = matches.is_present("start-address");
 
     matches
         .value_of("num-cores")
@@ -259,6 +275,62 @@ fn main() -> Result<()> {
     engine
         .translate_elf(&elf)
         .context("Failed to translate ELF binary")?;
+
+    // INFO: VIVI edit --> approved
+    // preload the DRAM with the dataset 
+    // path to dataset and start address 
+    // First we check whether there exists a path to the dataset
+    if has_train_file_path {
+        // get the path from the config file
+        let dataset_path = matches.value_of("train-file-path").unwrap();
+        // open & parse the file
+        let dataset_file = File::open(dataset_path)?;
+        let mut rdr = csv::Reader::from_reader(dataset_file); // INFO: maybe change to read from path
+        // get memory handle, mutex thread lock, unwrap checks if element found, otherwise panics
+        // memory is defined as HashMap --> memory: Mutex<HashMap<u64, u32>>
+        // where the first value corresponds to the address 
+        let mut mem = engine.memory.lock().unwrap();
+        // get the start address of the dataset file (NOTE: make sure to not overwrite your ELF data!! very bad)
+        // the start address has to be defined in the config file
+        let mut addr: u64 = u64::from_str_radix(matches.value_of("start-address").unwrap().trim_start_matches("0x"), 16).unwrap();
+        // iterate through the records (i.e. rows) of the dataset CSV file
+        // CSV file format: label followed by data in a row
+        use byteorder::{LittleEndian, ReadBytesExt};
+        for result in rdr.records() {
+            let record = result?;
+            // get the number of data items in a record
+            let record_length = record.len();
+            // first item in a row is the label --> panic if we don't have a label
+            let label: u32 = record[0].parse()?; // record reads in strings, but will automatically parse to defined type <u32>
+            // now we write the label together with its corresponding address into memory
+            mem.insert(
+                addr, label
+            );
+            trace!("  - 0x{:x} = 0x{:x}", addr, label);
+            // after each insert we have to increment the address to the next writable position
+            addr += 0x4;
+            for pixel_index in 1..record_length{
+                // let pixel: f32 = record[pixel_index].parse()?; // truncate the value too f32 instead of f64 for le conversion
+                // // save pixel value as little endian unsigned integer representation
+                // let pixel_bytes = pixel.to_le_bytes(); // this returns [u8, 4] array for f32 & [u8, 8] array for f64
+                // // Apparently what I am about to do is *extremely* unsafe:
+                // // We want to represent the floating point 32-bit number as a u32
+                // let pixel_u32 = unsafe {
+                //     std::mem::transmute::<[u8; 4], u32>(pixel_bytes) // turn raw bytes into u32 number
+                // };
+                // to avoid the incredibly rebellious thing I did above I read in the image data as unsigned ints
+                // directly and normalize in the network script after reading from memory --> TODO: check latency
+                let pixel_u32: u32 = record[pixel_index].parse()?;
+                mem.insert( 
+                    addr, pixel_u32
+                );
+                trace!("  - 0x{:x} = 0x{:x}", addr, pixel_u32);
+                addr += 0x4;
+            }
+        }
+        
+        
+    }
 
     // Write the module to disk if requested.
     if let Some(path) = matches.value_of("emit-llvm") {
