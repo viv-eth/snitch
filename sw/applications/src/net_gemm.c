@@ -98,18 +98,31 @@ int main() {
         if (!l1_gemm_l.TA && !l1_gemm_l.TB) {
             volatile uint32_t A_offset =
                 compute_id * (l1_gemm_l.K + MAT_ROW_PADDING) * l1_gemm_l.dtype;
+            //printf("A offset: %u \n", A_offset);
             volatile uint32_t C_offset =
                 compute_id * l1_gemm_l.N * l1_gemm_l.dtype;
+            //printf("C offset: %u \n", A_offset);
             volatile uint32_t ldA =
                 compute_num * (l1_gemm_l.K + MAT_ROW_PADDING);
+            //printf("ldA: %u \n", ldA);
             volatile uint32_t ldB = l1_gemm_l.K + MAT_ROW_PADDING;
+            //printf("ldB: %u \n", ldB);
             volatile uint32_t ldC = l1_gemm_l.N * compute_num;
+            //printf("ldC: %u \n", ldC);
 
             benchmark_get_cycle();
-            gemm_fp64_ssr_frep(l1_gemm_l.M / compute_num, l1_gemm_l.N,
+            /*gemm_fp64_ssr_frep(l1_gemm_l.M / compute_num, l1_gemm_l.N,
                                l1_gemm_l.K, &mat_A[A_offset], ldA, l1_gemm_l.TA,
                                mat_B, ldB, l1_gemm_l.TB, &mat_C[C_offset], ldC,
-                               &l1_gemm_l.ALPHA, setup_SSR);
+                               &l1_gemm_l.ALPHA, setup_SSR);*/
+            /*gemm_fp64_ssr_frep(l1_gemm_l.M / 5, l1_gemm_l.N,
+                               l1_gemm_l.K, &mat_A[A_offset], ldA, l1_gemm_l.TA,
+                               mat_B, ldB, l1_gemm_l.TB, &mat_C[C_offset], ldC,
+                               &l1_gemm_l.ALPHA, setup_SSR);*/
+            gemm_fp64(l1_gemm_l.M / 5, l1_gemm_l.N,
+                               l1_gemm_l.K, &mat_A[A_offset], ldA, l1_gemm_l.TA,
+                               mat_B, ldB, l1_gemm_l.TB, &mat_C[C_offset], ldC,
+                               1.0);
             benchmark_get_cycle();
         } else if (!l1_gemm_l.TA && l1_gemm_l.TB) {
             volatile uint32_t A_offset =
@@ -186,6 +199,8 @@ int main() {
                 if (fabs(sum - checksum) > 0.001) {
                     errors++;
                 }
+                printf("Total sum[%u]: %f\n", m, sum);
+                printf("Checksum[%u]: %f\n", m, checksum);
             }
         } else if (l1_gemm_l.dtype == FP32) {
             for (uint32_t m = 0; m < l1_gemm_l.M; m++) {

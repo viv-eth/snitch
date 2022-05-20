@@ -77,6 +77,9 @@ void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
  * @brief implementation of a FP16 SIMD GEMM with configured
  * SSRs and frep loop. Matrix B has to be stored in transposed/consecutive
  * memory layout in order to support SIMD instructions.
+ * 
+ * FP16 - 1 sign bit, 5 exponent bits, 10 fractional bits
+ * FP16ALT - 1 sign bit, 8 exponent bits, 7 fractional bits
  *
  * @param M number of rows of matrix A
  * @param N number of columns of matrix B
@@ -95,3 +98,30 @@ void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
                                uint32_t ldA, __fp16* B, uint32_t ldB, __fp16* C,
                                uint32_t ldC, const uint32_t* ALPHA,
                                uint32_t setup_SSR);
+
+/**
+ * @brief implementation of a FP8 SIMD GEMM with configured
+ * SSRs and frep loop. Matrix B has to be stored in transposed/consecutive
+ * memory layout in order to support SIMD instructions.
+ * 
+ * FP8 - 1 sign bit, 5 exponent bits, 2 fractional bits
+ * FP8ALT - 1 sign bit, 4 exponent bits, 3 fractional bits
+ *
+ * @param M number of rows of matrix A
+ * @param N number of columns of matrix B
+ * @param K number of columns of matrix A
+ * @param A pointer to matrix A
+ * @param ldA row stride in matrix A
+ * @param B pointer to matrix B
+ * @param ldB row stride in matrix B
+ * @param C pointer to matrix C
+ * @param ldC row stride in matrix C
+ * @param ALPHA accmulate factor of C
+ * @param setup_SSR setup SSR bounds and strides
+ * @return * void
+ */
+void gemm_fp8simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, char* A,
+                               uint32_t ldA, char* B, uint32_t ldB, char* C,
+                               uint32_t ldC, const uint32_t* ALPHA,
+                               uint32_t setup_SSR); //TBD
+
