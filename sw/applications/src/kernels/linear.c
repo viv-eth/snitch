@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-#include "gemm.h"
+#include "linear.h"
 
 #include "printf.h"
 #include "snrt.h"
@@ -11,62 +11,36 @@ typedef float v2f32 __attribute__((vector_size(8)));
 typedef __fp16 v4f16 __attribute__((vector_size(8)));
 typedef char v8f8 __attribute__((vector_size(8)));
 
-void gemm_fp64(uint32_t M, uint32_t N, uint32_t K, double* A, uint32_t ldA,
-               uint32_t ta, double* B, uint32_t ldB, uint32_t tb, double* C,
-               uint32_t ldC, double ALPHA) {
-    if (!ta && !tb) {
+void linear_fp64(uint32_t M, uint32_t N, uint32_t K, double* W, uint32_t ldW,
+               uint32_t tw, double* X, uint32_t ldX, uint32_t tx, double* B, uint32_t tb,
+               uint32_t ldB) {
+    if (!tw && !tx && !tb) {
         for (uint32_t m = 0; m < M; m++) {
             for (uint32_t n = 0; n < N; n++) {
-                register double c0 = ALPHA * C[m * ldC + n];
-                printf("c0[%u] = %f\n", m, c0);
+                register double c0 = B[m * ldB + n];
                 for (uint32_t k = 0; k < K; k++) {
-                    c0 += A[k + m * ldA] * B[k + n * ldB];
+                    c0 += W[k + m * ldW] * X[k + n * ldX];
+                    //printf("c0 = %f\n", c0);
                 }
-                C[m * ldC + n] = c0;
+                B[m * ldB + n] = c0;
+                printf("c0 = %f\n", c0);
             }
-        }
-    } else if (ta && !tb) {
-        for (uint32_t m = 0; m < M; m++) {
-            for (uint32_t n = 0; n < N; n++) {
-                register double c0 = ALPHA * C[m * ldC + n];
-                for (uint32_t k = 0; k < K; k++) {
-                    c0 += A[k * M * ldA + m * ldA] * B[k * ldB + n];
-                }
-                C[m * ldC + n] = c0;
-            }
-        }
-    } else if (!ta && tb) {
-        for (uint32_t m = 0; m < M; m++) {
-            for (uint32_t n = 0; n < N; n++) {
-                register double c0 = ALPHA * C[m * ldC + n];
-                for (uint32_t k = 0; k < K; k++) {
-                    c0 += A[k + m * ldA] * B[k + n * ldB];
-                }
-                C[m * ldC + n] = c0;
-            }
-        }
-    } else {
-        for (uint32_t m = 0; m < M; m++) {
-            for (uint32_t n = 0; n < N; n++) {
-                register double c0 = ALPHA * C[m * ldC + n];
-                for (uint32_t k = 0; k < K; k++) {
-                    c0 += A[k * M * ldA + m * ldA] * B[k + n * ldB];
-                }
-                C[m * ldC + n] = c0;
-            }
-        }
-    }
 
-    /*for(uint32_t i=0; i < M; i++)
-    {
-        printf("Final result matrix C[%u] = %f\n", i, C[i]);
-    }*/
+        }
+    } else if (tw && !tx && !tb) {
+        // TODO: implement this
+    } else if (!tw && tx && !tb) {
+        // TODO: implement this
+    } else {
+        // TODO: implement this
+    }
 }
 
-void gemm_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* A,
-                        uint32_t ldA, uint32_t ta, double* B, uint32_t ldB,
-                        uint32_t tb, double* C, uint32_t ldC,
-                        const uint32_t* ALPHA, uint32_t setup_SSR) {
+void linear_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* W,
+                        uint32_t ldW, uint32_t tw, double* X, uint32_t ldX,
+                        uint32_t tx, double* B, uint32_t ldB, uint32_t tb, 
+                        uint32_t setup_SSR) {
+
     register volatile double ft0 asm("ft0");
     register volatile double ft1 asm("ft1");
     register volatile double ft2 asm("ft2");
@@ -81,16 +55,16 @@ void gemm_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* A,
     // once in the beginning
     if (setup_SSR) {
         // First matrix is stored in transposed format
-        if (ta) {
+        if (tw) {
             const uint32_t ssr0_b[4] = {unroll, K, N / unroll, M};
-            const uint32_t ssr0_i[4] = {0, 8 * ldA, 0, 8 * 8};
+            const uint32_t ssr0_i[4] = {0, 8 * ldW, 0, 8 * 8};
 
             snrt_ssr_loop_3d(SNRT_SSR_DM0, ssr0_b[1], ssr0_b[2], ssr0_b[3],
                              ssr0_i[1], ssr0_i[2], ssr0_i[3]);
             snrt_ssr_repeat(SNRT_SSR_DM0, unroll);
         } else {
             const uint32_t ssr0_b[4] = {unroll, K, N / unroll, M};
-            const uint32_t ssr0_i[4] = {0, 8, 0, 8 * ldA};
+            const uint32_t ssr0_i[4] = {0, 8, 0, 8 * ldW};
 
             snrt_ssr_loop_3d(SNRT_SSR_DM0, ssr0_b[1], ssr0_b[2], ssr0_b[3],
                              ssr0_i[1], ssr0_i[2], ssr0_i[3]);
@@ -98,53 +72,42 @@ void gemm_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* A,
         }
 
         // Second matrix is stored in transposed format
-        if (tb) {
+        if (tx) {
             const uint32_t ssr1_b[4] = {unroll, K, N / unroll, M};
-            const uint32_t ssr1_i[4] = {8 * ldB, 8, 8 * ldB * unroll, 0};
+            const uint32_t ssr1_i[4] = {8 * ldX, 8, 8 * ldX * unroll, 0};
 
             snrt_ssr_loop_4d(SNRT_SSR_DM1, ssr1_b[0], ssr1_b[1], ssr1_b[2],
                              ssr1_b[3], ssr1_i[0], ssr1_i[1], ssr1_i[2],
                              ssr1_i[3]);
         } else {
             const uint32_t ssr1_b[4] = {unroll, K, N / unroll, M};
-            const uint32_t ssr1_i[4] = {8, 8 * ldB, 8 * unroll, 0};
+            const uint32_t ssr1_i[4] = {8, 8 * ldX, 8 * unroll, 0};
 
             snrt_ssr_loop_4d(SNRT_SSR_DM1, ssr1_b[0], ssr1_b[1], ssr1_b[2],
                              ssr1_b[3], ssr1_i[0], ssr1_i[1], ssr1_i[2],
                              ssr1_i[3]);
         }
+        // TODO: add also the other cases when B matrix is transposed
     }
 
     // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, A);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, B);
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, W);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, X);
     snrt_ssr_enable();
 
     for (uint32_t m = 0; m < M; m++) {
         uint32_t n = 0;
         for (uint32_t n0 = 0; n0 < N / unroll; n0++) {
             register double c[unroll];
-
-            // Load intermediate result
-            if (*ALPHA) {
-                c[0] = C[m * ldC + n + 0];
-                c[1] = C[m * ldC + n + 1];
-                c[2] = C[m * ldC + n + 2];
-                c[3] = C[m * ldC + n + 3];
-                c[4] = C[m * ldC + n + 4];
-                c[5] = C[m * ldC + n + 5];
-                c[6] = C[m * ldC + n + 6];
-                c[7] = C[m * ldC + n + 7];
-            } else {
-                c[0] = 0.0;
-                c[1] = 0.0;
-                c[2] = 0.0;
-                c[3] = 0.0;
-                c[4] = 0.0;
-                c[5] = 0.0;
-                c[6] = 0.0;
-                c[7] = 0.0;
-            }
+            
+            c[0] = B[m * ldB + n + 0];
+            c[1] = B[m * ldB + n + 1];
+            c[2] = B[m * ldB + n + 2];
+            c[3] = B[m * ldB + n + 3];
+            c[4] = B[m * ldB + n + 4];
+            c[5] = B[m * ldB + n + 5];
+            c[6] = B[m * ldB + n + 6];
+            c[7] = B[m * ldB + n + 7];
 
             asm volatile(
                 "frep.o %[n_frep], 8, 0, 0 \n"
@@ -163,14 +126,14 @@ void gemm_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* A,
                 : "ft0", "ft1");
 
             // Store results back
-            C[m * ldC + n + 0] = c[0];
-            C[m * ldC + n + 1] = c[1];
-            C[m * ldC + n + 2] = c[2];
-            C[m * ldC + n + 3] = c[3];
-            C[m * ldC + n + 4] = c[4];
-            C[m * ldC + n + 5] = c[5];
-            C[m * ldC + n + 6] = c[6];
-            C[m * ldC + n + 7] = c[7];
+            B[m * ldB + n + 0] = c[0];
+            B[m * ldB + n + 1] = c[1];
+            B[m * ldB + n + 2] = c[2];
+            B[m * ldB + n + 3] = c[3];
+            B[m * ldB + n + 4] = c[4];
+            B[m * ldB + n + 5] = c[5];
+            B[m * ldB + n + 6] = c[6];
+            B[m * ldB + n + 7] = c[7];
             n += unroll;
         }
 
@@ -179,15 +142,11 @@ void gemm_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* A,
 
         for (; n < N; n++) {
             double c;
-            if (*ALPHA) {
-                c = C[m * ldC + n];
-            } else {
-                c = 0.0;
-            }
+            c = B[m * ldB + n];
             for (uint32_t k = 0; k < K; k++) {
-                c += A[k + m * ldA] * B[k + n * ldB];
+                c += W[k + m * ldW] * X[k + n * ldX];
             }
-            C[m * ldC + n] = c;
+            B[m * ldB + n] = c;
         }
 
         snrt_ssr_enable();
@@ -198,15 +157,16 @@ void gemm_fp64_ssr_frep(uint32_t M, uint32_t N, uint32_t K, double* A,
     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 }
 
-void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
-                               const uint32_t K, float* A, const uint32_t ldA,
-                               float* B, const uint32_t ldB, float* C,
-                               const uint32_t ldC, const uint32_t* ALPHA,
-                               const uint32_t setup_SSR) {
+void linear_fp32simd_ssr_frep(uint32_t M, uint32_t N, uint32_t K, float* W,
+                        uint32_t ldW, uint32_t tw, float* X, uint32_t ldX,
+                        uint32_t tx, float* B, uint32_t ldB, uint32_t tb, 
+                        uint32_t setup_SSR) {
+    
     register volatile double ft0 asm("ft0");
     register volatile double ft1 asm("ft1");
     register volatile double ft2 asm("ft2");
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+
 
     // Unrolling factor of most inner loop.
     // Should be at least as high as the FMA delay
@@ -216,49 +176,56 @@ void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
     // SSR strides and bounds only have to be configured
     // once in the beginning
     if (setup_SSR) {
-        uint32_t ssr0_b[4] = {unroll, K / 2, N / unroll, M};
-        uint32_t ssr0_i[4] = {0, sizeof(float) * 2, 0, sizeof(float) * ldA};
+        // SSR strides for matrix W
+        uint32_t ssr0_b[4] = {unroll, K / 2, N / unroll, M}; //bounds
+        uint32_t ssr0_i[4] = {0, sizeof(float) * 2, 0, sizeof(float) * ldW}; //strides
 
+        // SSR strides for matrix X
         uint32_t ssr1_b[4] = {unroll, K / 2, N / unroll, M};
-        uint32_t ssr1_i[4] = {sizeof(float) * ldB, sizeof(float) * 2,
-                              sizeof(float) * unroll * ldB, 0};
+        /*uint32_t ssr1_i[4] = {sizeof(float) * ldX, sizeof(float) * 2,
+                              sizeof(float) * unroll * ldX, 0};*/
+        uint32_t ssr1_i[4] = {sizeof(float) * 2, sizeof(float) * ldX, 
+                            sizeof(float) * unroll, 0};                 
 
         snrt_ssr_loop_3d(SNRT_SSR_DM0, ssr0_b[1], ssr0_b[2], ssr0_b[3],
                          ssr0_i[1], ssr0_i[2], ssr0_i[3]);
         snrt_ssr_repeat(SNRT_SSR_DM0, unroll);
 
         snrt_ssr_loop_4d(SNRT_SSR_DM1, ssr1_b[0], ssr1_b[1], ssr1_b[2],
-                         ssr1_b[3], ssr1_i[0], ssr1_i[1], ssr1_i[2], ssr1_i[3]);
+                         ssr1_b[3], ssr1_i[0], ssr1_i[1], ssr1_i[2], 
+                         ssr1_i[3]);
     }
 
     // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, A);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, B);
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, W);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, X);
     snrt_ssr_enable();
 
     // Kernel progresses by 2 values each step
     const uint32_t n_frep = K / 2 - 1;
+    //TODO: remove ALPHA & respective branching
+    const uint32_t ALPHA = 1;
 
     for (uint32_t m = 0; m < M; m++) {
         uint32_t n = 0;
         for (uint32_t n0 = 0; n0 < N / unroll; n0++) {
-            float* _C = &C[m * ldC + n / 2];
+            float* _B = &B[m * ldB + n / 2];
             const register float zero = 0.0;
             register v2f32 c[unroll], reduce_reg[unroll];
 
             asm volatile(
                 "lw      t0, 0(%[ALPHA]) \n"
-                "beqz    t0, 1f \n"
+                "beqz    t0, 1f \n" // if ALPHA = 0 jump to 1 and pack SIMD vectors with zeros
                 // Load intermediate results
-                "flw %[reduce_reg0], 0(%[C]) \n"
-                "flw %[reduce_reg1], 4(%[C]) \n"
-                "flw %[reduce_reg2], 8(%[C]) \n"
-                "flw %[reduce_reg3], 12(%[C]) \n"
-                "flw %[reduce_reg4], 16(%[C]) \n"
-                "flw %[reduce_reg5], 20(%[C]) \n"
-                "flw %[reduce_reg6], 24(%[C]) \n"
-                "flw %[reduce_reg7], 28(%[C]) \n"
-                // Pack intermediate results into SIMD vector
+                "flw %[reduce_reg0], 0(%[B]) \n"
+                "flw %[reduce_reg1], 4(%[B]) \n"
+                "flw %[reduce_reg2], 8(%[B]) \n"
+                "flw %[reduce_reg3], 12(%[B]) \n"
+                "flw %[reduce_reg4], 16(%[B]) \n"
+                "flw %[reduce_reg5], 20(%[B]) \n"
+                "flw %[reduce_reg6], 24(%[B]) \n"
+                "flw %[reduce_reg7], 28(%[B]) \n"
+                // Pack intermediate results into SIMD vector (this is only executed if ALPHA != 0) TODO: remove the second part
                 "vfcpka.s.s %[reduce_reg0], %[reduce_reg0], %[zero]\n"
                 "vfcpka.s.s %[reduce_reg1], %[reduce_reg1], %[zero]\n"
                 "vfcpka.s.s %[reduce_reg2], %[reduce_reg2], %[zero]\n"
@@ -269,7 +236,7 @@ void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
                 "vfcpka.s.s %[reduce_reg7], %[reduce_reg7], %[zero]\n"
                 "j 2f \n"
                 "1: \n"
-                // Initialize SIMD vector with zeros
+                // Initialize SIMD vector with zeros TODO: remove this
                 "vfcpka.s.s %[reduce_reg0], %[zero], %[zero]\n"
                 "vfcpka.s.s %[reduce_reg1], %[zero], %[zero]\n"
                 "vfcpka.s.s %[reduce_reg2], %[zero], %[zero]\n"
@@ -324,15 +291,15 @@ void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
                   [ reduce_reg5 ] "+f"(reduce_reg[5]),
                   [ reduce_reg6 ] "+f"(reduce_reg[6]),
                   [ reduce_reg7 ] "+f"(reduce_reg[7])
-                : [ C ] "r"(_C), [ zero ] "f"(zero), [ n_frep ] "r"(n_frep - 1),
+                : [ B ] "r"(_B), [ zero ] "f"(zero), [ n_frep ] "r"(n_frep - 1),
                   [ ALPHA ] "r"(ALPHA)
                 : "ft0", "ft1", "ft2");
 
             // Store results
-            ((v2f32*)_C)[0] = c[0];
-            ((v2f32*)_C)[1] = c[1];
-            ((v2f32*)_C)[2] = c[2];
-            ((v2f32*)_C)[3] = c[3];
+            ((v2f32*)_B)[0] = c[0];
+            ((v2f32*)_B)[1] = c[1];
+            ((v2f32*)_B)[2] = c[2];
+            ((v2f32*)_B)[3] = c[3];
 
             // progress by 2 columns each iteration of the loop
             n += unroll * 2;
@@ -342,11 +309,11 @@ void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
         snrt_ssr_disable();
 
         for (; n < N; n++) {
-            float c = (*ALPHA) ? C[m * ldC + n] : 0.0;
+            float c = B[m * ldB + n];
             for (uint32_t k = 0; k < K; k++) {
-                c += A[k + m * ldA] * B[k + n * ldB];
+                c += W[k + m * ldW] * X[k + n * ldX];
             }
-            C[m * ldC + n] = c;
+            B[m * ldB + n] = c;
         }
 
         snrt_ssr_enable();
@@ -357,17 +324,29 @@ void gemm_fp32simd_tb_ssr_frep(const uint32_t M, const uint32_t N,
     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 }
 
-void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
-                               uint32_t ldA, __fp16* B, uint32_t ldB, __fp16* C,
-                               uint32_t ldC, const uint32_t* ALPHA,
-                               uint32_t setup_SSR) {
+void linear_fp16simd_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* W,
+                        uint32_t ldW, uint32_t tw, __fp16* X, uint32_t ldX,
+                        uint32_t tx, __fp16* B, uint32_t ldB, uint32_t tb, 
+                        uint32_t setup_SSR) {
+    
+    //TODO: implement transposed cases
+
+    /*for (uint32_t h; h < N; h++) {
+        for (uint32_t j = 0; j < K; j++) {
+            if(X[j + h * ldX] != 0){
+                printf("X non-zero test\n");
+            }
+        }
+    }
+    
+    printf("Test done. \n");*/
+
+    const uint32_t ALPHA = 1;
+
     register volatile double ft0 asm("ft0");
     register volatile double ft1 asm("ft1");
     register volatile double ft2 asm("ft2");
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
-
-    // printf("M %d, N %d, K %d, ldA %d, ldB %d, ldC %d, setup_SSR %d\n", M, N,
-    // K, ldA, ldB, ldC, setup_SSR);
 
     // Unrolling factor of most inner loop.
     // Should be at least as high as the FMA delay
@@ -378,11 +357,11 @@ void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
     // once in the beginning
     if (setup_SSR) {
         uint32_t ssr0_b[4] = {unroll, K / 4, N / unroll, M};
-        uint32_t ssr0_i[4] = {0, sizeof(__fp16) * 4, 0, sizeof(__fp16) * ldA};
+        uint32_t ssr0_i[4] = {0, sizeof(__fp16) * 4, 0, sizeof(__fp16) * ldW};
 
         uint32_t ssr1_b[4] = {unroll, K / 4, N / unroll, M};
-        uint32_t ssr1_i[4] = {sizeof(__fp16) * ldB, sizeof(__fp16) * 4,
-                              sizeof(__fp16) * unroll * ldB, 0};
+        uint32_t ssr1_i[4] = {sizeof(__fp16) * 4, sizeof(__fp16) * ldX,
+                              sizeof(__fp16) * unroll, 0};
 
         snrt_ssr_loop_3d(SNRT_SSR_DM0, ssr0_b[1], ssr0_b[2], ssr0_b[3],
                          ssr0_i[1], ssr0_i[2], ssr0_i[3]);
@@ -393,8 +372,8 @@ void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
     }
 
     // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, A);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, B);
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, W);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, X);
     snrt_ssr_enable();
 
     // Kernel progresses by 4 values each step
@@ -403,7 +382,7 @@ void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
     for (uint32_t m = 0; m < M; m++) {
         uint32_t n = 0;
         for (uint32_t n0 = 0; n0 < N / unroll; n0++) {
-            __fp16* _C = &C[m * ldC + n];
+            __fp16* _B = &B[m * ldB + n];
             const register float zero = 0.0;
             register v4f16 c[unroll];
             register v2f32 reduce_reg[unroll];
@@ -413,14 +392,14 @@ void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
                 "lw      %[alpha], 0(%[ALPHA]) \n"
                 "beqz    %[alpha], 1f \n"
                 // Load intermediate results
-                "flw %[c0], 0(%[C]) \n"
-                "flw %[c1], 4(%[C]) \n"
-                "flw %[c2], 8(%[C]) \n"
-                "flw %[c3], 12(%[C]) \n"
-                "flw %[c4], 16(%[C]) \n"
-                "flw %[c5], 20(%[C]) \n"
-                "flw %[c6], 24(%[C]) \n"
-                "flw %[c7], 28(%[C]) \n"
+                "flw %[c0], 0(%[B]) \n"
+                "flw %[c1], 4(%[B]) \n"
+                "flw %[c2], 8(%[B]) \n"
+                "flw %[c3], 12(%[B]) \n"
+                "flw %[c4], 16(%[B]) \n"
+                "flw %[c5], 20(%[B]) \n"
+                "flw %[c6], 24(%[B]) \n"
+                "flw %[c7], 28(%[B]) \n"
                 // Pack intermediate results into SIMD vector
                 "vfcpka.s.s %[c0], %[c0], %[zero]\n"
                 "vfcpka.s.s %[c1], %[c1], %[zero]\n"
@@ -486,28 +465,29 @@ void gemm_fp16simd_tb_ssr_frep(uint32_t M, uint32_t N, uint32_t K, __fp16* A,
                   [ reduce_reg5 ] "+f"(reduce_reg[5]),
                   [ reduce_reg6 ] "+f"(reduce_reg[6]),
                   [ reduce_reg7 ] "+f"(reduce_reg[7])
-                : [ C ] "r"(_C), [ zero ] "f"(zero), [ n_frep ] "r"(n_frep),
+                : [ B ] "r"(_B), [ zero ] "f"(zero), [ n_frep ] "r"(n_frep),
                   [ ALPHA ] "r"(ALPHA)
                 : "ft0", "ft1", "ft2");
 
             // Store results back
-            ((v4f16*)_C)[0] = c[0];
-            ((v4f16*)_C)[1] = c[1];
+            ((v4f16*)_B)[0] = c[0];
+            ((v4f16*)_B)[1] = c[1];
             n += unroll;
         }
 
-        // Clean up left over column
-        // snrt_ssr_disable();
+        //Clean up left over column
+        //TODO: ask Tim why he commented this part out in GEMM
+        snrt_ssr_disable();
 
-        // for (; n < N; n++) {
-        //     __fp16 c = (*ALPHA) ? C[m * ldC + n] : 0.0;
-        //     for (uint32_t k = 0; k < K; k++) {
-        //         c += A[k + m * ldA] * B[k + n * ldB];
-        //     }
-        //     C[m * ldC + n] = c;
-        // }
+        for (; n < N; n++) {
+            __fp16 c = B[m * ldB + n];
+            for (uint32_t k = 0; k < K; k++) {
+                c += W[k + m * ldW] * X[k + n * ldB];
+            }
+            B[m * ldB + n] = c;
+        }
 
-        // snrt_ssr_enable();
+        snrt_ssr_enable();
     }
 
     snrt_ssr_disable();
