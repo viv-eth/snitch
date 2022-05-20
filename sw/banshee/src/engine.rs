@@ -10,6 +10,8 @@ use crate::{
 };
 extern crate flexfloat;
 extern crate termion;
+extern crate csv;
+
 use anyhow::{anyhow, bail, Result};
 use itertools::Itertools;
 use llvm_sys::{
@@ -17,6 +19,8 @@ use llvm_sys::{
     target_machine::*, transforms::pass_manager_builder::*,
 };
 use std::{
+    fs::File,
+    error::Error,
     collections::HashMap,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
@@ -323,6 +327,7 @@ impl Engine {
         if self.config.bootrom.callbacks.is_empty() {
             self.config.bootrom.end = 0;
         } else {
+            debug!("Bootrom not empty.");
             self.bootrom.add_bootrom(&self.config.bootrom.callbacks)
         }
     }
