@@ -63,6 +63,105 @@ typedef struct gemm_layer_struct {
 } gemm_layer;
 
 /**
+ * @struct linear_layer_struct
+ * @brief This structure contains all parameters necessary for a linear layer.
+ * The structure is based on the GEMM layer (which is a generalized linear layer)
+ * @var linear_layer_struct::M
+ * Dimension of matrix product MxK * KxN + MxN
+ * @var linear_layer_struct::K
+ * Dimension of matrix product MxK * KxN + MxN
+ * @var linear_layer_struct::N
+ * Dimension of matrix product MxK * KxN + MxN
+ * @var linear_layer_struct::K
+ * Dimension of matrix product MxK * KxN + MxN
+ * @var linear_layer_struct::TW
+ * Transpose matrix W
+ * @var linear_layer_struct::TX
+ * Transpose matrix X
+ * @var linear_layer_struct::TB
+ * Transpose matrix B
+ * @var linear_layer_struct::W
+ * Pointer to matrix W (weights)
+ * @var linear_layer_struct::X
+ * Pointer to matrix X (inputs)
+ * @var linear_layer_struct::B
+ * Pointer to matrix B (biases)
+ * @var linear_layer_struct::dtype
+ * Precision of the linear layer
+ */
+typedef struct linear_layer_struct {
+    uint32_t M;
+    uint32_t N;
+    uint32_t K;
+
+    uint32_t TW;
+    uint32_t TX;
+    uint32_t TB;
+
+    double *W;
+    double *X;
+    double *B;
+    precision_t dtype;
+    
+} lin_layer;
+
+/**
+ * @struct softmax_layer_struct
+ * @brief This structure contains all parameters necessary for a softmax layer.
+ * @var softmax_layer_struct::dim1
+ * First dimension of the input data matrix (and output data matrix)
+ * @var softmax_layer_struct::dim2
+ * Second dimension of the input data matrix (and output data matrix)
+ * @var softmax_layer_struct::D
+ * Dimension of input matix along which we perform SoftMax
+ * @var softmax_layer_struct::IN
+ * Pointer to input data matrix
+ * @var softmax_layer_struct::dtype
+ * Precision of the softmax layer
+ */
+typedef struct softmax_layer_struct {
+    uint32_t dim1;
+    uint32_t dim2;
+    uint32_t D;
+
+    double *IN;
+    double *OUT;
+    precision_t dtype;
+    
+} sm_layer;
+
+//TODO: add description here
+typedef struct celoss_layer_struct {
+    uint32_t IN_CH1;
+    uint32_t IN_CH2;
+    uint32_t OUT_CH;
+
+    uint32_t target;
+
+    double *IN;
+    precision_t dtype;
+    
+} cel_layer;
+
+//TODO: add description here
+typedef struct sgd_bw_layer_struct {
+    // dimensions
+    uint32_t IN_CH1;
+    uint32_t IN_CH2;
+    uint32_t OUT_CH; 
+
+    uint32_t target;
+    double *ACTIVATIONS;
+    double *INIT_BIAS_GRAD;
+    double *INIT_WEIGHT_GRAD;
+    // golden model output
+    double *OUT;
+
+    precision_t dtype;
+    
+} sgd_bw_layer;
+
+/**
  * @struct conv_layer_struct
  * @brief This structure contains all parameters necessary for Convolutional
  * layers
