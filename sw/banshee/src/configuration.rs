@@ -17,7 +17,7 @@ pub struct Configuration {
     #[serde(default)]
     pub bootrom: MemoryCallback,
     #[serde(default)]
-    pub memory: Vec<Memories>,
+    pub memory: Memories,
     #[serde(default)]
     pub address: Address,
     #[serde(default)]
@@ -57,7 +57,7 @@ impl Configuration {
             architecture: Architecture::new(num_clusters, num_cores, base_hartid),
             //dataset: Dataset::new(train_file_path, start_address),
             bootrom: Default::default(),
-            memory: vec![Default::default(); num_clusters],
+            memory: Default::default(),
             address: Default::default(),
             inst_latency: Default::default(),
             ssr: Default::default(),
@@ -95,7 +95,6 @@ impl Configuration {
             config.architecture.base_hartid = base_hartid;
         }
         if config.architecture.num_clusters == 0 || has_num_clusters {
-            config.memory.resize_with(num_clusters, Default::default);
             config.architecture.num_clusters = num_clusters;
         }
         config
@@ -124,8 +123,7 @@ impl Configuration {
 pub struct Memories {
     pub tcdm: Memory,
     pub dram: Memory,
-    pub periphs: MemoryCallback,
-    pub ext_tcdm: Vec<ExtTcdm>,
+    pub periphs: MemoryCallback
 }
 
 impl Default for Memories {
@@ -149,8 +147,7 @@ impl Default for Memories {
                 offset: 0x40000, 
                 latency: 2,
                 callbacks: vec![],
-            },
-            ext_tcdm: vec![],
+            }
         }
     }
 }
@@ -203,11 +200,6 @@ pub struct Callback {
     pub size: u32,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
-pub struct ExtTcdm {
-    pub start: u32,
-    pub offset: u32,
-}
 
 /// Struct to configure specific addresses
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
