@@ -1,0 +1,16 @@
+// view https://pest.rs/ for reference
+// grammar taken from https://github.com/lf-/readmem/blob/main/src/grammar.pest
+
+hex_digit = @{ '0'..'9' | 'a'..'f' | 'A'..'F' | ^"z" | ^"x" }
+bin_digit = @{ "0" | "1" | ^"x" | ^"z" }
+
+hex = @{ (hex_digit | "_")+ }
+bin = @{ (bin_digit | "_")+ }
+addr = ${ "@" ~ hex_digit+ }
+
+readmemh = _{ SOI ~ (addr | hex)+ ~ EOI }
+readmemb = _{ SOI ~ (addr | bin)+ ~ EOI }
+
+WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
+
+COMMENT = _{ ("/*" ~ (!"*/" ~ ANY)* ~ "*/") | (";" ~ (!"\n" ~ ANY)*) | ("//" ~ (!"\n" ~ ANY)*) }

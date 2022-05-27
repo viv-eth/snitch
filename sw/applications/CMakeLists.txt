@@ -19,7 +19,7 @@ if (CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 macro(add_snitch_application_executable name)
-    add_snitch_executable(${name} src/net_${name}.c data/data_${name}.h)
+    add_snitch_executable(${name} src/net_${name}.c src/mnist_data.c data/data_${name}.h include/mnist_data.h)
     add_custom_command(
         OUTPUT data/data_${name}.h
         COMMAND ./data_gen.py -c data/${name}_params.hjson
@@ -34,8 +34,8 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     include_directories(include data src/layers src/kernels src/utils)
     include_directories(${SNRUNTIME_INCLUDE_DIRS})
 
-    add_library(kernels src/kernels/batchnorm.c src/kernels/maxpool.c src/kernels/gemm.c src/kernels/conv2d.c)
-    add_library(layers src/layers/batchnorm_layer.c src/layers/maxpool_layer.c src/layers/conv2d_layer.c)
+    add_library(kernels src/kernels/batchnorm.c src/kernels/maxpool.c src/kernels/gemm.c src/kernels/conv2d.c src/kernels/linear.c src/kernels/softmax.c src/kernels/celoss.c src/kernels/mnist_network.c)
+    add_library(layers src/layers/batchnorm_layer.c src/layers/maxpool_layer.c src/layers/conv2d_layer.c src/layers/linear_layer.c src/layers/softmax_layer.c src/layers/celoss_layer.c src/layers/mnist.c)
     add_library(utils src/utils/utils.c)
 
     target_link_libraries(kernels ${SNITCH_RUNTIME})
@@ -47,13 +47,22 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_application_executable(conv2d)
     add_snitch_application_executable(gemm)
     add_snitch_application_executable(fusedconv)
+    add_snitch_application_executable(linear)
+    add_snitch_application_executable(softmax)
+    add_snitch_application_executable(celoss)
+    add_snitch_application_executable(mnist)
 
     set(SNITCH_TEST_PREFIX snApplications-)
 
-    add_snitch_raw_test_args(batchnorm batchnorm --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_cluster.yaml)
-    add_snitch_raw_test_args(maxpool maxpool --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_cluster.yaml)
-    add_snitch_raw_test_args(conv2d conv2d --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_cluster.yaml)
-    add_snitch_raw_test_args(gemm gemm --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_cluster.yaml)
-    add_snitch_raw_test_args(fusedconv fusedconv --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_cluster.yaml)
+    add_snitch_raw_test_args(batchnorm batchnorm --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(maxpool maxpool --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(conv2d conv2d --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(gemm gemm --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(fusedconv fusedconv --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(linear linear --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(softmax softmax --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(celoss celoss --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(mnist mnist --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    #multi_cluster_periph.yaml, snitch_cluster.yaml
 
 endif()
