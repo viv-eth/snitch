@@ -26,6 +26,9 @@ serde_yaml = "0.8"
 termion = "*"
 flexfloat = { path = "flexfloat" }
 csv = "1.0.0-beta.2"
+pest = "2.1.3"
+pest_derive = "2.1.0"
+thiserror = "1.0.21"
 
 [build-dependencies]
 cc = "1.0"
