@@ -98,12 +98,6 @@ impl Configuration {
             config.memory.resize_with(num_clusters, Default::default);
             config.architecture.num_clusters = num_clusters;
         }
-        // if has_train_file_path {
-        //     config.dataset.train_file_path = train_file_path;
-        // }
-        // if has_start_addr {
-        //     config.dataset.start_address = start_address;
-        // }
         config
     }
 
@@ -139,17 +133,20 @@ impl Default for Memories {
         Memories {
             tcdm: Memory {
                 start: 0x100000,
-                end: 0x120000,
+                size: 0x20000,
+                offset: 0x20000,
                 latency: 2,
             },
             dram: Memory {
                 start: 0x80000000,
-                end: 0x90000000,
+                size: 0x10000000,
+                offset: 0x0,
                 latency: 10,
             },
             periphs: MemoryCallback {
                 start: 0x20000,
-                end: 0x20000,
+                size: 0x10000,
+                offset: 0x40000, 
                 latency: 2,
                 callbacks: vec![],
             },
@@ -162,7 +159,8 @@ impl Default for Memories {
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct Memory {
     pub start: u32,
-    pub end: u32,
+    pub size: u32,
+    pub offset: u32,
     pub latency: u64,
 }
 
@@ -170,7 +168,8 @@ impl Default for Memory {
     fn default() -> Memory {
         Memory {
             start: 0,
-            end: u32::MAX,
+            size: u32::MAX,
+            offset: 0,
             latency: 1,
         }
     }
@@ -180,7 +179,8 @@ impl Default for Memory {
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct MemoryCallback {
     pub start: u32,
-    pub end: u32,
+    pub size: u32,
+    pub offset: u32,
     pub latency: u64,
     pub callbacks: Vec<Callback>,
 }
@@ -189,7 +189,8 @@ impl Default for MemoryCallback {
     fn default() -> Self {
         Self {
             start: 0,
-            end: u32::MAX,
+            size: u32::MAX,
+            offset: 0,
             latency: 1,
             callbacks: vec![],
         }
@@ -204,8 +205,8 @@ pub struct Callback {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct ExtTcdm {
-    pub cluster: u32,
     pub start: u32,
+    pub offset: u32,
 }
 
 /// Struct to configure specific addresses
@@ -283,28 +284,3 @@ impl Default for Architecture {
         }
     }
 }
-
-// // INFO: VIVI EDIT for dataset field
-// #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
-// pub struct Dataset {
-//     pub train_file_path: String,
-//     pub start_address: u64,
-// }
-
-// impl Dataset {
-//     pub fn new(train_file_path: String, start_address: u64) -> Self {
-//         Self {
-//             train_file_path: train_file_path,
-//             start_address: start_address,
-//         }
-//     }
-// }
-
-// impl Default for Dataset {
-//     fn default() -> Dataset {
-//         Dataset {
-//             train_file_path: "".to_string(),
-//             start_address: 0x0,
-//         }
-//     }
-// }
