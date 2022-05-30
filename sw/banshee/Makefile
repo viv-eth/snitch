@@ -18,7 +18,7 @@ LOG_TOTAL ?= /tmp/banshee_tests_total
 TARGET_DIR ?= $(shell cargo metadata --format-version 1 | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p')
 BANSHEE ?= $(TARGET_DIR)/debug/banshee
 
-SNITCH_LOG ?= info
+SNITCH_LOG ?= trace
 
 test: test-info $(TEST_TARGETS)
 	@echo

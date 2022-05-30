@@ -299,10 +299,11 @@ fn main() -> Result<()> {
     */
     // First we check whether a file containing the training data (without labels)
     // has been provided.
-    if has_train_data {
-        
+    /*if has_train_data {
+        trace!("Entering DRAM preloading");
         let train_data_path = matches.value_of("train-data-file-path").unwrap();
         // we save the contents of the file or throw an error if something went wrong
+        // TODO: find more efficient alternative to read string
         let train_data_contents = fs::read_to_string(train_data_path)
             .expect("Something went wrong reading the file");
         // now we read in the contents into a HashMap<u64, u32> as <address, value> pair
@@ -320,11 +321,11 @@ fn main() -> Result<()> {
         
             trace!("address = 0x{:x}, HEX value = 0x{:x}, float value = {}", k, v, float);
         }
-    }
+    }*/
 
     // First we check whether a file containing the training data (without labels)
     // has been provided.
-    if has_train_labels {
+    /*if has_train_labels {
         
         let train_labels_path = matches.value_of("train-labels-file-path").unwrap();
         // we save the contents of the file or throw an error if something went wrong
@@ -342,7 +343,7 @@ fn main() -> Result<()> {
         for (k, v) in mem.iter(){
             trace!("address = 0x{:x}, HEX value = 0x{:x}, value = {}", k, v, v);
         }
-    }
+    }*/
 
     // Write the module to disk if requested.
     if let Some(path) = matches.value_of("emit-llvm") {

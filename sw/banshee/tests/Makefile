@@ -4,6 +4,8 @@
 
 include runtime/runtime.mk
 
+# VIVI: testing MNIST binary location TODO: remove
+all: bin/mnist
 all: bin/large_lfsr
 all: bin/dummy
 all: bin/frep_single
@@ -23,6 +25,7 @@ all: bin/far_jump
 all: bin/atomics
 all: bin/wfi
 all: bin/multi_cluster_periph
+
 
 bin/%: %.c
 	mkdir -p $(shell dirname $@) dump

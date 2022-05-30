@@ -8,6 +8,7 @@
 //! `engine.rs` and the `tran.rs` to be adapted accordingly.
 
 use std::io::prelude::*;
+use std::iter;
 
 /// A struct to store the whole system configuration
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -18,7 +19,7 @@ pub struct Configuration {
     pub bootrom: MemoryCallback,
     #[serde(default)]
     pub memory: Memories,
-    #[serde(default)]
+    #[serde(default)]   
     pub address: Address,
     #[serde(default)]
     pub inst_latency: std::collections::HashMap<String, u64>,
@@ -86,6 +87,7 @@ impl Configuration {
         let mut config: Configuration = if name.to_lowercase().contains("json") {
             serde_json::from_str(&config).expect("Error while reading json")
         } else {
+            //debug!("{:?}", &config);
             serde_yaml::from_str(&config).expect("Error while reading yaml")
         };
         if has_num_cores {
@@ -95,6 +97,7 @@ impl Configuration {
             config.architecture.base_hartid = base_hartid;
         }
         if config.architecture.num_clusters == 0 || has_num_clusters {
+            // INFO: this shit might not be working
             config.architecture.num_clusters = num_clusters;
         }
         config
@@ -168,6 +171,40 @@ impl Default for Memory {
             size: u32::MAX,
             offset: 0,
             latency: 1,
+        }
+    }
+}
+
+// Changes made for multicluster configuration
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct MultiClusterMemory {
+    pub tcdm: Memory,
+    pub dram: Memory,
+    pub periphs: MemoryCallback
+}
+
+impl Default for MultiClusterMemory {
+    fn default() -> MultiClusterMemory {
+        MultiClusterMemory {
+            tcdm: Memory {
+                start: 0x100000,
+                size: 0x20000,
+                offset: 0x20000,
+                latency: 2,
+            },
+            dram: Memory {
+                start: 0x80000000,
+                size: 0x10000000,
+                offset: 0x0,
+                latency: 10,
+            },
+            periphs: MemoryCallback {
+                start: 0x20000,
+                size: 0x10000,
+                offset: 0x40000, 
+                latency: 2,
+                callbacks: vec![],
+            }
         }
     }
 }

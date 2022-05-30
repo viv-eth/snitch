@@ -45,7 +45,7 @@ macro(add_snitch_executable name)
     # Run target for banshee
     if (SNITCH_RUNTIME STREQUAL "snRuntime-banshee")
         add_custom_target( run-banshee-${name}
-            COMMAND ${SNITCH_BANSHEE} --no-opt-llvm --no-opt-jit ${RUN_BANSHEE_ARGS} --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_multi_cluster.yaml --trace $<TARGET_FILE:${name}> > $<TARGET_FILE:${name}>.trace
+            COMMAND ${SNITCH_BANSHEE} --no-opt-llvm --no-opt-jit ${RUN_BANSHEE_ARGS} --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml --trace $<TARGET_FILE:${name}> > $<TARGET_FILE:${name}>.trace
             COMMAND cat $<TARGET_FILE:${name}>.trace | ${SPIKE_DASM} > $<TARGET_FILE:${name}>.trace.txt
             COMMAND awk -F\" \" '{print>\"${name}\"$$3\".txt\"}' $<TARGET_FILE:${name}>.trace.txt
             DEPENDS $<TARGET_FILE:${name}>)
@@ -100,7 +100,7 @@ macro(add_snitch_test name)
         message(STATUS "Adding test: ${name}")
         add_snitch_test_executable(${ARGV})
         if (SNITCH_RUNTIME STREQUAL "snRuntime-banshee")
-            add_snitch_test_args(${name} ${name}-snitch --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/snitch_multi_cluster.yaml)
+            add_snitch_test_args(${name} ${name}-snitch --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
         elseif (SNITCH_SIMULATOR)
             add_snitch_test_rtl(${name})
         endif()
