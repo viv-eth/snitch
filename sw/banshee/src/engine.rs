@@ -427,6 +427,7 @@ impl Engine {
                 let base_hartid = self.base_hartid + j * self.num_cores;
                 Cpu::new(
                     self,
+                    &tcdms[j][0],
                     &tcdm_ptrs,
                     base_hartid + i,
                     self.num_cores,
@@ -628,6 +629,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
     /// Create a new CPU in a default state.
     pub fn new(
         engine: &'a Engine,
+        tcdm_cluster: &'b u32,
         tcdm_ptr: &'b Vec<&'b u32>,
         hartid: usize,
         num_cores: usize,
@@ -645,6 +647,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
                 hartid,
                 engine.config.bootrom.start,
             ),
+            tcdm_cluster,
             tcdm_ptr,
             hartid,
             num_cores,
@@ -658,6 +661,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
     }
 
     fn binary_load(&self, addr: u32, size: u8) -> u32 {
+        //debug!("Binary Load starting");
         match addr {
             x if x == self.engine.config.address.tcdm_start => {
                 self.engine.config.memory.tcdm.start + self.engine.config.memory.tcdm.offset * self.cluster_id as u32
@@ -682,6 +686,8 @@ impl<'a, 'b> Cpu<'a, 'b> {
             x if (0..self.engine.num_clusters)
                 .any(|i| x >= (self.engine.config.memory.tcdm.start + self.engine.config.memory.tcdm.offset * i as u32) && x < (self.engine.config.memory.tcdm.start + self.engine.config.memory.tcdm.offset * i as u32 + self.engine.config.memory.tcdm.size)) =>
             {
+                debug!("TCDM Binary Load");
+                debug!("Binary load address: 0x{:x}", x);
                 let id = (0..self.engine.num_clusters)
                     .position(|i| addr >= (self.engine.config.memory.tcdm.start + self.engine.config.memory.tcdm.offset * i as u32) && addr < (self.engine.config.memory.tcdm.start + self.engine.config.memory.tcdm.offset * i as u32 + self.engine.config.memory.tcdm.size))
                     .unwrap();
@@ -696,6 +702,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
             x if x >= (self.engine.config.memory.periphs.start + self.engine.config.memory.periphs.offset)
                 && x < (self.engine.config.memory.periphs.start + self.engine.config.memory.periphs.offset + self.engine.config.memory.periphs.size) =>
             {
+                debug!("Peripheral Binary Load");
                 self.engine.peripherals.load(
                     self.cluster_id,
                     addr - (self.engine.config.memory.periphs.start + self.engine.config.memory.periphs.offset),
@@ -704,6 +711,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
             }
             // Bootrom
             x if x >= self.engine.config.bootrom.start && x < (self.engine.config.bootrom.start + self.engine.config.bootrom.size)=> {
+                debug!("Bootrom Binary Load");
                 self.engine
                     .bootrom
                     .load(addr - self.engine.config.bootrom.start)

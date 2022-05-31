@@ -1091,7 +1091,7 @@ impl<'a> InstructionTranslator<'a> {
 
         // Check if the address is in the TCDM, and emit a fast access.
         LLVMPositionBuilderAtEnd(self.builder, bb_valid);
-        let (is_tcdm, tcdm_ptr[cluster_id]) = self.emit_tcdm_check(addr);
+        let (is_tcdm, tcdm_ptr) = self.emit_tcdm_check(addr);
         let mut bb_yes = LLVMCreateBasicBlockInContext(self.section.engine.context, NONAME);
         let mut bb_no = LLVMCreateBasicBlockInContext(self.section.engine.context, NONAME);
         LLVMInsertExistingBasicBlockAfterInsertBlock(self.builder, bb_yes);
