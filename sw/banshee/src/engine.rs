@@ -371,15 +371,21 @@ impl Engine {
                         as usize
                 ];
 
+                debug!("Cluster {} TCDM addr range: [0x{:x},0x{:x}]", i, self.config.memory[i].tcdm.start, self.config.memory[i].tcdm.end);
                 for (&addr, &value) in self.memory.lock().unwrap().iter() {
+                    debug!("addr = 0x{:x}, value = 0x{:x}", addr, value);
                     if (addr as u32) >= self.config.memory[i].tcdm.start
                         && (addr as u32) < self.config.memory[i].tcdm.end
-                    {
+                    {   
+                        debug!("Entering TCDM allocation section.");
+                        debug!("Writing value into position: 0x{:x}", ((addr - (self.config.memory[i].tcdm.start as u64)) / 4) as usize);
                         tcdm[((addr - (self.config.memory[i].tcdm.start as u64)) / 4) as usize] =
                             value;
                     }
                 }
 
+                debug!("TCDM vector [{}]:", ((self.config.memory[i].tcdm.end - self.config.memory[i].tcdm.start) / 4) as usize);
+                debug!("{:?}", tcdm);
                 tcdm
             })
             .collect();
