@@ -25,7 +25,7 @@ impl Bootroms {
 
     pub fn add_bootrom(&mut self, callbacks: &Vec<Callback>) {
         //info!("Available bootroms: {}", self.bootrom_types[2].get_name());
-        println!("{:?}", callbacks);
+        
         self.bootrom.push(
             callbacks
                 .iter()
@@ -165,7 +165,7 @@ impl Default for BootromCluster {
             tcdm_offset: AtomicU32::new(0x0),
             global_mem_start: AtomicU64::new(0x80000000),
             global_mem_end: AtomicU64::new(0x100000000),
-            cluster_count: AtomicU32::new(2),
+            cluster_count: AtomicU32::new(1),
             s1_quadrant_count: AtomicU32::new(1),
             clint_base: AtomicU32::new(0xffff0000),
         }
