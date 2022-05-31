@@ -10,3 +10,10 @@ transcript
 
 gmon.out
 RISCV/
+sw/applications/build/
+sw/applications/MNIST/
+sw/applications/snRuntime/CMakeFiles/
+sw/applications/snRuntime/CTestTestfile.cmake
+sw/applications/demofile2.txt
+sw/applications/Makefile
+sw/applications/data/.data_gemm.h.swp
