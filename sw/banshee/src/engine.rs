@@ -373,7 +373,7 @@ impl Engine {
 
                 debug!("Cluster {} TCDM addr range: [0x{:x},0x{:x}]", i, self.config.memory[i].tcdm.start, self.config.memory[i].tcdm.end);
                 for (&addr, &value) in self.memory.lock().unwrap().iter() {
-                    debug!("addr = 0x{:x}, value = 0x{:x}", addr, value);
+                    //debug!("addr = 0x{:x}, value = 0x{:x}", addr, value);
                     if (addr as u32) >= self.config.memory[i].tcdm.start
                         && (addr as u32) < self.config.memory[i].tcdm.end
                     {   
@@ -680,7 +680,8 @@ impl<'a, 'b> Cpu<'a, 'b> {
             // TCDM
             x if x >= self.engine.config.memory[self.cluster_id].tcdm.start
                 && x < self.engine.config.memory[self.cluster_id].tcdm.end =>
-            {
+            {   
+                debug!("TCDM binary load");
                 let tcdm_addr = addr - self.engine.config.memory[self.cluster_id].tcdm.start;
                 let word_addr = tcdm_addr / 4;
                 let word_offs = tcdm_addr - 4 * word_addr;
@@ -696,6 +697,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
                 .iter()
                 .any(|m| x >= m.tcdm.start && x < m.tcdm.end) =>
             {
+                debug!("TCDM external binary load");
                 let id = self
                     .engine
                     .config
@@ -714,6 +716,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
             x if x >= self.engine.config.memory[self.cluster_id].periphs.start
                 && x < self.engine.config.memory[self.cluster_id].periphs.end =>
             {
+                debug!("Peripherals binary load");
                 self.engine.peripherals.load(
                     self.cluster_id,
                     addr - self.engine.config.memory[self.cluster_id].periphs.start,
@@ -722,6 +725,7 @@ impl<'a, 'b> Cpu<'a, 'b> {
             }
             // Bootrom
             x if x >= self.engine.config.bootrom.start && x < self.engine.config.bootrom.end => {
+                debug!("Bootrom binary load");
                 self.engine
                     .bootrom
                     .load(addr - self.engine.config.bootrom.start)
