@@ -14,9 +14,6 @@ pub struct Bootroms {
 
 impl Bootroms {
     pub fn new() -> Self {
-        // info!("Available bootroms: {}", get_bootrom_types()[0].get_name());
-        // info!("Available bootroms: {}", get_bootrom_types()[1].get_name());
-        // info!("Available bootroms: {}", get_bootrom_types()[2].get_name());
         Self {
             bootrom_types: get_bootrom_types(),
             bootrom: Default::default(),

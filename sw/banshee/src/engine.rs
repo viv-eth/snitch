@@ -372,23 +372,23 @@ impl Engine {
                         as usize
                 ];
 
-                debug!("Cluster {}: TCDM start addr = 0x{:x}, TCDM offset = 0x{:x}, TCDM size = 0x{:x}", i, self.config.memory.tcdm.start, self.config.memory.tcdm.offset, self.config.memory.tcdm.size);
-                //debug!("TCDM address range: [0x{:x},0x{:x}]", self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32, self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32 + self.config.memory.tcdm.size);
+                debug!("Cluster {} TCDM addr range: [0x{:x},0x{:x}]", i, self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32, self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32 + self.config.memory.tcdm.size);
 
                 for (&addr, &value) in self.memory.lock().unwrap().iter() {
-                    //debug!("Memory Address: 0x{:x}", addr);
-                    //debug!("TCDM start address: 0x{:x}", self.config.memory.dram.start + self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32);
-                    //debug!("TCDM start Address: {}", self.config.memory.dram.start + self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32);
+                    //debug!("addr = 0x{:x}, value = 0x{:x}", addr, value);
                     if (addr as u32) >= (self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32)
-                        //&& (addr as u32) < self.config.memory[i].tcdm.end
                         && (addr as u32) < (self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32 + self.config.memory.tcdm.size)
                     {   
-                        debug!("Entering TCDM inits.");
+                        debug!("Entering TCDM allocation section.");
+                        debug!("Writing value into position: 0x{:x}", ((addr - ((self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32) as u64 )) / 4) as usize);
                         tcdm[((addr - ((self.config.memory.tcdm.start + self.config.memory.tcdm.offset * i as u32) as u64 )) / 4) as usize] =
                             value;
-                            debug!("TCDM for cluster {}: addr = 0x{:x}, value = 0x{:x}", i, addr, value);
+                        
                     }
                 }
+
+                debug!("TCDM vector size = [{}]:", ((self.config.memory.tcdm.size) / 4) as usize);
+                //debug!("{:?}", tcdm);
 
                 tcdm
             })

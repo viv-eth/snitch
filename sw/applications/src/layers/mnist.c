@@ -108,6 +108,8 @@ void mnist(const network_t *n){
     //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // }
 
+    printf("I am alive and my memory range is: [0x%p, 0x%p]", ptr_start, ptr_end);
+
     // For every new epoch we load the (updated) weights
     // and biases into the cluster 0 memory
     // TODO: add the epochs
