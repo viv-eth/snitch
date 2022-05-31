@@ -49,6 +49,7 @@ int main(){
     mini_mnist_t.images = (void *)mini_mnist_images_dram;
     mini_mnist_t.targets = (void *)mini_mnist_labels_dram;
     
+    //printf("Entering the network\n");
     mnist(&mini_mnist_t);
 
     //printf("after doin network shit\n");
