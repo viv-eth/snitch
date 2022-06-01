@@ -210,7 +210,8 @@ struct BootromMultiCluster {
     clint_base: AtomicU32,
 }
 
-// INFO: this part is taken from BootrmOccamy and was not modified
+// INFO: this part is taken from BootrmOccamy, except that we are defining 
+// multiple clusters 
 impl Default for BootromMultiCluster {
     fn default() -> Self {
         Self {
@@ -222,8 +223,8 @@ impl Default for BootromMultiCluster {
             tcdm_offset: AtomicU32::new(0x40000),
             global_mem_start: AtomicU64::new(0x80000000),
             global_mem_end: AtomicU64::new(0x100000000),
-            cluster_count: AtomicU32::new(2),
-            s1_quadrant_count: AtomicU32::new(1),
+            cluster_count: AtomicU32::new(24),
+            s1_quadrant_count: AtomicU32::new(6),
             clint_base: AtomicU32::new(0x4000000),
         }
     }

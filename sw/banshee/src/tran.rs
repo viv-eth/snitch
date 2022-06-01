@@ -1084,7 +1084,7 @@ impl<'a> InstructionTranslator<'a> {
             ],
         );
         LLVMBuildRetVoid(self.builder);
-        ../../banshee
+        
         let phi_size = self.section.elf.tcdm_range.len() + 2;
         let mut values: Vec<LLVMValueRef> = Vec::with_capacity(phi_size);
         let mut bbs: Vec<LLVMBasicBlockRef> = Vec::with_capacity(phi_size);
