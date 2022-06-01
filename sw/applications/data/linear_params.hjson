@@ -1,0 +1,16 @@
+// Copyright 2020 ETH Zurich and University of Bologna.
+// Solderpad Hardware License, Version 0.51, see LICENSE for details.
+// SPDX-License-Identifier: SHL-0.51
+
+// Parameters for a linear layer
+
+{
+    kernel: "Linear"
+    M: 10,
+    N: 1,
+    K: 784,
+    transpose_W: false,
+    transpose_X: false,
+    transpose_B: false,
+    prec: 64
+}

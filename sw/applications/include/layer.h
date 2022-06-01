@@ -105,6 +105,24 @@ typedef struct linear_layer_struct {
     
 } lin_layer;
 
+// TODO: add description
+
+typedef struct simple_layer_struct {
+    
+    uint32_t M;
+    uint32_t N;
+    uint32_t K;
+
+    double *A;
+    double *B;
+    double *C;
+
+    uint32_t ALPHA;
+
+    precision_t dtype;
+    
+} simpl_layer;
+
 /**
  * @struct softmax_layer_struct
  * @brief This structure contains all parameters necessary for a softmax layer.

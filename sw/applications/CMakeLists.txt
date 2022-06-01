@@ -34,8 +34,8 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     include_directories(include data src/layers src/kernels src/utils)
     include_directories(${SNRUNTIME_INCLUDE_DIRS})
 
-    add_library(kernels src/kernels/batchnorm.c src/kernels/maxpool.c src/kernels/gemm.c src/kernels/conv2d.c src/kernels/linear.c src/kernels/softmax.c src/kernels/celoss.c src/kernels/mnist_network.c)
-    add_library(layers src/layers/batchnorm_layer.c src/layers/maxpool_layer.c src/layers/conv2d_layer.c src/layers/linear_layer.c src/layers/softmax_layer.c src/layers/celoss_layer.c src/layers/mnist.c)
+    add_library(kernels src/kernels/batchnorm.c src/kernels/maxpool.c src/kernels/gemm.c src/kernels/conv2d.c src/kernels/linear.c src/kernels/softmax.c src/kernels/celoss.c src/kernels/mnist_network.c src/kernels/simple.c)
+    add_library(layers src/layers/batchnorm_layer.c src/layers/maxpool_layer.c src/layers/conv2d_layer.c src/layers/linear_layer.c src/layers/softmax_layer.c src/layers/celoss_layer.c src/layers/mnist.c src/layers/simple_layer.c)
     add_library(utils src/utils/utils.c)
 
     target_link_libraries(kernels ${SNITCH_RUNTIME})
@@ -51,6 +51,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_application_executable(softmax)
     add_snitch_application_executable(celoss)
     add_snitch_application_executable(mnist)
+    add_snitch_application_executable(simple)
 
     set(SNITCH_TEST_PREFIX snApplications-)
 
@@ -63,6 +64,6 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_raw_test_args(softmax softmax --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     add_snitch_raw_test_args(celoss celoss --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     add_snitch_raw_test_args(mnist mnist --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
-    #multi_cluster_periph.yaml, snitch_cluster.yaml
+    add_snitch_raw_test_args(simple simple --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
 
 endif()

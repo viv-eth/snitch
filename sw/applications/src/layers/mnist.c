@@ -81,7 +81,7 @@ void mnist(const network_t *n){
     ptr += core_sync_flag_size;
     uint32_t *last_core_ff = ptr;
     ptr += last_core_ff_size;
-    uint32_t is_last_core = ptr;
+    uint32_t *is_last_core = ptr;
     ptr += is_last_core_size;
     double *max= ptr; // zero initialized
     ptr += max_size;

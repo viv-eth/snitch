@@ -17,3 +17,8 @@ sw/applications/snRuntime/CTestTestfile.cmake
 sw/applications/demofile2.txt
 sw/applications/Makefile
 sw/applications/data/.data_gemm.h.swp
+snitch.sh
+bender
+sw/applications/snRuntime/Makefile
+sw/applications/snRuntime/cmake_install.cmake
+sw/applications/snRuntime/common.ld

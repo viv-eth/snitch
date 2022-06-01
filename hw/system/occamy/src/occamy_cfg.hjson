@@ -7,29 +7,29 @@
     is_remote_quadrant: false,
     remote_quadrants: [],
     quadrant_pre_xbar: {
-      max_slv_trans: 64,
-      max_mst_trans: 64,
+      max_slv_trans: 4,
+      max_mst_trans: 4,
       fall_through: false,
     },
     pre_xbar_slv_id_width_no_rocache: 3,
     wide_xbar: {
-      max_slv_trans: 64,
-      max_mst_trans: 64,
+      max_slv_trans: 32,
+      max_mst_trans: 32,
       fall_through: false,
     },
     quadrant_inter_xbar: {
-      max_slv_trans: 64,
-      max_mst_trans: 64,
+      max_slv_trans: 32,
+      max_mst_trans: 32,
       fall_through: false,
     },
     hbm_xbar: {
-      max_slv_trans: 128,
-      max_mst_trans: 128,
+      max_slv_trans: 32,
+      max_mst_trans: 32,
       fall_through: false,
     },
     narrow_xbar: {
-      max_slv_trans: 32,
-      max_mst_trans: 32,
+      max_slv_trans: 8,
+      max_mst_trans: 8,
       fall_through: false,
     },
     cuts: {
@@ -78,16 +78,16 @@
       periph_axi_lite_narrow_timer_cfg: 1,
     }
     txns: {
-      wide_and_inter: 128,
-      wide_to_hbm: 128,
-      narrow_and_wide: 16,
+      wide_and_inter: 4,
+      wide_to_hbm: 4,
+      narrow_and_wide: 4,
       rmq: 4,
     }
     narrow_xbar_slv_id_width: 4,
     narrow_xbar_user_width: 5, // clog2(total number of clusters)
     nr_s1_quadrant: 6,
     s1_quadrant: {
-      nr_clusters: 4,
+      nr_clusters: 1,
       // number of pending transactions on the narrow/wide network
       narrow_trans: 32,
       wide_trans: 32,
@@ -96,18 +96,8 @@
           width: 1024,
           count: 128,
           sets: 2,
-          max_trans: 32,
+          max_trans: 8,
           address_regions: 4,
-      }
-      narrow_tlb_cfg: {
-          max_trans: 32,
-          l1_num_entries: 8,
-          l1_cut_ax: true,
-      }
-      wide_tlb_cfg: {
-          max_trans: 32,
-          l1_num_entries: 8,
-          l1_cut_ax: true,
       }
       wide_xbar: {
         max_slv_trans: 32,
@@ -145,11 +135,8 @@
         dma_req_fifo_depth: 8,
         narrow_trans: 4,
         wide_trans: 32,
-        dma_user_width: 1,
         // We don't need Snitch debugging in Occamy
         enable_debug: false,
-        // We don't need Snitch (core-internal) virtual memory support
-        vm_support: false,
         // Memory configuration inputs
         sram_cfg_expose: true,
         sram_cfg_fields: {
@@ -269,7 +256,7 @@
                 length: 4096, // 4 kiB 0x1000
             }
         ],
-        axi_lite_narrow_peripherals: [
+        regbus_peripherals: [
             {
                 name: "soc_ctrl",
                 address: 33554432, // 0x0200_0000
@@ -316,11 +303,6 @@
                 length: 4096, // 4 kiB 0x1000
             },
             {
-                name: "hbm_xbar_cfg",
-                address: 33583104, // 0x0200_7000
-                length: 4096, // 4 kiB 0x1000
-            },
-            {
                 name: "spim",
                 address: 50331648, // 0x0300_0000
                 length: 131072, // 4 kiB 0x2_0000
@@ -353,7 +335,7 @@
       address_mm: 1207959552, // 0x4800_0000
       length: 671088640, // 640 MiB 0x2800_0000
     },
-    spm_narrow: {
+    spm: {
       address: 1879048192, // 0x7000_0000
       length: 524288, // 512 kiB 0x8_0000
     },

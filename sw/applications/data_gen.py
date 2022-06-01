@@ -52,6 +52,9 @@ def emit_header_file(layer_type: str, **kwargs):
     elif layer_type == 'FusedConv':
         file = file_path / 'data_fusedconv.h'
         emit_str += emit_fusedconv(**kwargs)
+    elif layer_type == 'Simple':
+        file = file_path / 'data_simple.h'
+        emit_str += emit_simple_layer(**kwargs)
     with file.open('w') as f:
         f.write(emit_str)
 
@@ -132,6 +135,43 @@ def emit_GEMM_layer(name='gemm', **kwargs):
 
     return layer_str
 
+def emit_simple_layer(name='simple', **kwargs):
+    
+    mat_A = kwargs['A']
+    mat_B = kwargs['B']
+    mat_C = kwargs['C']
+    result = kwargs['result']
+
+    m = kwargs['M']
+    n = kwargs['N']
+    k = kwargs['K']
+
+    layer_str = ''
+    layer_str += '#include "layer.h"\n\n'
+    layer_str += f'simpl_layer {name}_l = {{\n'
+    layer_str += f'\t.M = {m},\n'
+    layer_str += f'\t.N = {n},\n'
+    layer_str += f'\t.K = {k},\n'
+    layer_str += f'\t.ALPHA = {kwargs["alpha"]},\n'
+    layer_str += f'\t.dtype = FP{kwargs["prec"]}\n'
+    layer_str += '};\n\n\n'
+
+    ctypes = {
+        '64': 'double',
+        '32': 'float',
+        '16': '__fp16',
+        '8': 'char'
+    }
+
+    dtype = ctypes[str(kwargs['prec'])]
+
+    layer_str += f'static {dtype} {name}_A_dram [{m}][{k}] = ' + array_to_cstr(mat_A) + ';\n\n\n'
+    layer_str += f'static {dtype} {name}_B_dram [{k}][{n}] = ' + array_to_cstr(mat_B) + ';\n\n\n'
+    layer_str += f'static {dtype} {name}_C_dram [{m}][{n}] = ' + array_to_cstr(mat_C) + ';\n\n\n'
+    layer_str += f'static {dtype} {name}_result[{m}][{n}] __attribute__((section(".data")));\n\n'
+    layer_str += f'static {dtype} {name}_checksum[{m}] = ' + array_to_cstr(torch.sum(result, dim=-1)) + ';\n\n\n'
+
+    return layer_str
 
 def emit_batchnorm_layer(name='batchnorm', **kwargs):
 
@@ -441,6 +481,31 @@ def main():
         }
 
         emit_header_file('GEMM', **kwargs)
+
+    elif param['kernel'] == 'Simple':
+        
+        np.random.seed(42)
+        torch.manual_seed(42)
+
+        mat_A = torch.randn(param['M'], param['K'], requires_grad=False, dtype=dtype)
+        mat_B = torch.randn(param['K'], param['N'], requires_grad=False, dtype=dtype)
+        mat_C = torch.randn(param['M'], param['N'], requires_grad=False, dtype=dtype)
+
+        result = param['alpha'] * mat_C + torch.matmul(mat_A, mat_B)
+
+        kwargs = {
+            'A': mat_A,
+            'B': mat_B,
+            'C': mat_C,
+            'result': result,
+            'M': param['M'],
+            'N': param['N'],
+            'K': param['K'],
+            'alpha': param['alpha'],
+            'prec': param['prec']
+        }
+
+        emit_header_file('Simple', **kwargs)
 
     elif param['kernel'] == 'BatchNorm':
         ifmap = torch.randn(1, param['channels']['in'],
