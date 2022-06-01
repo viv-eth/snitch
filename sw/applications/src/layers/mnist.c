@@ -23,10 +23,6 @@
 
 void mnist(const network_t *n){
 
-    //printf("y u not doin me a print??\n");
-
-    printf("hello it'sa meee\n");
-
     uint32_t cluster_num = snrt_cluster_num(); // returns 2
     uint32_t cluster_core_num = snrt_cluster_core_num(); // returns 9
     uint32_t cluster_id = snrt_cluster_idx();
@@ -35,7 +31,7 @@ void mnist(const network_t *n){
     uint32_t compute_id = snrt_cluster_compute_core_idx();
     uint32_t global_compute_id = snrt_global_core_idx(); // Core ID of each core on all clusters
 
-    printf("Cluster Num: %u", cluster_num);
+    //printf("Cluster Num: %u\n", cluster_num);
 
     uint32_t IN_CH = n->IN_CH1*n->IN_CH2; // number of total input channels for a flattened image
     // determine a load stride for loading chunks of data from DRAM to local cluster memory
@@ -105,14 +101,14 @@ void mnist(const network_t *n){
     double *weights = ptr; // weight GRADIENTS zero initialized
     ptr += weight_mat_size;
     void *ptr_end = (double *)snrt_cluster_memory().end;
-    // if(compute_id == 0){   
-    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
-    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
-    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
-    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
-    // }
+    if(compute_id == 0){   
+        printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+        printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+        printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+        printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    }
 
-    printf("I am alive and my memory range is: [0x%p, 0x%p]", ptr_start, ptr_end);
+    //printf("I am alive and my memory range is: [0x%p, 0x%p]\n", ptr_start, ptr_end);
 
 //     // For every new epoch we load the (updated) weights
 //     // and biases into the cluster 0 memory

@@ -26,7 +26,7 @@ address:
   cl_clint: 0x120030
 architecture:
   num_cores: 9
-  num_clusters: 2
+  num_clusters: 24
   base_hartid: 0
 bootrom:
   callbacks:
