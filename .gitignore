@@ -22,3 +22,4 @@ bender
 sw/applications/snRuntime/Makefile
 sw/applications/snRuntime/cmake_install.cmake
 sw/applications/snRuntime/common.ld
+hw/system/occamy/test

@@ -21,10 +21,15 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         register double acc = biases[ldB * out];
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             acc += image[in] * weights[out * ldW + in];
+            // TODO: for some reason the weights evaluate to -inf
+            // when they should be zero --> fix the bug
+            if(compute_id + out * ldB > OUT_CH * 5){
+                acc = 0;
+            }
         }
         // OUT is accumulated in biases 
         biases[ldB * out] = acc;
-        //printf("acc[%u] = %f\n", compute_id + out * ldB, acc);    
+        printf("acc[%u] = %f\n", compute_id + out * ldB, acc);   
     }
     snrt_cluster_hw_barrier();
 
