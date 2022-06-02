@@ -736,8 +736,8 @@ impl<'a, 'b> Cpu<'a, 'b> {
             // DRAM
             _ => {
                 // Map all remaining addresses to the hash map but throw a warning if we read outside the memory map
-                if addr < self.engine.config.memory[self.cluster_id].dram.start
-                    || addr >= self.engine.config.memory[self.cluster_id].dram.end
+                if addr < self.engine.config.memory.dram.start
+                    || addr >= self.engine.config.memory.dram.start + self.engine.config.memory.dram.size
                 {
                     warn!(
                         "Hart {} (pc=0x{:08x}) is reading outside the memory map at 0x{:08x}",
@@ -869,8 +869,8 @@ impl<'a, 'b> Cpu<'a, 'b> {
             // DRAM
             _ => {
                 // Map all remaining addresses to the hash map but throw a warning if we write outside the memory map
-                if addr < self.engine.config.memory[self.cluster_id].dram.start
-                    || addr >= self.engine.config.memory[self.cluster_id].dram.end
+                if addr < self.engine.config.memory.dram.start
+                    || addr >= self.engine.config.memory.dram.start + self.engine.config.memory.dram.size
                 {
                     warn!(
                         "Hart {} (pc=0x{:08x}) is writing outside the memory map at 0x{:08x}",
