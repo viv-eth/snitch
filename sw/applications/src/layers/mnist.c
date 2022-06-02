@@ -126,11 +126,12 @@ void mnist(const network_t *n){
                 
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
+                printf("dma done\n");
 
     }
 
     snrt_cluster_hw_barrier();
-    // printf("I passed the HW barrier.\n");
+    printf("I passed the HW barrier.\n");
 
     // if (snrt_is_dm_core() && cluster_id == 1) {
     //     // On cluster 1 we load the labels which are needed for BP
@@ -164,22 +165,22 @@ void mnist(const network_t *n){
             // TODO: the printf statements are added so that computation
             // does not start before DMA transfer is done --> find the bug!!
             printf("Starting computation\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
-            printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
+            // printf("Wait...\n");
             // determine the row offset at which current compute cluster is
             volatile uint32_t W_offset = compute_id * IN_CH;
             volatile uint32_t b_offset = compute_id;
@@ -214,7 +215,9 @@ void mnist(const network_t *n){
             benchmark_get_cycle();
             //printf("Feedforward done. \n");
 
-        } else if(!snrt_is_compute_core() && !snrt_cluster_compute_core_idx()) {
+        } else {
+            snrt_cluster_hw_barrier();
+            snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
         }
 

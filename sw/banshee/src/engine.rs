@@ -396,6 +396,7 @@ impl Engine {
 
         // TCDM pointer for every cluster
         let tcdm_ptrs: Vec<_> = (0..self.num_clusters).map(|i| &tcdms[i][0]).collect();
+        debug!("tcdm_ptrs = {:?}:", tcdm_ptrs);
 
         // Allocate some barriers.
         let barriers: Vec<_> = (0..self.num_clusters)
@@ -674,6 +675,10 @@ impl<'a, 'b> Cpu<'a, 'b> {
                 self.engine.exit_code.load(Ordering::SeqCst)
             } // scratch_reg
             x if x == self.engine.config.address.barrier_reg => {
+                self.cluster_barrier();
+                0
+            } // barrier_reg
+            x if x == self.engine.config.address.barrier_reg_2 => {
                 self.cluster_barrier();
                 0
             } // barrier_reg
