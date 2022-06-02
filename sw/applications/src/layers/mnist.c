@@ -20,7 +20,7 @@
 
 void mnist(const network_t *n){
 
-    printf("sam\n");
+    printf("samuele\n");
 
     uint32_t cluster_num = snrt_cluster_num(); // returns 2
     //printf("cluster_num = %u\n", cluster_num);
