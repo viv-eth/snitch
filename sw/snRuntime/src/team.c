@@ -77,6 +77,8 @@ int snrt_is_dm_core() {
 }
 
 uint32_t _snrt_barrier_reg_ptr() {
+
+    asm("csrr x0, mhartid");
     return _snrt_team_current->root->barrier_reg_ptr;
 }
 
