@@ -31,20 +31,16 @@ void mnist(const network_t *n){
     uint32_t compute_id = snrt_cluster_compute_core_idx();
     uint32_t global_compute_id = snrt_global_core_idx(); // Core ID of each core on all clusters
 
-    //printf("Cluster Num: %u\n", cluster_num);
+    // number of total input channels for a flattened image
+    uint32_t IN_CH = n->IN_CH1*n->IN_CH2;
 
-    uint32_t IN_CH = n->IN_CH1*n->IN_CH2; // number of total input channels for a flattened image
-    // determine a load stride for loading chunks of data from DRAM to local cluster memory
-    // --> should be a multiple of IN_CH
-    uint32_t dram_stride = n->IN_CH1;
-    // this defines at which DRAM stride of the image we are
-    // range is 0*28 ... 27*28
-    uint32_t dram_stride_offset = 0; 
+    // number of total images that we load
+    // NOTE: partial load for simulation purposes only
+    uint32_t number_of_images = 5;
 
     // size of the weight matrix, same for weight gradients
     // on cluster 0 we store the weights, on cluster 1 the
     // weight gradients at this location
-    // uint32_t weight_mat_size = (n->OUT_CH * IN_CH + MAT_PADDING) * n->dtype;
     uint32_t weight_mat_size = (n->OUT_CH * IN_CH + MAT_PADDING) * n->dtype;
     // size of the bias matrix, same for bias gradients
     // on cluster 0 we store the biases, on cluster 1 the
@@ -75,14 +71,10 @@ void mnist(const network_t *n){
     // cluster base offset
     void *ptr = (double *)snrt_cluster_memory().start;
     void *ptr_start = ptr;
-    uint32_t *cluster_sync = ptr;
+    uint32_t *cluster_sync = ptr; // zero initialized
     ptr += cluster_sync_flag_size;
     uint32_t *core_sync = ptr; // zero initialized
     ptr += core_sync_flag_size;
-    uint32_t *last_core_ff = ptr;
-    ptr += last_core_ff_size;
-    uint32_t *is_last_core = ptr;
-    ptr += is_last_core_size;
     double *max= ptr; // zero initialized
     ptr += max_size;
     uint32_t *target = ptr;
@@ -90,7 +82,7 @@ void mnist(const network_t *n){
     double *loss = ptr; // zero initialized
     ptr += loss_size;
     double *image = ptr;
-    ptr += image_size;
+    ptr += number_of_images*image_size;
     double *biases = ptr; // bias GRADIENTS zero initialized
     ptr += bias_mat_size;
     double *activations = ptr;
