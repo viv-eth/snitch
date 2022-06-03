@@ -11,8 +11,8 @@
 
 // The output of the feedforward is accumulated in the biases variable
 void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, uint32_t ldB,
-                double *image, uint32_t ldI, uint32_t compute_id){
+                double *weights, uint32_t ldW, double *biases, double *activations,
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id){
 
     
     // Linear layer: OUT = X * W^T + B
@@ -23,31 +23,32 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             acc += image[in] * weights[out * ldW + in];
             // TODO: for some reason the weights evaluate to -inf
             // when they should be zero --> fix the bug
+            // INFO: If this is not set harts start reading outside the mem map
             if(compute_id + out * ldB > OUT_CH * 5){
                 acc = 0;
             }
         }
         // OUT is accumulated in biases 
-        biases[ldB * out] = acc;
-        printf("acc[%u] = %f\n", compute_id + out * ldB, acc);   
+        activations[ldB * out] = acc;
+        printf("acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);   
     }
     snrt_cluster_hw_barrier();
 
 } // WORKS on Cluster 0
 
 void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, uint32_t ldB,
+                double *weights, uint32_t ldW, double *activations, uint32_t ldB,
                 double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max){
 
     
-    double max_core = biases[0];
+    double max_core = activations[0];
 
     double sum = 0.0;
     
     for(uint32_t out = 0; out < OUT_CH; out++){
-        if(biases[ldB * out] > max_core) {
-            max_core = biases[ldB * out];
+        if(activations[ldB * out] > max_core) {
+            max_core = activations[ldB * out];
         }
     }
 
@@ -68,18 +69,18 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH*5; out++){
-            if(biases[out]){
-                biases[out] = exp(biases[out] - max_global);
-                sum += biases[out];
+            if(activations[out]){
+                activations[out] = exp(activations[out] - max_global);
+                sum += activations[out];
             } else {
-                biases[out] = 0.0;
+                activations[out] = 0.0;
             }
         }
 
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
-            biases[out] /= sum;
-            printf("Cluster 0: Bias[%u] = %f\n", out, biases[out]);
+            activations[out] /= sum;
+            printf("Cluster 0: Bias[%u] = %f\n", out, activations[out]);
         }
     }
 

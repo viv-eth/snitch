@@ -20,8 +20,8 @@
  */
 
 void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, uint32_t ldB,
-                double *image, uint32_t ldI, uint32_t compute_id); //WORKS
+                double *weights, uint32_t ldW, double *biases, double* activations,
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id); //WORKS
 
 /**
  * @brief implementation of the softmax activation for FP64
@@ -40,7 +40,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
  */
 
 void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, uint32_t ldB,
+                double *weights, uint32_t ldW, double *activations, uint32_t ldB,
                 double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max);
 
