@@ -114,13 +114,14 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
 
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        // FIXME: code below causes out of memory warning
+        // for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             
-            W_grad_update = b_grad_update * image[in];
+        //     W_grad_update = b_grad_update * image[in];
             
-            weight_grads[out * ldW + in] += W_grad_update;
-        }
-
+        //     weight_grads[out * ldW + in] += W_grad_update;
+        // }
+            
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
 
     }
