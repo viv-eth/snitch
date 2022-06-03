@@ -28,9 +28,9 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 acc = 0;
             }
         }
-        // OUT is accumulated in biases 
+        // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);   
+        //printf("acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);   
     }
     snrt_cluster_hw_barrier();
 
@@ -80,7 +80,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            printf("Cluster 0: Bias[%u] = %f\n", out, activations[out]);
+            //printf("Cluster 0: Bias[%u] = %f\n", out, activations[out]);
         }
     }
 
@@ -114,15 +114,18 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
 
-        // FIXME: code below causes out of memory warning
-        // for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             
-        //     W_grad_update = b_grad_update * image[in];
+            W_grad_update = b_grad_update * image[in];
             
-        //     weight_grads[out * ldW + in] += W_grad_update;
-        // }
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weight_grads[out * ldW + in] += W_grad_update;
+            }
+        }
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
+
+        //printf("bias_grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
 
     }
 
