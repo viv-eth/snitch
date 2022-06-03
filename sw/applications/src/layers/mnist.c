@@ -168,7 +168,7 @@ void mnist(const network_t *n){
     // uint32_t *dataset_dram = (void *)0x8004000;
 
     // We now loop through the images
-    for(uint32_t image = 0; image < 1; image++){
+    for(uint32_t image = 0; image < number_of_images; image++){
 
         // we calculate the pointer postion of the current image
         uint32_t curr_img = image * IN_CH;
@@ -244,12 +244,13 @@ void mnist(const network_t *n){
             double *img_ptr = ((uint32_t)images) - cluster_offset;
 
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
-
+            benchmark_get_cycle();
             gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, 
                             &biases[b_offset], &act_ptr[b_offset], 
                             ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                             loss, compute_num);
+            benchmark_get_cycle();
         } else {
             snrt_cluster_hw_barrier();
         }
@@ -257,61 +258,3 @@ void mnist(const network_t *n){
 
     snrt_global_barrier();
 }
-
-// //         if(n->dtype == FP64){
-// //             //TODO: handle parallelization properly by wrapping around the cores
-// //             //      instead of manually dividing by a convenient number
-// //             benchmark_get_cycle();
-// //             if(cluster_id==0){
-// //                 printf("Feedforward start. \n");
-// //                 feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
-// //                                 &weights[W_offset], ldW, &biases[b_offset], ldB,
-// //                                 image, ldI, compute_id);
-// //                 printf("Feedforward done. \n");
-// //                 printf("SoftMax start. \n");
-// //                 softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
-// //                             &weights[W_offset], ldW, &biases[b_offset], ldB,
-// //                             image, ldI, compute_id, compute_num, max);
-// //                 printf("SoftMax done. \n");
-// //             }
-// //             snrt_global_barrier();
-// //             //snrt_cluster_hw_barrier();
-// //             // only go into BW computation if FW is set to compute_num
-// //             // && FW_flag == compute_num
-// //             if(cluster_id == 1){
-// //                 // FIXME: Cores of Cluster 1 go sometimes into Gradient Update BEFORE Forward Pass is DONE
-// //                 printf("Gradient Update start. \n");
-// //                 gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-// //                                 &weight_grads[W_offset], ldW, 
-// //                                 &bias_grads[b_offset], &biases[b_offset], 
-// //                                 ldB, image, target, ldI, compute_id, 
-// //                                 loss, compute_num);
-// //                 printf("Loss: %f\n", loss[0]);
-// //                 printf("Gradient Update done. \n");
-// //             }
-// //             benchmark_get_cycle();
-// //         }
-// //     } else{
-// //         // for ninth core (DMA) core 
-// //         // INFO: all cores should have same amount of barriers, HW barrier less computational heavy than others
-// //         snrt_cluster_hw_barrier();
-// //         snrt_cluster_hw_barrier();
-// //         snrt_cluster_hw_barrier();
-// //         snrt_cluster_hw_barrier();
-// //         //snrt_cluster_hw_barrier();
-// //     }
-// //     snrt_cluster_hw_barrier();
-// //     //snrt_global_barrier();
-
-// //     // TODO: implement proper checking, maybe separate function
-// //     // INFO: computed values match the actual weight gradient from the GM
-
-// //     // if(cluster_id == 1 && compute_id == 0){
-        
-// //     //     printf("Entering check.\n");
-        
-// //     //     for(uint32_t check = 0; check < n->OUT_CH*IN_CH; check++){
-// //     //         printf("GM Weight grad val[%u] = %f\n", check, weight_grad_check[check]);
-// //     //         printf("Computed weight grad val[%u] = %f\n", check, weight_grads[check]);
-// //     //     }
-// //     // }
