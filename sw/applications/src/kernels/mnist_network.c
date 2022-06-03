@@ -125,8 +125,6 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
 
-        //printf("bias_grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
-
     }
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier

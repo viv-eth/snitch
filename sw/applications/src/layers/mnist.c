@@ -241,12 +241,14 @@ void mnist(const network_t *n){
 
             double *act_ptr = ((uint32_t)activations) - cluster_offset;
 
+            double *img_ptr = ((uint32_t)images) - cluster_offset;
+
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
 
             gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, 
                             &biases[b_offset], &act_ptr[b_offset], 
-                            ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
+                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                             loss, compute_num);
         } else {
             snrt_cluster_hw_barrier();
