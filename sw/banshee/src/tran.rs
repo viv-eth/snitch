@@ -206,7 +206,7 @@ impl<'a> ElfTranslator<'a> {
             })
             .collect();
 
-        warn!("tcdm_range {:?}", tcdm_range);
+        info!("tcdm_range for cluster {} is [0x{:x}, 0x{:x}]", &tcdm_range[cluster_id].0, &tcdm_range[cluster_id].1, &tcdm_range[cluster_id].2);
 
         Self {
             elf,
