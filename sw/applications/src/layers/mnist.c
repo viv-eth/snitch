@@ -62,6 +62,8 @@ void mnist(const network_t *n){
     uint32_t core_sync_flag_size = compute_num*sizeof(uint32_t);
     // synchronization flags for the compute cores on each cluster
     uint32_t cluster_sync_flag_size = cluster_num*sizeof(uint32_t);
+    // learning rate of the network
+    uint32_t lr_size = sizeof(float);
 
     // FP64 cluster memory setup
     // @brief Cluster Memory Structure for each cluster to ensure
@@ -87,7 +89,7 @@ void mnist(const network_t *n){
     ptr += act_mat_size;
     // INFO: setting weights as last element so 
     // when we iterate over data we can zero out
-    // excessive rows
+    // excessive rows --> FIXME: this does not work in the RTL probably
     double *weights = ptr; // weight GRADIENTS zero initialized
     ptr += weight_mat_size;
     // NOTE: following lines for debugging purposes only
@@ -140,7 +142,7 @@ void mnist(const network_t *n){
                     snrt_dma_start_1d(images,                                   // destination
                                     n->images,                                  // source
                                     n->dtype * number_of_images * IN_CH);       // size
-                
+
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
 
@@ -252,14 +254,49 @@ void mnist(const network_t *n){
                             loss, compute_num);
             benchmark_get_cycle();
 
-            if(!compute_id){
-                printf("total loss = %f\n", loss[0]/(image+1));
-            }
-            
+            // if(!compute_id){
+            //     printf("total loss = %f\n", loss[0]/(image+1));
+            // }
+
         } else {
             snrt_cluster_hw_barrier();
         }
     }
 
     snrt_global_barrier();
+
+    // after looping through one batch of the dataset
+    // we update the biases and weights on Cluster 0
+    if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
+        // determine the row offset at which current compute cluster is
+        volatile uint32_t W_offset = compute_id * IN_CH;
+        volatile uint32_t b_offset = compute_id;
+        // Calculate number of rows for each compute
+        // core. If multiples of each other we have to 
+        // forcefully set it to 1
+        volatile uint32_t div = n->OUT_CH % compute_num;
+        if(div == 0){
+            div = 1;
+        }
+
+
+        // determine the row stride of each matrix    
+        volatile uint32_t ldW = compute_num * IN_CH;
+        volatile uint32_t ldB = compute_num;
+        volatile uint32_t ldI = IN_CH;
+
+        double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+        double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+
+        //TODO: load the LR from the network struct or via DRAM perloading
+        //*learning_rate = 0.5;
+
+        benchmark_get_cycle();
+        training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
+                &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                compute_id, compute_num, number_of_images);
+        benchmark_get_cycle();
+
+    }
 }

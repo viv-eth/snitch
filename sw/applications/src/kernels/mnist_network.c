@@ -102,7 +102,7 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     uint32_t target_n = *target;
     // compute the loss
     double loss_val = 0.0 - log(activations[target_n -compute_id]);
-    
+
     // save the value into the loss pointer
     if(!compute_id){
         loss[0] += loss_val;
@@ -141,6 +141,28 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 } // WORKS on Cluster 1
 
 // TODO: implement training step for multiple images
-void training_step(){
+void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images){
 
+    float lr = 0.5;
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        // make sure that biases outside of the number of
+        // output channels are zero
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
+        } else {
+            biases[ldB * out] = 0;
+        }
+
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
+            } 
+        }
+    }
 }
