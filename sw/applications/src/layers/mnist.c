@@ -101,26 +101,18 @@ void mnist(const network_t *n){
 
     // before we start any computation we set the cluster sync flag to zero
     // Cluster 1 should not start its computation until cluster 1 is done
-    //cluster_sync[cluster_id] = 0;
+    cluster_sync[cluster_id] = 0;
 
     // cluster offset in an Occamy quadrant
     uint32_t cluster_offset = 0x00040000;
 
-    if(cluster_id){
-        cluster_sync[cluster_id] = 2;
-        //snrt_cluster_hw_barrier();
-    } else {
-        cluster_sync[cluster_id] = 4;
-        //snrt_cluster_hw_barrier();
-    }
-
     //printf("Cluster flag of cluster % u = %u\n", cluster_id, cluster_sync[cluster_id]);
     //printf("Adress of cluster sync flag of cluster %u = %p\n", cluster_id, &cluster_sync[cluster_id]);
-    if(cluster_id){
-        uint32_t *sync_ptr = ((uint32_t)cluster_sync) - cluster_offset;
-        printf("Cluster %u Sync stolen from Cluster 0 Memory = %u\n", cluster_id, *sync_ptr);
-        printf("Cluster %u Sync in Cluster 1 = %u\n", cluster_id, cluster_sync[cluster_id]);
-    }
+    // if(cluster_id){
+    //     uint32_t *sync_ptr = ((uint32_t)cluster_sync) - cluster_offset;
+    //     printf("Cluster %u Sync stolen from Cluster 0 Memory = %u\n", cluster_id, *sync_ptr);
+    //     printf("Cluster %u Sync in Cluster 1 = %u\n", cluster_id, cluster_sync[cluster_id]);
+    // }
 
 
 
@@ -217,9 +209,6 @@ void mnist(const network_t *n){
                             &images[curr_img], ldI, compute_id, compute_num, max);
             benchmark_get_cycle();
             // End of SoftMax activation
-            cluster_sync[cluster_id] = 1;
-            printf("cluster_sync[%u] = %u\n", cluster_id, cluster_sync[cluster_id]);
-            printf("Computation done\n");
 
         } else {
             snrt_cluster_hw_barrier();
@@ -227,12 +216,12 @@ void mnist(const network_t *n){
             snrt_cluster_hw_barrier();
         }
 
-        // now we perform the gradient update on cluster 1
+        // wait until clusters are synchronized to not
+        // start gradient update until all activations are 
+        // computed
+        snrt_global_barrier();
+
         if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
-            printf("cluster_sync[%u] = %u\n", cluster_id, cluster_sync[cluster_id]);
-            // if(*(&cluster_sync[cluster_id] + cluster_offset)){
-            //     printf("Cluster 1 computation start.\n");
-            // }
             // determine the row offset at which current compute cluster is
             volatile uint32_t W_offset = compute_id * IN_CH;
             volatile uint32_t b_offset = compute_id;
@@ -250,18 +239,21 @@ void mnist(const network_t *n){
             volatile uint32_t ldB = compute_num;
             volatile uint32_t ldI = IN_CH;
 
-            // gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, 
-            //                 &biases[b_offset], &biases[b_offset], 
-            //                 ldB, image, &targets[curr_img], ldI, compute_id, 
-            //                 loss, compute_num);
+            double *act_ptr = ((uint32_t)activations) - cluster_offset;
 
+            //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
 
-
+            gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, 
+                            &biases[b_offset], &act_ptr[b_offset], 
+                            ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
+                            loss, compute_num);
+        } else {
+            snrt_cluster_hw_barrier();
         }
-
-
     }
+
+    snrt_global_barrier();
 }
 
 // //         if(n->dtype == FP64){
