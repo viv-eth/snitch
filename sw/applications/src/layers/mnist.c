@@ -251,6 +251,11 @@ void mnist(const network_t *n){
                             ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                             loss, compute_num);
             benchmark_get_cycle();
+
+            if(!compute_id){
+                printf("total loss = %f\n", loss[0]/(image+1));
+            }
+            
         } else {
             snrt_cluster_hw_barrier();
         }

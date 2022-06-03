@@ -102,8 +102,17 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     uint32_t target_n = *target;
     // compute the loss
     double loss_val = 0.0 - log(activations[target_n -compute_id]);
+    
     // save the value into the loss pointer
-    loss[0] = loss_val;
+    if(!compute_id){
+        loss[0] += loss_val;
+    } else{
+        loss[0] += 0;
+    }
+
+    
+    //printf("loss = %f\n", loss[0]);
+    
 
     // the effective index is the iteration index of the biases variable
     // across all entries
