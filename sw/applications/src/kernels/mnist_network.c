@@ -12,7 +12,7 @@
 // The output of the feedforward is accumulated in the biases variable
 void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *biases, double *activations,
-                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id){
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
 
     
     // Linear layer: OUT = X * W^T + B
@@ -21,38 +21,51 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         register double acc = biases[ldB * out];
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             acc += image[in] * weights[out * ldW + in];
-            // TODO: for some reason the weights evaluate to -inf
-            // when they should be zero --> fix the bug
             // INFO: If this is not set harts start reading outside the mem map
+            // FIXME: Next harts should start computation of the subsequent image
             if(compute_id + out * ldB > OUT_CH * 5){
                 acc = 0;
             }
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        //printf("acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);   
+        //printf("acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        core_sync = 1;
+        //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
-    snrt_cluster_hw_barrier();
+    // when a cluster is done with its part of the FF it asserts the 
+    // sync flag to indicate that the computation is done
+    //snrt_cluster_hw_barrier();
 
 } // WORKS on Cluster 0
 
 void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *activations, uint32_t ldB,
                 double *image, uint32_t ldI, uint32_t compute_id, 
-                uint32_t compute_num, double *max){
+                uint32_t compute_num, double *max, uint32_t* core_sync){
 
-    
-    double max_core = activations[0];
-
+    double max_core;
     double sum = 0.0;
-    
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        if(activations[ldB * out] > max_core) {
-            max_core = activations[ldB * out];
-        }
+        
+    while(!(core_sync[0])){
+        max_core = 0.0;
     }
 
-    max[compute_id] = max_core;
+    max_core = activations[0];
+    
+    if(core_sync[compute_id]){
+
+        //core_sync[compute_id] = 0;
+
+        for(uint32_t out = 0; out < OUT_CH; out++){
+            if(activations[ldB * out] > max_core) {
+                max_core = activations[ldB * out];
+            }
+        }
+
+        max[compute_id] = max_core;
+    
+    }
     snrt_cluster_hw_barrier();
 
     //printf("Max value of compute core %u is %f\n", compute_id, max_core);
@@ -61,7 +74,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // Reduction on single core
     if(compute_id == 0){
-        for(uint32_t core; core < compute_num; core++){
+        for(uint32_t core = 0; core < compute_num; core++){
             if(max[core] > max_global){
                 max_global = max[core];
             }
@@ -80,10 +93,11 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            //printf("Cluster 0: Bias[%u] = %f\n", out, activations[out]);
+            //printf("Cluster 0: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
+    //core_sync[compute_id] = 0;
     snrt_cluster_hw_barrier();
 } // WORKS on Cluster 0
 
@@ -106,7 +120,7 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // save the value into the loss pointer
     if(!compute_id){
         loss[0] += loss_val;
-    } else{
+    } else {
         loss[0] += 0;
     }
 
@@ -133,7 +147,7 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
-
+        //printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
@@ -166,3 +180,6 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
     }
 }
+
+// INFO: start of FP64 network implementation using SSRs
+

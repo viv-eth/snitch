@@ -60,8 +60,6 @@ void mnist(const network_t *n){
     uint32_t loss_size = n->dtype;
     // synchronization flags for the compute cores on among clusters
     uint32_t core_sync_flag_size = compute_num*sizeof(uint32_t);
-    // synchronization flags for the compute cores on each cluster
-    uint32_t cluster_sync_flag_size = cluster_num*sizeof(uint32_t);
     // learning rate of the network
     uint32_t lr_size = sizeof(float);
 
@@ -71,8 +69,7 @@ void mnist(const network_t *n){
     // cluster base offset
     void *ptr = (double *)snrt_cluster_memory().start;
     void *ptr_start = ptr;
-    uint32_t *cluster_sync = ptr; // zero initialized
-    ptr += cluster_sync_flag_size;
+    // NOTE: core sync flag used t
     uint32_t *core_sync = ptr; // zero initialized
     ptr += core_sync_flag_size;
     double *max= ptr; // zero initialized
@@ -101,22 +98,11 @@ void mnist(const network_t *n){
     //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // }
 
-    // before we start any computation we set the cluster sync flag to zero
-    // Cluster 1 should not start its computation until cluster 1 is done
-    cluster_sync[cluster_id] = 0;
-
     // cluster offset in an Occamy quadrant
     uint32_t cluster_offset = 0x00040000;
 
-    //printf("Cluster flag of cluster % u = %u\n", cluster_id, cluster_sync[cluster_id]);
-    //printf("Adress of cluster sync flag of cluster %u = %p\n", cluster_id, &cluster_sync[cluster_id]);
-    // if(cluster_id){
-    //     uint32_t *sync_ptr = ((uint32_t)cluster_sync) - cluster_offset;
-    //     printf("Cluster %u Sync stolen from Cluster 0 Memory = %u\n", cluster_id, *sync_ptr);
-    //     printf("Cluster %u Sync in Cluster 1 = %u\n", cluster_id, cluster_sync[cluster_id]);
-    // }
-
-
+    // each cluster should set their sync flag to zero initially
+    core_sync[compute_id] = 0;
 
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
@@ -170,7 +156,7 @@ void mnist(const network_t *n){
     // uint32_t *dataset_dram = (void *)0x8004000;
 
     // We now loop through the images
-    for(uint32_t image = 0; image < number_of_images; image++){
+    for(uint32_t image = 0; image < 1; image++){
 
         // we calculate the pointer postion of the current image
         uint32_t curr_img = image * IN_CH;
@@ -203,19 +189,19 @@ void mnist(const network_t *n){
             benchmark_get_cycle();
             feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                            ldB, &images[curr_img], ldI, compute_id);
+                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
             // End of feedforward
             // Start of SoftMax activation
             softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &activations[b_offset], ldB,
-                            &images[curr_img], ldI, compute_id, compute_num, max);
+                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
             benchmark_get_cycle();
             // End of SoftMax activation
 
         } else {
             snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
-            snrt_cluster_hw_barrier();
+            //snrt_cluster_hw_barrier();
         }
 
         // wait until clusters are synchronized to not
@@ -245,7 +231,9 @@ void mnist(const network_t *n){
 
             double *img_ptr = ((uint32_t)images) - cluster_offset;
 
+            //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
+            
             benchmark_get_cycle();
             gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, 
