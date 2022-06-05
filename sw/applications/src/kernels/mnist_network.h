@@ -6,6 +6,9 @@
 
 #include <stdint.h>
 
+
+// INFO: Function calls for FP64 baseline network 
+
 /**
  * @brief implementation of the feedforward part of a simple neural network for FP64
  * @param IN_CH1 first input dimension
@@ -13,6 +16,7 @@
  * @param OUT_CH output dimension
  * @param weights initial weights of the network (obtained from GM)
  * @param ldW row stride of the weights matrix
+ * @param activations of the NN
  * @param biases initial biases of the network (obtained from GM)
  * @param ldB row stride of the bias matrix
  * @param image input data (MNIST image)
@@ -30,6 +34,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
  * @param OUT_CH output dimension
  * @param weights neural network weights
  * @param ldW row stride of the weights matrix
+ * @param activations of the NN
  * @param biases neural network biases
  * @param ldB row stride of the bias matrix
  * @param image input data (MNIST image)
@@ -57,3 +62,15 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 double *biases, double *bias_grads, uint32_t ldB, 
                 uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images);
+
+
+// INFO: Function calls for FP64 network with SSRs
+void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                double *weights, uint32_t ldW, double *biases, double *activations,
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
+                uint32_t setup_SSR);
+
+void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                double *weights, uint32_t ldW, double *activations, uint32_t ldB,
+                double *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, double *max, uint32_t* core_sync, uint32_t setup_SSR);

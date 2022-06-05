@@ -104,6 +104,9 @@ void mnist(const network_t *n){
     // each cluster should set their sync flag to zero initially
     core_sync[compute_id] = 0;
 
+    // define whether SSRs should be used or not
+    uint32_t setup_SSR = 1;
+
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
     // TODO: add the epochs
@@ -187,21 +190,28 @@ void mnist(const network_t *n){
 
             // Start of feedforward
             benchmark_get_cycle();
-            feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
+            // feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+            feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                            setup_SSR);
             // End of feedforward
             // Start of SoftMax activation
-            softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
+            // softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+            softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &activations[b_offset], ldB,
-                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
             benchmark_get_cycle();
             // End of SoftMax activation
 
         } else {
             snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
-            //snrt_cluster_hw_barrier();
+            snrt_cluster_hw_barrier();
         }
 
         // wait until clusters are synchronized to not
@@ -233,7 +243,7 @@ void mnist(const network_t *n){
 
             //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
-            
+
             benchmark_get_cycle();
             gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, 

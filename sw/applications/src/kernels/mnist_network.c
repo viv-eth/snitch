@@ -9,7 +9,7 @@
 
 // INFO: start of FP64 baseline network implementation
 
-// The output of the feedforward is accumulated in the biases variable
+// The output of the feedforward is accumulated in the activations variable
 void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *biases, double *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
@@ -29,7 +29,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        //printf("acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        //printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         core_sync = 1;
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
@@ -182,4 +182,156 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 }
 
 // INFO: start of FP64 network implementation using SSRs
+//// Feedforward Step
+void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                double *weights, uint32_t ldW, double *biases, double *activations,
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
+                uint32_t setup_SSR){
 
+    register volatile double ft0 asm("ft0"); // stores weights
+    register volatile double ft1 asm("ft1"); // stores image
+    asm volatile("" : "=f"(ft0), "=f"(ft1));
+
+    // Unrolling factor of most inner loop.
+    // Should be at least as high as the FMA delay
+    // for maximum utilization
+    const uint32_t unroll = 8;
+
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    if (setup_SSR) {
+
+        // SSR setup of weights
+        const uint32_t ssr0_b[4] = {unroll, IN_CH, 1 / unroll, OUT_CH};
+        const uint32_t ssr0_i[4] = {0, 8, 0, 8 * ldW};
+
+        snrt_ssr_loop_3d(SNRT_SSR_DM0, ssr0_b[1], ssr0_b[2], ssr0_b[3],
+                             ssr0_i[1], ssr0_i[2], ssr0_i[3]);
+        snrt_ssr_repeat(SNRT_SSR_DM0, unroll);
+
+        // SSR setup of input data
+        const uint32_t ssr1_b[4] = {unroll, IN_CH, 1 / unroll, OUT_CH};
+        const uint32_t ssr1_i[4] = {8, 8 * ldI, 8 * unroll, 0};
+        snrt_ssr_loop_4d(SNRT_SSR_DM1, ssr1_b[0], ssr1_b[1], ssr1_b[2],
+                             ssr1_b[3], ssr1_i[0], ssr1_i[1], ssr1_i[2],
+                             ssr1_i[3]);
+    }
+
+    // SSR start address need to be configured each time
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, weights);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_4D, image);
+    
+    // Start of SSR region
+    snrt_ssr_enable();
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        register double acc = biases[ldB * out];
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            acc += image[in] * weights[out * ldW + in];
+            
+            if(compute_id + out * ldB > OUT_CH * 5 - 1){
+                acc = 0;
+            }
+            
+            activations[ldB * out] = acc;
+        }
+    }
+
+    // End of SSR region.
+    snrt_ssr_disable();
+    
+    asm volatile("" ::"f"(ft0), "f"(ft1));
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
+    
+    core_sync = 1;
+    snrt_cluster_hw_barrier();
+
+}
+//// Activation Step
+void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                double *weights, uint32_t ldW, double *activations, uint32_t ldB,
+                double *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, double *max, uint32_t* core_sync, uint32_t setup_SSR){
+
+    double max_core;
+    double sum = 0.0;
+        
+    while(!(core_sync[0])){
+        max_core = 0.0;
+    }
+
+    max_core = activations[0];
+    
+    register volatile double ft0 asm("ft0"); // stores activations
+    asm volatile("" : "=f"(ft0));
+
+    if (setup_SSR) {
+
+        const uint32_t ssr0_b = OUT_CH;
+        const uint32_t ssr0_i = sizeof(double);
+
+        snrt_ssr_loop_1d(SNRT_SSR_DM0, ssr0_b, ssr0_i);
+
+    }
+
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
+
+    // Start of SSR region
+    snrt_ssr_enable();
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        asm volatile(
+                    "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
+                    "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
+                    "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
+                    "beqz       t0, 2f\n"                   // else go to loop start
+                    "1: \n"     
+                    "fmv.d      %[max_core], fs2 \n"
+                    "2: \n"
+                    : [ max_core ] "+f"(max_core)::"ft0");
+    }
+
+    max[compute_id] = max_core;
+    
+
+    // End of the SSR region. 
+    snrt_ssr_disable();
+
+    snrt_cluster_hw_barrier();
+
+    double max_global = max[0];
+
+    // Reduction on single core
+    if(compute_id == 0){
+        for(uint32_t core = 0; core < compute_num; core++){
+            if(max[core] > max_global){
+                max_global = max[core];
+            }
+        }
+
+        // FIXME: actually OUT_CH should be multiplied by number of compute cores
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            if(activations[out]){
+                activations[out] = exp(activations[out] - max_global);
+                sum += activations[out];
+            } else {
+                activations[out] = 0.0;
+            }
+        }
+
+
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            activations[out] /= sum;
+            printf("FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+        }
+    }
+
+    //core_sync[compute_id] = 0;
+    snrt_cluster_hw_barrier();
+}
