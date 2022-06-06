@@ -159,7 +159,7 @@ void mnist(const network_t *n){
     // uint32_t *dataset_dram = (void *)0x8004000;
 
     // We now loop through the images
-    for(uint32_t image = 0; image < 1; image++){
+    for(uint32_t image = 0; image < number_of_images; image++){
 
         // we calculate the pointer postion of the current image
         uint32_t curr_img = image * IN_CH;
@@ -188,30 +188,38 @@ void mnist(const network_t *n){
 
             //printf("ldW: %u, ldB: %u, ldI: %u\n", ldW, ldB, ldI);
 
+            if(!compute_id){
+                printf("FF start\n");
+            }
+
             // Start of feedforward
             benchmark_get_cycle();
-            // feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
-            feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+            // INFO: baseline
+            feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                            setup_SSR);
-            // End of feedforward
-            // Start of SoftMax activation
-            // softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
-            softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+            // INFO: FP64 with SSRs
+            // feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+            //                 setup_SSR);
+            // INFO: baseline
+            softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &activations[b_offset], ldB,
-                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+            // INFO: FP64 with SSRs
+            // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
             benchmark_get_cycle();
-            // End of SoftMax activation
+
+            if(!compute_id){
+                printf("FF end\n");
+            }
 
         } else {
             snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
-            //snrt_cluster_hw_barrier();
         }
 
         // wait until clusters are synchronized to not
@@ -244,18 +252,28 @@ void mnist(const network_t *n){
             //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
 
+            if(!compute_id){
+                printf("Gradient Update start\n");
+            }
+
             benchmark_get_cycle();
-            // gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, 
-            //                 &biases[b_offset], &act_ptr[b_offset], 
-            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-            //                 loss, compute_num);
-            gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+            // INFO: baseline
+            gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, 
                             &biases[b_offset], &act_ptr[b_offset], 
                             ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-                            loss, compute_num, setup_SSR);
+                            loss, compute_num);
+            // INFO: FP64 with SSRs
+            // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, 
+            //                 &biases[b_offset], &act_ptr[b_offset], 
+            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+            //                 loss, compute_num, setup_SSR);
             benchmark_get_cycle();
+
+            if(!compute_id){
+                printf("Gradient Update done\n");
+            }
 
             // if(!compute_id){
             //     printf("total loss = %f\n", loss[0]/(image+1));
@@ -294,16 +312,28 @@ void mnist(const network_t *n){
         //TODO: load the LR from the network struct or via DRAM perloading
         //*learning_rate = 0.5;
 
+        if(!compute_id){
+                printf("Training step start\n");
+        }
+
         benchmark_get_cycle();
-        // training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
-        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-        //         compute_id, compute_num, number_of_images);
-        training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+        // INFO: baseline
+        training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
                 &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
                 &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                compute_id, compute_num, number_of_images, setup_SSR);
+                compute_id, compute_num, number_of_images);
+        // INFO: FP64 with SSRs
+        // training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+        //         compute_id, compute_num, number_of_images, setup_SSR);
         benchmark_get_cycle();
 
+        if(!compute_id){
+                printf("Training step done\n");
+        }
+
     }
+
+    snrt_global_barrier();
 }
