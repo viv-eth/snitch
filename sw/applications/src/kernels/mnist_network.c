@@ -206,7 +206,6 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double), 
                         sizeof(double) * ldI);
         
-        //snrt_ssr_repeat(SNRT_SSR_DM0, OUT_CH);
 
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
                         IN_CH, 
@@ -214,7 +213,7 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double), 
                         sizeof(double) * ldW);
     }
-    //snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image); 
+    
     snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);
     
     // Start of SSR region
@@ -244,9 +243,9 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of SSR region.
     snrt_ssr_disable();
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
     
     core_sync = 1;
     //snrt_cluster_hw_barrier();
@@ -330,11 +329,10 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            printf("FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+            //printf("FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
-    //core_sync[compute_id] = 0;
     snrt_cluster_hw_barrier();
 }
 
@@ -344,9 +342,9 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t compute_id, double *loss, uint32_t compute_num, uint32_t setup_SSR){
 
     // set up SSR registers (there is a total of three data movers)
-    register volatile double ft0 asm("ft0"); // stores weight gradients
-    register volatile double ft1 asm("ft1"); // stores activations
-    register volatile double ft2 asm("ft2"); // stores image
+    register volatile double ft0 asm("ft0"); // stores image
+    register volatile double ft1 asm("ft1"); // stores weight gradients
+    register volatile double ft2 asm("ft2"); // stores activations
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
     double b_grad_update = 0.0;
@@ -374,34 +372,35 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
     if (setup_SSR) {
 
-        // SSR setup of weight gradients
-        const uint32_t ssr0_b[4] = {unroll, IN_CH, 1 / unroll, OUT_CH};
-        const uint32_t ssr0_i[4] = {0, 8, 0, 8 * ldW};
+        // setup of input data (MNIST image)
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldI);
+        
+        // SSR setup of weights
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
 
-        snrt_ssr_loop_3d(SNRT_SSR_DM0, ssr0_b[1], ssr0_b[2], ssr0_b[3],
-                             ssr0_i[1], ssr0_i[2], ssr0_i[3]);
-        snrt_ssr_repeat(SNRT_SSR_DM0, unroll);
 
         // SSR setup of activations
-        const uint32_t ssr1_b = OUT_CH;
-        const uint32_t ssr1_i = sizeof(double);
-
-        snrt_ssr_loop_1d(SNRT_SSR_DM1, ssr1_b, ssr1_i);
-
-        // SSR setup of input data
-        const uint32_t ssr2_b[4] = {unroll, IN_CH, 1 / unroll, OUT_CH};
-        const uint32_t ssr2_i[4] = {8, 8 * ldI, 8 * unroll, 0};
-        snrt_ssr_loop_4d(SNRT_SSR_DM2, ssr2_b[0], ssr2_b[1], ssr2_b[2],
-                             ssr2_b[3], ssr2_i[0], ssr2_i[1], ssr2_i[2],
-                             ssr2_i[3]);
+        snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+                        OUT_CH, 
+                        sizeof(double));
     }
 
     // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_4D, weight_grads);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, activations);
-    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_4D, image);
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weight_grads);
+    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, activations);
 
     // Start of SSR region
     snrt_ssr_enable();
