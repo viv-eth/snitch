@@ -545,9 +545,68 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
 void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, double *activations,
+                float *weights, uint32_t ldW, float *biases, float *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
                 uint32_t setup_SSR){
+    
+    register volatile double ft0 asm("ft0"); // stores image
+    register volatile double ft1 asm("ft1"); // stores weights
+    asm volatile("" : "=f"(ft0), "=f"(ft1));
 
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    // WARN In the RTL SSR strides MUST BE of size DOUBLE
+    // NOTE Which I will completely ignore at the moment until
+    //      discussing with GIM
+
+    if (setup_SSR) {
+
+        // setup of input data (MNIST image)
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldI);
+        
+
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(float), 
+                        sizeof(float) * ldW);
+    }
+
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);
+
+    // Start of SSR region
+    snrt_ssr_enable();
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        // we need to read the image for every new iteration
+        // of a core, because otherwise it will evaluate to
+        // all zeros due to the stream semantics
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        register double acc = biases[ldB * out];
+        register double test;
+        if(compute_id + out * ldB > OUT_CH * 5){
+            acc = 0;
+        } else {
+            for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+                asm volatile(
+                    //"fmadd.d %[acc], ft0, ft1, %[acc] \n"
+                : [ acc ] "+f"(acc), [ test ] "+f"(test)
+                ::"ft0", "ft1");
+            }
+        }
+
+        activations[ldB * out] = acc;
+
+    }
+
+    // End of SSR region.
+    snrt_ssr_disable();
 
 }

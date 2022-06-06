@@ -8,8 +8,7 @@
 // Correctness of results are checked automatically
 
 #include "mnist.h"
-#include "data_five_mnist.h"
-#include "mnist_data.h"
+#include "data_fp32_mnist.h"
 #include "network.h"
 #include "math.h"
 #include "perf_cnt.h"

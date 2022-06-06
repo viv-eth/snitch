@@ -87,6 +87,6 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 // INFO: Function calls for FP32 network with SSRs and SIMD instructions
 void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, double *activations,
+                float *weights, uint32_t ldW, float *biases, float *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
                 uint32_t setup_SSR);
