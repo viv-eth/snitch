@@ -163,8 +163,8 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
-        printf("FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-        printf("FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        // printf("FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        // printf("FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
 
         // make sure that biases outside of the number of
         // output channels are zero
@@ -182,9 +182,9 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
     }
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP64 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("FP64 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    // }
 }
 
 // INFO: start of FP64 network implementation using SSRs
@@ -448,7 +448,7 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // set up SSR registers (there is a total of three data movers)
     register volatile double ft0 asm("ft0"); // stores weight gradients
     register volatile double ft1 asm("ft1"); // stores bias gradients
-    register volatile double ft2 asm("ft2"); // stores biases
+    register volatile double ft2 asm("ft2"); // stores weights
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
     // FIXME: learning rate should be defined in network struct
@@ -476,58 +476,69 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         OUT_CH, 
                         sizeof(double));
 
-        // SSR setup of biases
-        snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+        // SSR setup of weights
+        snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+                        IN_CH, 
                         OUT_CH, 
-                        sizeof(double));
+                        sizeof(double), 
+                        sizeof(double) * ldW);
     }
 
     // SSR start address need to be configured each time
     snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, weight_grads);
     snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, bias_grads);
-    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, biases);
+    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, weights);
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP64 with SSRs: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-        printf("FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("FP64 with SSRs: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    //     printf("FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    // }
 
     // Start of SSR region
     snrt_ssr_enable();
 
     for(uint32_t out = 0; out < OUT_CH; out++){
         // collect the bias gradients in a reg
-        register double acc = bias_grads[ldB * out];
+        register double acc_b = bias_grads[ldB * out];
         // make sure that biases outside of the number of
         // output channels are zero
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
             asm volatile(
-                //"flw         ft3, 4(%[lr]) \n"
-                "fmul.d        %[acc], %[lr], ft1 \n"           // acc = lr * bias_grads[ldB * out]
-                "fdiv.d        %[acc], %[acc], %[nimg] \n"      // acc = acc / nimg
-                "fsub.d        %[acc], ft2, %[acc] \n"          // acc = biases[ldB * out] - acc
-            :[ acc ] "+f"(acc), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
+                "fmul.d        %[acc_b], %[lr], ft1 \n"             // acc = lr * bias_grads[ldB * out]
+                "fdiv.d        %[acc_b], %[acc_b], %[nimg] \n"      // acc = acc / nimg
+                //"fsub.d        %[acc_b], ft2, %[acc_b] \n"        // acc = biases[ldB * out] - acc
+            :[ acc_b ] "+f"(acc_b), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
             :
-            :"ft1", "ft2"
+            :"ft1"
             );
-            biases[ldB * out] = acc;
+            biases[ldB * out] -= acc_b;
             // biases[ldB * out] -= lr * bias_grads[ldB * out] / ((double) number_of_images); reference
         } else {
             biases[ldB * out] = 0;
         }
 
-        // for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
-            
-        //     if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
-        //         weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
-        //     } 
-        // }
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                register double acc_w = weight_grads[out * ldW + in];
+                asm volatile(
+                    "fmul.d        %[acc_w], %[lr], ft0 \n"             // acc = lr * weight_grads[out * ldW + in]
+                    "fdiv.d        %[acc_w], %[acc_w], %[nimg] \n"      // acc = acc / nimg
+                    "fsub.d        %[acc_w], ft2, %[acc_w] \n"          // acc = weights[out * ldW + in] - acc
+                    :[ acc_w ] "+f"(acc_w), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
+                    :
+                    :"ft0", "ft2"
+                );
+
+                weights[out * ldW + in] = acc_w;
+                //weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images); reference
+            } 
+        }
     }
 
     // End of the SSR region. 
     snrt_ssr_disable();
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    // }
 }
