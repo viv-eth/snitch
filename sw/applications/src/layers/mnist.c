@@ -239,15 +239,15 @@ void mnist(const network_t *n){
             //                 setup_SSR);
 
             // INFO: FP32 with SSRs and SIMD
-            // feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-            //                 setup_SSR);
+            feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                            setup_SSR);
 
             // INFO: FP32 baseline
-            feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
-                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+            // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
 
 
             // INFO: FP64 baseline

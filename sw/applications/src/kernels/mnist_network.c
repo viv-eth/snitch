@@ -553,8 +553,8 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
                 uint32_t setup_SSR){
     
-    register volatile double ft0 asm("ft0"); // stores image
-    register volatile double ft1 asm("ft1"); // stores weights
+    register volatile float ft0 asm("ft0"); // stores image
+    register volatile float ft1 asm("ft1"); // stores weights
     asm volatile("" : "=f"(ft0), "=f"(ft1));
 
     // get the total number of input features
@@ -595,23 +595,30 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         register float acc = biases[ldB * out];
         register v2f32 reduce_reg[2];
-        if(compute_id + out * ldB > OUT_CH * 5 - 1){
+        if(compute_id + out * ldB > OUT_CH * 5){
             acc = 0;
         } else {
-            for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+             for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
                 asm volatile(
-                    //"\n"
-                    //"fmv.d           fs1, ft0\n"                                    // move the first pixel into fs1 --> maybe not even needed
+                    "\n"
+                    "fmv.d           fs1, ft0\n"                                    // move the first pixel into fs1 --> maybe not even needed
                     "vfcpka.s.d      %[reduce_reg0], ft0, ft0 \n"                   // pack two double FP pixels into single FP reg reduce_reg0
-                    //"vfcpka.s.s      %[reduce_reg1], ft1, ft1 \n"                   // pack two single FP weights into single FP reg reduce_reg1
-                    //"vfmac.s         %[acc], %[reduce_reg0], %[reduce_reg1] \n"     // fused MAC of FP regs reduce_reg0 and reduce_reg1
-                    //"fmadd.d %[acc], ft0, ft1, %[acc] \n"                         // FP64 SSR reference
+                    "vfcpka.s.s      %[reduce_reg1], ft1, ft1 \n"                   // pack two single FP weights into single FP reg reduce_reg1
+                    "vfmac.s         %[acc], %[reduce_reg0], %[reduce_reg1] \n"     // fused MAC of FP regs reduce_reg0 and reduce_reg1
+                //     //"fmadd.d %[acc], ft0, ft1, %[acc] \n"                         // FP64 SSR reference
                 : [ acc ] "+f"(acc), [ reduce_reg0 ] "+f"(reduce_reg[0]), [ reduce_reg1 ] "+f"(reduce_reg[1])
                 ::"ft0", "ft1");
             }
         }
 
-        //activations[ldB * out] = acc;
+        // FIXME: I am extending execution time since the activations are 
+        //        otherwise screwed up --> need to find a proper solution for the race condition
+        // // snrt_cluster_hw_barrier(); --> cannot be included, as cores get stuck ??
+        snrt_ssr_disable();
+        printf("acc[%u] = %f\n", 1 + compute_id + out * ldB, acc);
+        snrt_ssr_enable();
+
+        activations[ldB * out] = acc;
 
     }
 
