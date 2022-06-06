@@ -220,50 +220,35 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // Start of SSR region
     snrt_ssr_enable();
 
-    // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //     for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
-    //         asm volatile(
-    //             "fmv.d      fs2, ft0 \n"
-    //             :::"ft0", "ft1");
-    //     }
-    // }
-
-    //if(compute_id < 8){
-        for (uint32_t out = 0; out < OUT_CH; out++) {
-            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-            register double acc = biases[ldB * out];
-            if(compute_id + out * ldB > OUT_CH * 5){
-                acc = 0;
-            } else {
-                for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
-                asm volatile(
-                    //"fmv.d      fs2, ft0 \n"
-                    //"fmv.d      fs3, ft1 \n"
-                    "fmadd.d %[acc], ft0, ft1, %[acc] \n"
-                : [ acc ] "+f"(acc)
-                ::"ft0", "ft1");
-                }
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        // we need to read the image for every new iteration
+        // of a core, because otherwise it will evaluate to
+        // all zeros due to the stream semantics
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        register double acc = biases[ldB * out];
+        if(compute_id + out * ldB > OUT_CH * 5){
+            acc = 0;
+        } else {
+            for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            asm volatile(
+                "fmadd.d %[acc], ft0, ft1, %[acc] \n"
+            : [ acc ] "+f"(acc)
+            ::"ft0", "ft1");
             }
-
-            // snrt_ssr_disable();
-            // if(compute_id + out * ldB > 7){
-            //     acc = 0;
-            // }
-            // snrt_ssr_enable();
-
-            activations[ldB * out] = acc;
-
         }
 
-        // End of SSR region.
-        snrt_ssr_disable();
+        activations[ldB * out] = acc;
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
     }
+
+    // End of SSR region.
+    snrt_ssr_disable();
+
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
     
-    // core_sync = 1;
-    // FIXME: for some reason core 8 gets stuck at the HW barrier 
+    core_sync = 1;
     snrt_cluster_hw_barrier();
 
 }
