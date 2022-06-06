@@ -90,3 +90,8 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 float *weights, uint32_t ldW, float *biases, float *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
                 uint32_t setup_SSR);
+
+// INFO Function calls for FP32 WITHOUT SSRs and SIMD
+void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weights, uint32_t ldW, float *biases, float* activations,
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync);

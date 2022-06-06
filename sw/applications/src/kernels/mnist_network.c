@@ -7,6 +7,10 @@
 #include "printf.h"
 #include "snrt.h"
 
+typedef float v2f32 __attribute__((vector_size(8)));
+typedef __fp16 v4f16 __attribute__((vector_size(8)));
+typedef char v8f8 __attribute__((vector_size(8)));
+
 // INFO: start of FP64 baseline network implementation
 
 // The output of the feedforward is accumulated in the activations variable
@@ -589,24 +593,63 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-        register double acc = biases[ldB * out];
-        register double test;
-        if(compute_id + out * ldB > OUT_CH * 5){
+        register float acc = biases[ldB * out];
+        register v2f32 reduce_reg[2];
+        if(compute_id + out * ldB > OUT_CH * 5 - 1){
             acc = 0;
         } else {
             for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
                 asm volatile(
-                    //"fmadd.d %[acc], ft0, ft1, %[acc] \n"
-                : [ acc ] "+f"(acc), [ test ] "+f"(test)
+                    //"\n"
+                    //"fmv.d           fs1, ft0\n"                                    // move the first pixel into fs1 --> maybe not even needed
+                    "vfcpka.s.d      %[reduce_reg0], ft0, ft0 \n"                   // pack two double FP pixels into single FP reg reduce_reg0
+                    //"vfcpka.s.s      %[reduce_reg1], ft1, ft1 \n"                   // pack two single FP weights into single FP reg reduce_reg1
+                    //"vfmac.s         %[acc], %[reduce_reg0], %[reduce_reg1] \n"     // fused MAC of FP regs reduce_reg0 and reduce_reg1
+                    //"fmadd.d %[acc], ft0, ft1, %[acc] \n"                         // FP64 SSR reference
+                : [ acc ] "+f"(acc), [ reduce_reg0 ] "+f"(reduce_reg[0]), [ reduce_reg1 ] "+f"(reduce_reg[1])
                 ::"ft0", "ft1");
             }
         }
 
-        activations[ldB * out] = acc;
+        //activations[ldB * out] = acc;
 
     }
 
     // End of SSR region.
     snrt_ssr_disable();
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        printf("FP32 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
+
+}
+
+
+void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weights, uint32_t ldW, float *biases, float *activations,
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
+
+    
+    // Linear layer: OUT = X * W^T + B
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        //printf("Step: %u\n", out + compute_id);
+        register float acc = biases[ldB * out];
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            acc += image[in] * weights[out * ldW + in];
+            // INFO: If this is not set harts start reading outside the mem map
+            // FIXME: Next harts should start computation of the subsequent image
+            if(compute_id + out * ldB > OUT_CH * 5){
+                acc = 0;
+            }
+        }
+        // OUT is accumulated in activations 
+        activations[ldB * out] = acc;
+        printf("FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        core_sync = 1;
+        //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
+    }
+    // when a cluster is done with its part of the FF it asserts the 
+    // sync flag to indicate that the computation is done
+    //snrt_cluster_hw_barrier();
 
 }
