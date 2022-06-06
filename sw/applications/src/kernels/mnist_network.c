@@ -154,7 +154,6 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 } // WORKS on Cluster 1
 
-// TODO: implement training step for multiple images
 void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
@@ -164,10 +163,13 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
+        printf("FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        printf("FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+
         // make sure that biases outside of the number of
         // output channels are zero
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
-            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((double) number_of_images);
         } else {
             biases[ldB * out] = 0;
         }
@@ -175,9 +177,13 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             
             if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
-                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
             } 
         }
+    }
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP64 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     }
 }
 
@@ -336,6 +342,7 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
     snrt_cluster_hw_barrier();
 }
 
+//// Gradient Update
 void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
                 uint32_t ldB, double *image, uint32_t *target, uint32_t ldI, 
@@ -363,11 +370,6 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     } else {
         loss[0] += 0;
     }
-
-    // Unrolling factor of most inner loop.
-    // Should be at least as high as the FMA delay
-    // for maximum utilization
-    const uint32_t unroll = 8;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -435,4 +437,97 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     snrt_cluster_hw_barrier();
 
+}
+
+//// Training Step
+void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images, uint32_t setup_SSR){
+    
+    // set up SSR registers (there is a total of three data movers)
+    register volatile double ft0 asm("ft0"); // stores weight gradients
+    register volatile double ft1 asm("ft1"); // stores bias gradients
+    register volatile double ft2 asm("ft2"); // stores biases
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+    
+    // FIXME: learning rate should be defined in network struct
+    double lr = 0.5;
+
+    double nimg = ((double)number_of_images);
+
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    if (setup_SSR) {
+        
+        // SSR setup of weight gradients
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
+
+
+        // SSR setup of bias gradients
+        snrt_ssr_loop_1d(SNRT_SSR_DM1, 
+                        OUT_CH, 
+                        sizeof(double));
+
+        // SSR setup of biases
+        snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+                        OUT_CH, 
+                        sizeof(double));
+    }
+
+    // SSR start address need to be configured each time
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, weight_grads);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, bias_grads);
+    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, biases);
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP64 with SSRs: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        printf("FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    }
+
+    // Start of SSR region
+    snrt_ssr_enable();
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        // collect the bias gradients in a reg
+        register double acc = bias_grads[ldB * out];
+        // make sure that biases outside of the number of
+        // output channels are zero
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            asm volatile(
+                //"flw         ft3, 4(%[lr]) \n"
+                "fmul.d        %[acc], %[lr], ft1 \n"           // acc = lr * bias_grads[ldB * out]
+                "fdiv.d        %[acc], %[acc], %[nimg] \n"      // acc = acc / nimg
+                "fsub.d        %[acc], ft2, %[acc] \n"          // acc = biases[ldB * out] - acc
+            :[ acc ] "+f"(acc), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
+            :
+            :"ft1", "ft2"
+            );
+            biases[ldB * out] = acc;
+            // biases[ldB * out] -= lr * bias_grads[ldB * out] / ((double) number_of_images); reference
+        } else {
+            biases[ldB * out] = 0;
+        }
+
+        // for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+        //     if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+        //         weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
+        //     } 
+        // }
+    }
+
+    // End of the SSR region. 
+    snrt_ssr_disable();
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
 }
