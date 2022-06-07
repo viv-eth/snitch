@@ -33,13 +33,11 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        //printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-        core_sync = 1;
+        // printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
-    // when a cluster is done with its part of the FF it asserts the 
-    // sync flag to indicate that the computation is done
-    //snrt_cluster_hw_barrier();
+
+    core_sync = 1;
 
 } // WORKS on Cluster 0
 
@@ -253,12 +251,11 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of SSR region.
     snrt_ssr_disable();
 
-    // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //     printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    // }
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
     
     core_sync = 1;
-    //snrt_cluster_hw_barrier();
 
 }
 
@@ -602,8 +599,9 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 asm volatile(
                     "\n"
                     "fmv.d           fs1, ft0\n"                                    // move the first pixel into fs1 --> maybe not even needed
-                    "vfcpka.s.d      %[reduce_reg0], ft0, ft0 \n"                   // pack two double FP pixels into single FP reg reduce_reg0
-                    "vfcpka.s.s      %[reduce_reg1], ft1, ft1 \n"                   // pack two single FP weights into single FP reg reduce_reg1
+                    "fmv.s           fs2, ft1\n"                                    // move the first weight into fs2
+                    "vfcpka.s.d      %[reduce_reg0], fs1, ft0 \n"                   // pack two double FP pixels into single FP reg reduce_reg0
+                    "vfcpka.s.s      %[reduce_reg1], fs2, ft1 \n"                   // pack two single FP weights into single FP reg reduce_reg1
                     "vfmac.s         %[acc], %[reduce_reg0], %[reduce_reg1] \n"     // fused MAC of FP regs reduce_reg0 and reduce_reg1
                 //     //"fmadd.d %[acc], ft0, ft1, %[acc] \n"                         // FP64 SSR reference
                 : [ acc ] "+f"(acc), [ reduce_reg0 ] "+f"(reduce_reg[0]), [ reduce_reg1 ] "+f"(reduce_reg[1])
