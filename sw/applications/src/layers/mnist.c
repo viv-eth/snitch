@@ -67,19 +67,51 @@ void mnist(const network_t *n){
     // @brief Cluster Memory Structure for each cluster to ensure
     // we can access the data of both by using the constant
     // cluster base offset
-    void *ptr = (double *)snrt_cluster_memory().start;
-    // void *ptr_start = ptr;
-    double *max= ptr; // zero initialized
+    // void *ptr = (double *)snrt_cluster_memory().start;
+    // // void *ptr_start = ptr;
+    // double *max= ptr; // zero initialized
+    // ptr += max_size;
+    // double *loss = ptr; // zero initialized
+    // ptr += loss_size;
+    // double *images = ptr;
+    // ptr += number_of_images*image_size;
+    // double *biases = ptr; // bias GRADIENTS zero initialized
+    // ptr += bias_mat_size;
+    // double *activations = ptr;
+    // ptr += act_mat_size;
+    // double *weights = ptr; // weight GRADIENTS zero initialized
+    // ptr += weight_mat_size;
+    // // NOTE: core sync flag used to indictae whether computation is done or not
+    // uint32_t *core_sync = ptr; // zero initialized
+    // ptr += core_sync_flag_size;
+    // uint32_t *targets = ptr;
+    // ptr += number_of_images*target_size;
+    // NOTE: following lines for debugging purposes only
+    // void *ptr_end = (double *)snrt_cluster_memory().end;
+    // if(compute_id == 0){   
+    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    // }
+
+    // // INFO FP32 cluster memory setup
+    // // images remain in double precision
+    void *ptr = (float *)snrt_cluster_memory().start;
+    float *max= ptr; // zero initialized
     ptr += max_size;
-    double *loss = ptr; // zero initialized
+    float *loss = ptr; // zero initialized
     ptr += loss_size;
-    double *images = ptr;
+    float *images = ptr;
     ptr += number_of_images*image_size;
-    double *biases = ptr; // bias GRADIENTS zero initialized
+    float *biases = ptr; // bias GRADIENTS zero initialized
     ptr += bias_mat_size;
-    double *activations = ptr;
+    float *activations = ptr;
     ptr += act_mat_size;
-    double *weights = ptr; // weight GRADIENTS zero initialized
+    // INFO: setting weights as last element so 
+    // when we iterate over data we can zero out
+    // excessive rows --> FIXME: this does not work in the RTL probably
+    float *weights = ptr; // weight GRADIENTS zero initialized
     ptr += weight_mat_size;
     // NOTE: core sync flag used to indictae whether computation is done or not
     uint32_t *core_sync = ptr; // zero initialized
@@ -94,38 +126,6 @@ void mnist(const network_t *n){
     //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
     //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // }
-
-    // // INFO FP32 cluster memory setup
-    // // images remain in double precision
-    // void *ptr = (float *)snrt_cluster_memory().start;
-    // float *max= ptr; // zero initialized
-    // ptr += max_size;
-    // uint32_t *targets = ptr;
-    // ptr += number_of_images*target_size;
-    // float *loss = ptr; // zero initialized
-    // ptr += loss_size;
-    // float *images = ptr;
-    // ptr += number_of_images*image_size;
-    // float *biases = ptr; // bias GRADIENTS zero initialized
-    // ptr += bias_mat_size;
-    // float *activations = ptr;
-    // ptr += act_mat_size;
-    // // INFO: setting weights as last element so 
-    // // when we iterate over data we can zero out
-    // // excessive rows --> FIXME: this does not work in the RTL probably
-    // float *weights = ptr; // weight GRADIENTS zero initialized
-    // ptr += weight_mat_size;
-    // // NOTE: core sync flag used to indictae whether computation is done or not
-    // uint32_t *core_sync = ptr; // zero initialized
-    // ptr += core_sync_flag_size;
-    // // NOTE: following lines for debugging purposes only
-    // // void *ptr_end = (double *)snrt_cluster_memory().end;
-    // // if(compute_id == 0){   
-    // //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
-    // //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
-    // //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
-    // //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
-    // // }
 
     // cluster offset in an Occamy quadrant
     uint32_t cluster_offset = 0x00040000;
@@ -159,7 +159,7 @@ void mnist(const network_t *n){
                 snrt_dma_txid_t txid_IMG = 
                     snrt_dma_start_1d(images,                                   // destination
                                     n->images,                                  // source
-                                    sizeof(double) * number_of_images * IN_CH); // size
+                                    n->dtype * number_of_images * IN_CH);  // size
 
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
@@ -189,6 +189,12 @@ void mnist(const network_t *n){
 
     // We now loop through the images
     for(uint32_t image = 0; image < 1; image++){
+
+        // if(!compute_id){
+        //     for(uint32_t in = 0; in < 784; in++){
+        //         printf("image[%u] = %f\n", in, images[in]);
+        //     }
+        // } --> this prints the correct image
 
         // we calculate the pointer postion of the current image
         uint32_t curr_img = image * IN_CH;
@@ -238,12 +244,12 @@ void mnist(const network_t *n){
             // feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
             //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
             //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-            //                 setup_SSR);
+            //                 setup_SSR); 
 
             // INFO: FP32 baseline
-            // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+            feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
 
 
             // INFO: FP64 baseline
