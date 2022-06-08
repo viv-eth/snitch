@@ -262,7 +262,7 @@ void mnist(const network_t *n){
             //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
             //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
 
-            softmax_activation_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+            softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, &activations[b_offset], ldB,
                             &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
             benchmark_get_cycle();
@@ -314,11 +314,11 @@ void mnist(const network_t *n){
 
             benchmark_get_cycle();
             // INFO: baseline
-            gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-                            &weights[W_offset], ldW, 
-                            &biases[b_offset], &act_ptr[b_offset], 
-                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-                            loss, compute_num);
+            // gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, 
+            //                 &biases[b_offset], &act_ptr[b_offset], 
+            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+            //                 loss, compute_num);
 
             // INFO: FP64 with SSRs
             // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
@@ -326,6 +326,20 @@ void mnist(const network_t *n){
             //                 &biases[b_offset], &act_ptr[b_offset], 
             //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
             //                 loss, compute_num, setup_SSR);
+
+            // INFO: FP32 with SSRs and SIMD
+            // gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, 
+            //                 &biases[b_offset], &act_ptr[b_offset], 
+            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+            //                 loss, compute_num, setup_SSR);
+
+            // INFO: FP32 baseline
+            gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, 
+                            &biases[b_offset], &act_ptr[b_offset], 
+                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                            loss, compute_num);
             benchmark_get_cycle();
 
             if(!compute_id){
