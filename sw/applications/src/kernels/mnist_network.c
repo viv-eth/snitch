@@ -545,14 +545,16 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 }
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
+//// Feedforward Step
 void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, uint32_t ldW, float *biases, float *activations,
-                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
+                uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
                 uint32_t setup_SSR){
     
     register volatile float ft0 asm("ft0"); // stores image
     register volatile float ft1 asm("ft1"); // stores weights
     asm volatile("" : "=f"(ft0), "=f"(ft1));
+    register float acc;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -565,22 +567,20 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 
     if (setup_SSR) {
 
-        // setup of input data (MNIST image)
+        // setup of DATA MOVER input data (MNIST image)
         snrt_ssr_loop_2d(SNRT_SSR_DM0, 
                         IN_CH, 
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldI);
         
-
+        // setup of DATA MOVER for weights
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
                         IN_CH, 
                         OUT_CH, 
-                        sizeof(float), 
-                        sizeof(float) * ldW);
+                        sizeof(double), 
+                        sizeof(double) * ldW);
     }
-
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);
 
     // Start of SSR region
     snrt_ssr_enable();
@@ -590,31 +590,40 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-        register float acc = biases[ldB * out];
-        register v2f32 reduce_reg[2];
-        if(compute_id + out * ldB > OUT_CH * 5){
-            acc = 0;
-        } else {
-             for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+        acc = biases[ldB * out];
+        register v2f32 reduce_reg;
+        register v2f32 sum;
+        const register float zero = 0.0;
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            asm volatile(
+                "vfcpka.s.s     %[reduce_reg], %[acc], %[zero] \n"
+                : [ reduce_reg ] "=f"(reduce_reg)
+                : [ zero ] "f"(zero), [ acc ] "f"(acc) 
+                : "ft0", "ft1");
+             for(uint32_t in = 0; in < IN_CH1*IN_CH2;){
                 asm volatile(
-                    "\n"
-                    "fmv.d           fs1, ft0\n"                                    // move the first pixel into fs1 --> maybe not even needed
-                    "fmv.s           fs2, ft1\n"                                    // move the first weight into fs2
-                    "vfcpka.s.d      %[reduce_reg0], fs1, ft0 \n"                   // pack two double FP pixels into single FP reg reduce_reg0
-                    "vfcpka.s.s      %[reduce_reg1], fs2, ft1 \n"                   // pack two single FP weights into single FP reg reduce_reg1
-                    "vfmac.s         %[acc], %[reduce_reg0], %[reduce_reg1] \n"     // fused MAC of FP regs reduce_reg0 and reduce_reg1
-                //     //"fmadd.d %[acc], ft0, ft1, %[acc] \n"                         // FP64 SSR reference
-                : [ acc ] "+f"(acc), [ reduce_reg0 ] "+f"(reduce_reg[0]), [ reduce_reg1 ] "+f"(reduce_reg[1])
-                ::"ft0", "ft1");
+                    "vfmac.s    %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
+                    //"vfsum.s    %[test], %[reduce_reg] \n"
+                    : [ reduce_reg ] "+f"(reduce_reg)
+                    :
+                    : "ft0", "ft1");
+
+                    // step the image pointer by two
+                    in += 2;
             }
         }
 
-        // FIXME: I am extending execution time since the activations are 
-        //        otherwise screwed up --> need to find a proper solution for the race condition
-        // // snrt_cluster_hw_barrier(); --> cannot be included, as cores get stuck ??
-        snrt_ssr_disable();
-        printf("acc[%u] = %f\n", 1 + compute_id + out * ldB, acc);
-        snrt_ssr_enable();
+        asm volatile(
+                "vfcpka.s.s        %[sum], %[zero], %[zero] \n"
+                "vfsum.s           %[sum], %[reduce_reg] \n"
+                "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
+                : [ acc ] "+f"(acc), [ sum ] "=&f"(sum)
+                : [ zero ] "f"(zero),  [ reduce_reg ] "f"(reduce_reg)
+                :"ft0", "ft1");
+
+        // Q: Why do we need to do this?
+        snrt_cluster_hw_barrier();
 
         activations[ldB * out] = acc;
 
@@ -624,12 +633,74 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     snrt_ssr_disable();
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
+        // cleanup of leftover columns
+        if(compute_id + out * ldB > OUT_CH * 5 - 1){
+            activations[ldB * out] = 0;
+        }
+
         printf("FP32 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
     }
 
 }
 
+//// Activation Step
+void softmax_activation_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weights, uint32_t ldW, float *activations, uint32_t ldB,
+                float *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, float *max, uint32_t* core_sync, uint32_t setup_SSR){
 
+        float max_core;
+        float sum = 0.0;
+            
+        while(!(core_sync[0])){
+            max_core = 0.0;
+        }
+
+        max_core = activations[0];
+        
+        // Q: Do SSR regs need to be double or doesn't it matter? --> ask GIM
+        register volatile float ft0 asm("ft0"); // stores activations
+        asm volatile("" : "=f"(ft0));
+
+        if (setup_SSR) {
+
+            const uint32_t ssr0_b = OUT_CH;
+            const uint32_t ssr0_i = sizeof(double);
+
+            snrt_ssr_loop_1d(SNRT_SSR_DM0, ssr0_b, ssr0_i);
+
+        }
+
+    if(core_sync[compute_id]){
+        
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
+
+        // Start of SSR region
+        snrt_ssr_enable();
+        for(uint32_t out = 0; out < OUT_CH; out++){
+            asm volatile(
+                        ""
+                        // "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
+                        // "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
+                        // "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
+                        // "beqz       t0, 2f\n"                   // else go to loop start
+                        // "1: \n"     
+                        // "fmv.d      %[max_core], fs2 \n"
+                        // "2: \n" --> FP64 reference
+                        : [ max_core ] "+f"(max_core)::"ft0");
+        }
+
+        max[compute_id] = max_core;
+    
+    }
+        
+
+    // End of the SSR region. 
+    snrt_ssr_disable();
+
+}
+
+// INFO: start of FP32 baseline network implementation
 void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, uint32_t ldW, float *biases, float *activations,
                 uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
@@ -639,10 +710,12 @@ void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     //         printf("image[%u] = %f\n", in, image[in]);
     //     }
     // }
+
     
     // Linear layer: OUT = X * W^T + B
     for (uint32_t out = 0; out < OUT_CH; out++) {
         //printf("Step: %u\n", out + compute_id);
+        printf("weights[%u] = %f\n", out*ldW, weights[out*ldW]);
         register float acc = biases[ldB * out];
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             acc += image[in] * weights[out * ldW + in];
@@ -654,7 +727,7 @@ void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        //printf("FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
     core_sync = 1;
