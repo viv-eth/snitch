@@ -261,6 +261,10 @@ void mnist(const network_t *n){
             // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
             //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
             //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+
+            softmax_activation_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, &activations[b_offset], ldB,
+                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
             benchmark_get_cycle();
 
             if(!compute_id){
@@ -268,6 +272,8 @@ void mnist(const network_t *n){
             }
 
         } else {
+            snrt_cluster_hw_barrier();
+            snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
         }

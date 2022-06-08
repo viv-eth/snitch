@@ -649,55 +649,62 @@ void softmax_activation_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t
                 float *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, float *max, uint32_t* core_sync, uint32_t setup_SSR){
 
-        float max_core;
-        float sum = 0.0;
-            
-        while(!(core_sync[0])){
-            max_core = 0.0;
-        }
-
-        max_core = activations[0];
+    float max_core;
+    float sum = 0.0;
         
-        // Q: Do SSR regs need to be double or doesn't it matter? --> ask GIM
-        register volatile float ft0 asm("ft0"); // stores activations
-        asm volatile("" : "=f"(ft0));
+    while(!(core_sync[0])){
+        max_core = 0.0;
+    }
 
-        if (setup_SSR) {
-
-            const uint32_t ssr0_b = OUT_CH;
-            const uint32_t ssr0_i = sizeof(double);
-
-            snrt_ssr_loop_1d(SNRT_SSR_DM0, ssr0_b, ssr0_i);
-
-        }
+    max_core = activations[0];
 
     if(core_sync[compute_id]){
-        
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
 
-        // Start of SSR region
-        snrt_ssr_enable();
+        //core_sync[compute_id] = 0;
+
         for(uint32_t out = 0; out < OUT_CH; out++){
-            asm volatile(
-                        ""
-                        // "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
-                        // "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
-                        // "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
-                        // "beqz       t0, 2f\n"                   // else go to loop start
-                        // "1: \n"     
-                        // "fmv.d      %[max_core], fs2 \n"
-                        // "2: \n" --> FP64 reference
-                        : [ max_core ] "+f"(max_core)::"ft0");
+            if(activations[ldB * out] > max_core) {
+                max_core = activations[ldB * out];
+            }
         }
 
         max[compute_id] = max_core;
-    
+
     }
-        
+    
+    snrt_cluster_hw_barrier();
 
-    // End of the SSR region. 
-    snrt_ssr_disable();
+    //printf("Max value of compute core %u is %f\n", compute_id, max_core);
 
+    float max_global = max[0];
+
+    // Reduction on single core
+    if(compute_id == 0){
+        for(uint32_t core = 0; core < compute_num; core++){
+            if(max[core] > max_global){
+                max_global = max[core];
+            }
+        }
+
+        // FIXME: actually OUT_CH should be multiplied by number of compute cores
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            if(activations[out]){
+                activations[out] = exp(activations[out] - max_global);
+                sum += activations[out];
+            } else {
+                activations[out] = 0.0;
+            }
+        }
+
+
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            activations[out] /= sum;
+            printf("FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+        }
+    }
+
+    //core_sync[compute_id] = 0;
+    snrt_cluster_hw_barrier();
 }
 
 // INFO: start of FP32 baseline network implementation
