@@ -281,63 +281,64 @@ void mnist(const network_t *n){
         // wait until clusters are synchronized to not
         // start gradient update until all activations are 
         // computed
-        // snrt_global_barrier();
+        snrt_global_barrier();
 
-        // if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
-        //     // determine the row offset at which current compute cluster is
-        //     volatile uint32_t W_offset = compute_id * IN_CH;
-        //     volatile uint32_t b_offset = compute_id;
-        //     // Calculate number of rows for each compute
-        //     // core. If multiples of each other we have to 
-        //     // forcefully set it to 1
-        //     volatile uint32_t div = n->OUT_CH % compute_num;
-        //     if(div == 0){
-        //         div = 1;
-        //     }
+        if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
+            // determine the row offset at which current compute cluster is
+            volatile uint32_t W_offset = compute_id * IN_CH;
+            volatile uint32_t b_offset = compute_id;
+            // Calculate number of rows for each compute
+            // core. If multiples of each other we have to 
+            // forcefully set it to 1
+            volatile uint32_t div = n->OUT_CH % compute_num;
+            if(div == 0){
+                div = 1;
+            }
 
 
-        //     // determine the row stride of each matrix    
-        //     volatile uint32_t ldW = compute_num * IN_CH;
-        //     volatile uint32_t ldB = compute_num;
-        //     volatile uint32_t ldI = IN_CH;
+            // determine the row stride of each matrix    
+            volatile uint32_t ldW = compute_num * IN_CH;
+            volatile uint32_t ldB = compute_num;
+            volatile uint32_t ldI = IN_CH;
 
-        //     double *act_ptr = ((uint32_t)activations) - cluster_offset;
+            uint32_t *act_ptr = ((uint32_t)activations) - cluster_offset;
 
-        //     double *img_ptr = ((uint32_t)images) - cluster_offset;
+            uint32_t *img_ptr = ((uint32_t)images) - cluster_offset;
 
-        //     //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
-        //     //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
+            //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
+            //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
 
-        //     // if(!compute_id){
-        //     //     printf("Gradient Update start\n");
-        //     // }
+            if(!compute_id){
+                printf("Gradient Update start\n");
+            }
 
-        //     benchmark_get_cycle();
-        //     // INFO: baseline
-        //     gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-        //                     &weights[W_offset], ldW, 
-        //                     &biases[b_offset], &act_ptr[b_offset], 
-        //                     ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-        //                     loss, compute_num);
-        //     // INFO: FP64 with SSRs
-        //     // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-        //     //                 &weights[W_offset], ldW, 
-        //     //                 &biases[b_offset], &act_ptr[b_offset], 
-        //     //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-        //     //                 loss, compute_num, setup_SSR);
-        //     benchmark_get_cycle();
+            benchmark_get_cycle();
+            // INFO: baseline
+            gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, 
+                            &biases[b_offset], &act_ptr[b_offset], 
+                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                            loss, compute_num);
 
-        //     // if(!compute_id){
-        //     //     printf("Gradient Update done\n");
-        //     // }
+            // INFO: FP64 with SSRs
+            // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, 
+            //                 &biases[b_offset], &act_ptr[b_offset], 
+            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+            //                 loss, compute_num, setup_SSR);
+            benchmark_get_cycle();
 
-        //     // if(!compute_id){
-        //     //     printf("total loss = %f\n", loss[0]/(image+1));
-        //     // }
+            if(!compute_id){
+                printf("Gradient Update done\n");
+            }
 
-        // } else {
-        //     snrt_cluster_hw_barrier();
-        // }
+            if(!compute_id){
+                printf("total loss = %f\n", loss[0]/(image+1));
+            }
+
+        } else {
+            snrt_cluster_hw_barrier();
+        }
     }
 
     //snrt_global_barrier();

@@ -386,7 +386,7 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double), 
                         sizeof(double) * ldI);
         
-        // SSR setup of weights
+        // SSR setup of weight gradients
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
                         IN_CH, 
                         OUT_CH, 
@@ -644,7 +644,7 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 }
 
 //// Activation Step
-void softmax_activation_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+void softmax_activation_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, uint32_t ldW, float *activations, uint32_t ldB,
                 float *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, float *max, uint32_t* core_sync, uint32_t setup_SSR){
@@ -705,6 +705,107 @@ void softmax_activation_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t
 
     //core_sync[compute_id] = 0;
     snrt_cluster_hw_barrier();
+}
+
+//// Gradient Update
+void gradient_update_fp32_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
+                uint32_t ldB, float *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, float *loss, uint32_t compute_num, uint32_t setup_SSR){
+
+    // set up SSR registers (there is a total of three data movers)
+    register volatile double ft0 asm("ft0"); // stores image
+    register volatile double ft1 asm("ft1"); // stores weight gradients
+    register volatile double ft2 asm("ft2"); // stores activations
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+
+    float b_grad_update = 0.0;
+    float W_grad_update = 0.0;
+    volatile uint32_t idx_eff;
+
+    // get the value saved at target address
+    uint32_t target_n = *target;
+    
+    // compute the loss
+    float loss_val = 0.0 - log(activations[target_n -compute_id]);
+
+    // save the value into the loss pointer
+    if(!compute_id){
+        loss[0] += loss_val;
+    } else {
+        loss[0] += 0;
+    }
+
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    if (setup_SSR) {
+
+        // setup of input data (MNIST image)
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldI);
+
+        // setup of input data (MNIST image)
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldI);
+        
+        // SSR setup of weights
+        snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
+
+
+        // SSR setup of activations
+        // snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+        //                 OUT_CH, 
+        //                 sizeof(double));
+    }
+
+    // SSR start address need to be configured each time
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, image + 1);
+    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, weight_grads);
+    //snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, activations);
+
+    // Start of SSR region
+    snrt_ssr_enable();
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        idx_eff = compute_id + ldB * out;
+        // Gradient Calculation for SoftMax activation with Cross Entropy Loss
+        b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        register v2f32 reduce_reg;
+        for(uint32_t in = 0; in < IN_CH;){
+            asm volatile(
+                "vfcpka.s.s     %[reduce_reg], %[b_grad], %[b_grad] \n" 
+                "vfmul.s.s      %[reduce_reg], %[reduce_reg], %[image] \n"
+                : [reduce_reg0] "+f"(reduce_reg)
+                : [b_grad] "f"(b_grad_update), [zero] "f"(0.0)
+                : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+
+            in += 2;
+        }
+            // W_grad_update = b_grad_update * image[in];
+            // weight_grads[in + ldW * out] += W_grad_update;
+
+    }
+
+
+
+    snrt_ssr_disable();
+
+
 }
 
 // INFO: start of FP32 baseline network implementation
