@@ -716,8 +716,8 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
     // set up SSR registers (there is a total of three data movers)
     register volatile double ft0 asm("ft0"); // stores image
     register volatile double ft1 asm("ft1"); // stores weight gradients
-    register volatile double ft2 asm("ft2"); // stores activations
-    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+   
+    asm volatile("" : "=f"(ft0), "=f"(ft1));
 
     float b_grad_update = 0.0;
     float W_grad_update = 0.0;
@@ -750,63 +750,48 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldI);
-
-        // setup of input data (MNIST image)
-        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldI);
         
         // SSR setup of weights
-        snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
                         IN_CH, 
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldW);
 
-
-        // SSR setup of activations
-        // snrt_ssr_loop_1d(SNRT_SSR_DM2, 
-        //                 OUT_CH, 
-        //                 sizeof(double));
     }
-
-    // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, image + 1);
-    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, weight_grads);
-    //snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, activations);
 
     // Start of SSR region
     snrt_ssr_enable();
 
     for(uint32_t out = 0; out < OUT_CH; out++){
-        // read data into SSRs from correct addresses
+        // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
         register v2f32 reduce_reg;
+        snrt_cluster_hw_barrier();
         for(uint32_t in = 0; in < IN_CH;){
             asm volatile(
-                "vfcpka.s.s     %[reduce_reg], %[b_grad], %[b_grad] \n"   // pack b_grad into vector register
-                "vfmul.s        %[reduce_reg], %[reduce_reg], ft0 \n"     // multiply by two image pixels
-                "vfadd.s        %[reduce_reg], %[reduce_reg], ft1 \n"     // add weight gradients
-                : [reduce_reg] "+f"(reduce_reg)
-                : [b_grad] "f"(b_grad_update), [zero] "f"(0.0)
+                "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n"       // load the bias gradient for each vector
+                "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"         // compute weight update b_grad * image
+                "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"         // add weight update to weight gradient
+                : [reduce_reg] "+&f"(reduce_reg)
+                : [b_grad] "f"(b_grad_update)
                 : "ft0", "ft1"
             );
 
+            weight_grads[out*ldW + in] = reduce_reg[in];
+            weight_grads[out*ldW + in + 1] = reduce_reg[in + 1];
+
             in += 2;
         }
-            // W_grad_update = b_grad_update * image[in];
-            // weight_grads[in + ldW * out] += W_grad_update;
+
+        bias_grads[ldB * out] = b_grad_update;
+
 
     }
-
-
 
     snrt_ssr_disable();
 
@@ -883,6 +868,8 @@ void gradient_update_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
 
+        //printf("b_grad_update = %f\n", b_grad_update);
+
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             
             W_grad_update = b_grad_update * image[in];
@@ -892,7 +879,7 @@ void gradient_update_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             }
         }
             
-        bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
+        bias_grads[ldB * out] = b_grad_update;
         //printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 

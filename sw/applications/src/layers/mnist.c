@@ -328,18 +328,18 @@ void mnist(const network_t *n){
             //                 loss, compute_num, setup_SSR);
 
             // INFO: FP32 with SSRs and SIMD
-            // gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, 
-            //                 &biases[b_offset], &act_ptr[b_offset], 
-            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-            //                 loss, compute_num, setup_SSR);
-
-            // INFO: FP32 baseline
-            gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
+            gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
                             &weights[W_offset], ldW, 
                             &biases[b_offset], &act_ptr[b_offset], 
                             ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-                            loss, compute_num);
+                            loss, compute_num, setup_SSR);
+
+            // INFO: FP32 baseline
+            // gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, 
+            //                 &biases[b_offset], &act_ptr[b_offset], 
+            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+            //                 loss, compute_num);
             benchmark_get_cycle();
 
             if(!compute_id){
@@ -351,6 +351,8 @@ void mnist(const network_t *n){
             }
 
         } else {
+            snrt_cluster_hw_barrier();
+            snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
         }
     }
