@@ -8,6 +8,10 @@
 #include "snrt.h"
 
 typedef float v2f32 __attribute__((vector_size(8)));
+union fp32_v2f32_u { 
+        v2f32 v2; 
+        float v[2]; 
+};
 typedef __fp16 v4f16 __attribute__((vector_size(8)));
 typedef char v8f8 __attribute__((vector_size(8)));
 
@@ -562,8 +566,6 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     // SSR strides and bounds only have to be configured
     // once in the beginning
     // WARN In the RTL SSR strides MUST BE of size DOUBLE
-    // NOTE Which I will completely ignore at the moment until
-    //      discussing with GIM
 
     if (setup_SSR) {
 
@@ -722,6 +724,7 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
     float b_grad_update = 0.0;
     float W_grad_update = 0.0;
     volatile uint32_t idx_eff;
+    union fp32_v2f32_u reduce_reg_u;
 
     // get the value saved at target address
     uint32_t target_n = *target;
@@ -782,8 +785,16 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
                 : "ft0", "ft1"
             );
 
-            weight_grads[out*ldW + in] = reduce_reg[in];
-            weight_grads[out*ldW + in + 1] = reduce_reg[in + 1];
+            reduce_reg_u.v2 = reduce_reg;
+
+            weight_grads[out*ldW + in] = reduce_reg_u.v[0];
+            weight_grads[out*ldW + in + 1] = reduce_reg_u.v[1];
+
+            // snrt_ssr_disable();
+            // printf("reduce_reg[0] = %f\n", weight_grads[out*ldW + in]);
+            // printf("reduce_reg[1] = %f\n", weight_grads[out*ldW + in + 1]);
+            // snrt_ssr_enable();
+
 
             in += 2;
         }
@@ -796,6 +807,111 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
     snrt_ssr_disable();
 
     snrt_cluster_hw_barrier();
+}
+
+//// Training Step
+void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weights, float *weight_grads, uint32_t ldW, float *biases, float *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images, uint32_t setup_SSR){
+
+    float lr = 0.5;
+
+    float test; // test variable for debugging
+
+    // convert number of images to float for vectorized computation
+    float nimg = ((float)number_of_images);
+    register v2f32 lr_vec;
+    register v2f32 nimg_vec;
+    union fp32_v2f32_u reduce_reg_u;
+    // pack the learning rate and number of images into a vector for vectorized computation
+    asm volatile(
+        "vfcpka.s.s          %[lr_vec], %[lr], %[lr] \n"
+        "vfcpka.s.s          %[nimg_vec], %[nimg], %[nimg] \n"
+        : [lr_vec] "+&f"(lr_vec), [nimg_vec] "+&f"(nimg_vec)
+        : [lr] "f"(-lr), [nimg] "f"(nimg)
+        : "ft0", "ft1"
+    );
+
+    register volatile float ft0 asm("ft0"); // stores weight gradients
+    register volatile float ft1 asm("ft1"); // stores weights
+
+    asm volatile("" : "=f"(ft0), "=f"(ft1));
+
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    // WARN In the RTL SSR strides MUST BE of size DOUBLE
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    if (setup_SSR) {
+        
+        // SSR setup of weight gradients
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
+
+        // SSR setup of weights
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
+    }
+
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        // NOTE: we don't use SSRs for biases, as overhead too big
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
+        } else {
+            biases[ldB * out] = 0;
+        }
+        
+        snrt_ssr_enable();
+        // SSR start addresses need to be configured each time
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+        register v2f32 reduce_reg;
+        snrt_cluster_hw_barrier();
+        for(uint32_t in = 0; in < IN_CH;){
+            
+            if(!(compute_id*IN_CH + out * ldW + in + 1 > IN_CH * OUT_CH * 5)){
+                //weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images); FP32 reference
+                asm volatile(
+                    "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"         // compute the weight update
+                    "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> banshee: add floating point exception for divide by zero
+                : [reduce_reg] "+&f"(reduce_reg)
+                : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec)
+                : "ft0", "ft1"  
+                );
+
+                reduce_reg_u.v2 = reduce_reg;
+
+                weights[out*ldW + in] = reduce_reg_u.v[0];
+                weights[out*ldW + in + 1] = reduce_reg_u.v[1];
+            } 
+
+            in += 2;
+
+        }
+
+        snrt_ssr_disable();
+
+    }
+
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP32 with SSRs and SIMD: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
+
+    snrt_cluster_hw_barrier();
+
 }
 
 // INFO: start of FP32 baseline network implementation
@@ -885,4 +1001,34 @@ void gradient_update_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
+}
+
+void training_step_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weights, float *weight_grads, uint32_t ldW, float *biases, float *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images){
+
+    float lr = 0.5;
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        // make sure that biases outside of the number of
+        // output channels are zero
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
+        } else {
+            biases[ldB * out] = 0;
+        }
+
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
+            } 
+        }
+    }
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP32 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
 }

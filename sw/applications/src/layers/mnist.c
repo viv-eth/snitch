@@ -357,54 +357,72 @@ void mnist(const network_t *n){
         }
     }
 
-    //snrt_global_barrier();
+    snrt_global_barrier();
 
     // after looping through one batch of the dataset
     // we update the biases and weights on Cluster 0
-    // if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
-    //     // determine the row offset at which current compute cluster is
-    //     volatile uint32_t W_offset = compute_id * IN_CH;
-    //     volatile uint32_t b_offset = compute_id;
-    //     // Calculate number of rows for each compute
-    //     // core. If multiples of each other we have to 
-    //     // forcefully set it to 1
-    //     volatile uint32_t div = n->OUT_CH % compute_num;
-    //     if(div == 0){
-    //         div = 1;
-    //     }
+    if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
+        // determine the row offset at which current compute cluster is
+        volatile uint32_t W_offset = compute_id * IN_CH;
+        volatile uint32_t b_offset = compute_id;
+        // Calculate number of rows for each compute
+        // core. If multiples of each other we have to 
+        // forcefully set it to 1
+        volatile uint32_t div = n->OUT_CH % compute_num;
+        if(div == 0){
+            div = 1;
+        }
 
 
-    //     // determine the row stride of each matrix    
-    //     volatile uint32_t ldW = compute_num * IN_CH;
-    //     volatile uint32_t ldB = compute_num;
-    //     volatile uint32_t ldI = IN_CH;
+        // determine the row stride of each matrix    
+        volatile uint32_t ldW = compute_num * IN_CH;
+        volatile uint32_t ldB = compute_num;
+        volatile uint32_t ldI = IN_CH;
 
-    //     double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-    //     double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+        double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+        double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
 
-    //     //TODO: load the LR from the network struct or via DRAM perloading
-    //     //*learning_rate = 0.5;
+        //TODO: load the LR from the network struct or via DRAM perloading
+        //*learning_rate = 0.5;
 
-    //     // if(!compute_id){
-    //     //         printf("Training step start\n");
-    //     // }
+        if(!compute_id){
+                printf("Training step start\n");
+        }
 
-    //     benchmark_get_cycle();
-    //     // INFO: baseline
-    //     training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
-    //             &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //             &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //             compute_id, compute_num, number_of_images);
-    //     // INFO: FP64 with SSRs
-    //     // training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //     //         compute_id, compute_num, number_of_images, setup_SSR);
-    //     benchmark_get_cycle();
+        benchmark_get_cycle();
+        // INFO: FP64 baseline
+        // training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
+        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+        //         compute_id, compute_num, number_of_images);
 
-    //     // if(!compute_id){
-    //     //         printf("Training step done\n");
-    //     // }
+        // INFO: FP64 with SSRs
+        // training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+        //         compute_id, compute_num, number_of_images, setup_SSR);
 
-    // }
+        // INFO: FP32 baseline
+        // training_step_fp32(n->IN_CH1, n->IN_CH2, div, 
+        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+        //         compute_id, compute_num, number_of_images);
+
+        // INFO: FP32 with SSRs and SIMD
+        training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                compute_id, compute_num, number_of_images, setup_SSR);
+
+        benchmark_get_cycle();
+
+        if(!compute_id){
+                printf("Training step done\n");
+        }
+
+    } else {
+        snrt_cluster_hw_barrier();
+        snrt_cluster_hw_barrier();
+        snrt_cluster_hw_barrier();
+    }
 }
