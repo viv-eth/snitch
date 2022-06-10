@@ -1168,3 +1168,88 @@ void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     core_sync = 1;
 
 }
+
+void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
+                uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, __fp16 *loss, uint32_t compute_num){
+
+    
+    __fp16 b_grad_update = 0.0;
+    __fp16 W_grad_update = 0.0;
+    volatile uint32_t idx_eff;
+
+
+    // get the value saved at target address
+    uint32_t target_n = *target;
+    // compute the loss
+    __fp16 loss_val = 0.0 - log(activations[target_n -compute_id]);
+
+    // save the value into the loss pointer
+    if(!compute_id){
+        loss[0] += loss_val;
+    } else {
+        loss[0] += 0;
+    }
+
+    
+    //printf("loss = %f\n", loss[0]);
+    
+
+    // the effective index is the iteration index of the biases variable
+    // across all entries
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        // printf("bias grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
+        // printf("biases[%u] = %f\n", compute_id + ldB * out, biases[ldB * out]);
+        idx_eff = compute_id + ldB * out;
+        // Gradient Calculation for SoftMax activation with Cross Entropy Loss
+        b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+
+        //printf("b_grad_update = %f\n", b_grad_update);
+
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            W_grad_update = b_grad_update * image[in];
+            
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weight_grads[out * ldW + in] += W_grad_update;
+            }
+        }
+            
+        bias_grads[ldB * out] = b_grad_update;
+        //printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    }
+
+    snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
+
+}
+
+void training_step_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images){
+
+    __fp16 lr = 0.5;
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        // make sure that biases outside of the number of
+        // output channels are zero
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((__fp16) number_of_images);
+        } else {
+            biases[ldB * out] = 0;
+        }
+
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((__fp16) number_of_images);
+            } 
+        }
+    }
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP32 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
+}

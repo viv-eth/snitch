@@ -379,6 +379,13 @@ void mnist(const network_t *n){
     //         //                 &biases[b_offset], &act_ptr[b_offset], 
     //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
     //         //                 loss, compute_num);
+
+    //         // INFO: FP16 baseline
+    //         // gradient_update_fp16(n->IN_CH1, n->IN_CH2, div, 
+    //         //                 &weights[W_offset], ldW, 
+    //         //                 &biases[b_offset], &act_ptr[b_offset], 
+    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+    //         //                 loss, compute_num);
     //         benchmark_get_cycle();
 
     //         if(!compute_id){
@@ -452,6 +459,12 @@ void mnist(const network_t *n){
     //             &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
     //             &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
     //             compute_id, compute_num, number_of_images, setup_SSR);
+
+    //     // INFO: FP16 baseline
+    //     // training_step_fp16(n->IN_CH1, n->IN_CH2, div, 
+    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+    //     //         compute_id, compute_num, number_of_images);
 
     //     benchmark_get_cycle();
 
