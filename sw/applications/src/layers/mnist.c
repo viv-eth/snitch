@@ -95,24 +95,52 @@ void mnist(const network_t *n){
     //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // }
 
-    // // INFO FP32 cluster memory setup
-    // // images remain in double precision
-    void *ptr = (float *)snrt_cluster_memory().start;
-    float *max= ptr; // zero initialized
+    // // // INFO FP32 cluster memory setup
+    // // // images remain in float precision
+    // void *ptr = (float *)snrt_cluster_memory().start;
+    // float *max= ptr; // zero initialized
+    // ptr += max_size;
+    // float *loss = ptr; // zero initialized
+    // ptr += loss_size;
+    // float *images = ptr;
+    // ptr += number_of_images*image_size;
+    // float *biases = ptr; // bias GRADIENTS zero initialized
+    // ptr += bias_mat_size;
+    // float *activations = ptr;
+    // ptr += act_mat_size;
+    // // INFO: setting weights as last element so 
+    // // when we iterate over data we can zero out
+    // // excessive rows --> FIXME: this does not work in the RTL probably
+    // float *weights = ptr; // weight GRADIENTS zero initialized
+    // ptr += weight_mat_size;
+    // // NOTE: core sync flag used to indictae whether computation is done or not
+    // uint32_t *core_sync = ptr; // zero initialized
+    // ptr += core_sync_flag_size;
+    // uint32_t *targets = ptr;
+    // ptr += number_of_images*target_size;
+    // // NOTE: following lines for debugging purposes only
+    // // void *ptr_end = (double *)snrt_cluster_memory().end;
+    // // if(compute_id == 0){   
+    // //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+    // //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+    // //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+    // //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    // // }
+
+    // INFO FP16 cluster memory setup
+    void *ptr = (__fp16*)snrt_cluster_memory().start;
+    __fp16 *max= ptr; // zero initialized
     ptr += max_size;
-    float *loss = ptr; // zero initialized
+    __fp16 *loss = ptr; // zero initialized
     ptr += loss_size;
-    float *images = ptr;
-    ptr += number_of_images*image_size;
-    float *biases = ptr; // bias GRADIENTS zero initialized
+    __fp16 *biases = ptr; // bias GRADIENTS zero initialized
     ptr += bias_mat_size;
-    float *activations = ptr;
+    __fp16 *activations = ptr;
     ptr += act_mat_size;
-    // INFO: setting weights as last element so 
-    // when we iterate over data we can zero out
-    // excessive rows --> FIXME: this does not work in the RTL probably
-    float *weights = ptr; // weight GRADIENTS zero initialized
+    __fp16 *weights = ptr; // weight GRADIENTS zero initialized
     ptr += weight_mat_size;
+    __fp16 *images = ptr;
+    ptr += number_of_images*image_size;
     // NOTE: core sync flag used to indictae whether computation is done or not
     uint32_t *core_sync = ptr; // zero initialized
     ptr += core_sync_flag_size;
@@ -241,15 +269,26 @@ void mnist(const network_t *n){
             //                 setup_SSR);
 
             // INFO: FP32 with SSRs and SIMD
-            feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                            setup_SSR); 
+            // feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+            //                 setup_SSR); 
 
             // INFO: FP32 baseline
             // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
             //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
             //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+
+            // INFO: FP16 baseline
+            // feedforward_fp16(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]); 
+
+            // INFO: FP16 with SSRs and SIMD
+            feedforward_fp16_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                            setup_SSR); 
 
 
             // INFO: FP64 baseline
@@ -262,9 +301,9 @@ void mnist(const network_t *n){
             //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
             //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
 
-            softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
-                            &weights[W_offset], ldW, &activations[b_offset], ldB,
-                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+            // softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
+            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
             benchmark_get_cycle();
 
             if(!compute_id){
@@ -274,155 +313,155 @@ void mnist(const network_t *n){
         } else {
             snrt_cluster_hw_barrier();
             snrt_cluster_hw_barrier();
-            snrt_cluster_hw_barrier();
-            snrt_cluster_hw_barrier();
+            // snrt_cluster_hw_barrier();
+            // snrt_cluster_hw_barrier();
         }
 
         // wait until clusters are synchronized to not
         // start gradient update until all activations are 
         // computed
-        snrt_global_barrier();
+    //     snrt_global_barrier();
 
-        if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
-            // determine the row offset at which current compute cluster is
-            volatile uint32_t W_offset = compute_id * IN_CH;
-            volatile uint32_t b_offset = compute_id;
-            // Calculate number of rows for each compute
-            // core. If multiples of each other we have to 
-            // forcefully set it to 1
-            volatile uint32_t div = n->OUT_CH % compute_num;
-            if(div == 0){
-                div = 1;
-            }
+    //     if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
+    //         // determine the row offset at which current compute cluster is
+    //         volatile uint32_t W_offset = compute_id * IN_CH;
+    //         volatile uint32_t b_offset = compute_id;
+    //         // Calculate number of rows for each compute
+    //         // core. If multiples of each other we have to 
+    //         // forcefully set it to 1
+    //         volatile uint32_t div = n->OUT_CH % compute_num;
+    //         if(div == 0){
+    //             div = 1;
+    //         }
 
 
-            // determine the row stride of each matrix    
-            volatile uint32_t ldW = compute_num * IN_CH;
-            volatile uint32_t ldB = compute_num;
-            volatile uint32_t ldI = IN_CH;
+    //         // determine the row stride of each matrix    
+    //         volatile uint32_t ldW = compute_num * IN_CH;
+    //         volatile uint32_t ldB = compute_num;
+    //         volatile uint32_t ldI = IN_CH;
 
-            uint32_t *act_ptr = ((uint32_t)activations) - cluster_offset;
+    //         uint32_t *act_ptr = ((uint32_t)activations) - cluster_offset;
 
-            uint32_t *img_ptr = ((uint32_t)images) - cluster_offset;
+    //         uint32_t *img_ptr = ((uint32_t)images) - cluster_offset;
 
-            //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
-            //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
+    //         //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
+    //         //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
 
-            if(!compute_id){
-                printf("Gradient Update start\n");
-            }
+    //         if(!compute_id){
+    //             printf("Gradient Update start\n");
+    //         }
 
-            benchmark_get_cycle();
-            // INFO: baseline
-            // gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, 
-            //                 &biases[b_offset], &act_ptr[b_offset], 
-            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-            //                 loss, compute_num);
+    //         benchmark_get_cycle();
+    //         // INFO: baseline
+    //         // gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
+    //         //                 &weights[W_offset], ldW, 
+    //         //                 &biases[b_offset], &act_ptr[b_offset], 
+    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+    //         //                 loss, compute_num);
 
-            // INFO: FP64 with SSRs
-            // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, 
-            //                 &biases[b_offset], &act_ptr[b_offset], 
-            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-            //                 loss, compute_num, setup_SSR);
+    //         // INFO: FP64 with SSRs
+    //         // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+    //         //                 &weights[W_offset], ldW, 
+    //         //                 &biases[b_offset], &act_ptr[b_offset], 
+    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+    //         //                 loss, compute_num, setup_SSR);
 
-            // INFO: FP32 with SSRs and SIMD
-            gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                            &weights[W_offset], ldW, 
-                            &biases[b_offset], &act_ptr[b_offset], 
-                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-                            loss, compute_num, setup_SSR);
+    //         // INFO: FP32 with SSRs and SIMD
+    //         gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+    //                         &weights[W_offset], ldW, 
+    //                         &biases[b_offset], &act_ptr[b_offset], 
+    //                         ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+    //                         loss, compute_num, setup_SSR);
 
-            // INFO: FP32 baseline
-            // gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, 
-            //                 &biases[b_offset], &act_ptr[b_offset], 
-            //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-            //                 loss, compute_num);
-            benchmark_get_cycle();
+    //         // INFO: FP32 baseline
+    //         // gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
+    //         //                 &weights[W_offset], ldW, 
+    //         //                 &biases[b_offset], &act_ptr[b_offset], 
+    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+    //         //                 loss, compute_num);
+    //         benchmark_get_cycle();
 
-            if(!compute_id){
-                printf("Gradient Update done\n");
-            }
+    //         if(!compute_id){
+    //             printf("Gradient Update done\n");
+    //         }
 
-            if(!compute_id){
-                printf("total loss = %f\n", loss[0]/(image+1));
-            }
+    //         if(!compute_id){
+    //             printf("total loss = %f\n", loss[0]/(image+1));
+    //         }
 
-        } else {
-            snrt_cluster_hw_barrier();
-            snrt_cluster_hw_barrier();
-            snrt_cluster_hw_barrier();
-        }
+    //     } else {
+    //         snrt_cluster_hw_barrier();
+    //         snrt_cluster_hw_barrier();
+    //         snrt_cluster_hw_barrier();
+    //     }
     }
 
-    snrt_global_barrier();
+    // snrt_global_barrier();
 
-    // after looping through one batch of the dataset
-    // we update the biases and weights on Cluster 0
-    if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
-        // determine the row offset at which current compute cluster is
-        volatile uint32_t W_offset = compute_id * IN_CH;
-        volatile uint32_t b_offset = compute_id;
-        // Calculate number of rows for each compute
-        // core. If multiples of each other we have to 
-        // forcefully set it to 1
-        volatile uint32_t div = n->OUT_CH % compute_num;
-        if(div == 0){
-            div = 1;
-        }
+    // // after looping through one batch of the dataset
+    // // we update the biases and weights on Cluster 0
+    // if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
+    //     // determine the row offset at which current compute cluster is
+    //     volatile uint32_t W_offset = compute_id * IN_CH;
+    //     volatile uint32_t b_offset = compute_id;
+    //     // Calculate number of rows for each compute
+    //     // core. If multiples of each other we have to 
+    //     // forcefully set it to 1
+    //     volatile uint32_t div = n->OUT_CH % compute_num;
+    //     if(div == 0){
+    //         div = 1;
+    //     }
 
 
-        // determine the row stride of each matrix    
-        volatile uint32_t ldW = compute_num * IN_CH;
-        volatile uint32_t ldB = compute_num;
-        volatile uint32_t ldI = IN_CH;
+    //     // determine the row stride of each matrix    
+    //     volatile uint32_t ldW = compute_num * IN_CH;
+    //     volatile uint32_t ldB = compute_num;
+    //     volatile uint32_t ldI = IN_CH;
 
-        double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-        double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+    //     double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+    //     double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
 
-        //TODO: load the LR from the network struct or via DRAM perloading
-        //*learning_rate = 0.5;
+    //     //TODO: load the LR from the network struct or via DRAM perloading
+    //     //*learning_rate = 0.5;
 
-        if(!compute_id){
-                printf("Training step start\n");
-        }
+    //     if(!compute_id){
+    //             printf("Training step start\n");
+    //     }
 
-        benchmark_get_cycle();
-        // INFO: FP64 baseline
-        // training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
-        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-        //         compute_id, compute_num, number_of_images);
+    //     benchmark_get_cycle();
+    //     // INFO: FP64 baseline
+    //     // training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
+    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+    //     //         compute_id, compute_num, number_of_images);
 
-        // INFO: FP64 with SSRs
-        // training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-        //         compute_id, compute_num, number_of_images, setup_SSR);
+    //     // INFO: FP64 with SSRs
+    //     // training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+    //     //         compute_id, compute_num, number_of_images, setup_SSR);
 
-        // INFO: FP32 baseline
-        // training_step_fp32(n->IN_CH1, n->IN_CH2, div, 
-        //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-        //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-        //         compute_id, compute_num, number_of_images);
+    //     // INFO: FP32 baseline
+    //     // training_step_fp32(n->IN_CH1, n->IN_CH2, div, 
+    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+    //     //         compute_id, compute_num, number_of_images);
 
-        // INFO: FP32 with SSRs and SIMD
-        training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-                &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                compute_id, compute_num, number_of_images, setup_SSR);
+    //     // INFO: FP32 with SSRs and SIMD
+    //     training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+    //             &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+    //             &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+    //             compute_id, compute_num, number_of_images, setup_SSR);
 
-        benchmark_get_cycle();
+    //     benchmark_get_cycle();
 
-        if(!compute_id){
-                printf("Training step done\n");
-        }
+    //     if(!compute_id){
+    //             printf("Training step done\n");
+    //     }
 
-    } else {
-        snrt_cluster_hw_barrier();
-        snrt_cluster_hw_barrier();
-        snrt_cluster_hw_barrier();
-    }
+    // } else {
+    //     snrt_cluster_hw_barrier();
+    //     snrt_cluster_hw_barrier();
+    //     snrt_cluster_hw_barrier();
+    // }
 }

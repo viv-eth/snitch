@@ -13,6 +13,10 @@ union fp32_v2f32_u {
         float v[2]; 
 };
 typedef __fp16 v4f16 __attribute__((vector_size(8)));
+union fp16_v4f16_u { 
+        v4f16 v4; 
+        __fp16 v[4]; 
+};
 typedef char v8f8 __attribute__((vector_size(8)));
 
 // INFO: start of FP64 baseline network implementation
@@ -1031,4 +1035,136 @@ void training_step_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     for(uint32_t out = 0; out < OUT_CH; out++){
         printf("FP32 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     }
+}
+
+// INFO: start of FP16 network implementation using SSRs and SIMD instructions
+//// Feedforward Step
+void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
+                uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
+                uint32_t setup_SSR){
+    
+    // INFO: for simplicity image is converted to dtype __fp16 --> discuss with GIM 
+    register volatile float ft0 asm("ft0"); // stores image
+    register volatile float ft1 asm("ft1"); // stores weights
+    register volatile float ft2 asm("ft2"); // stores biases
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+    const register float zero = 0.0;
+
+    __fp16 acc = 0.0;
+
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    // WARN In the RTL SSR strides MUST BE of size DOUBLE
+
+    if (setup_SSR) {
+
+        // setup of DATA MOVER input data (MNIST image)
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldI);
+        
+        // setup of DATA MOVER for weights
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
+
+        // setup of DATA MOVER for biases
+        snrt_ssr_loop_1d(SNRT_SSR_DM2,
+                        OUT_CH,
+                        sizeof(double));
+    }
+
+    // Start of SSR region
+    snrt_ssr_enable();
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+        snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &biases[out*ldB]);
+        register v4f16 reduce_reg;
+        register v4f16 sum;
+        register float test;
+        acc = biases[ldB*out];
+        asm volatile(
+            "fadd.s fs2, %[zero], %[zero]\n"
+            : 
+            : [zero] "f"(zero)
+        );
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            for (uint32_t in = 0; in < IN_CH;) {
+                
+                // calculate the dot product of the image and the weights (increment by four columns in each iteration)
+                asm volatile(
+                    "vfdotpex.s.h   %[reduce_reg], ft1, ft0 \n"
+                    //"vfcpka.s.s   fs1, %[zero], %[zero] \n"
+                    "vfsum.s        %[sum], %[reduce_reg] \n"
+                    "vfadd.s        %[sum], %[sum], ft2 \n"
+                : [reduce_reg] "+&f"(reduce_reg), [sum] "+&f"(sum)
+                : [zero] "f"(zero)
+                : "ft0", "ft1", "ft2"
+                );
+
+                acc = sum;
+                in += 4;
+            }
+
+        }
+
+        // Q: Why do we need to do this?
+        snrt_cluster_hw_barrier();
+
+        //activations[ldB * out] = acc;
+
+    }
+
+    // End of SSR region.
+    snrt_ssr_disable();
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        // cleanup of leftover columns
+        if(compute_id + out * ldB > OUT_CH * 5 - 1){
+            activations[ldB * out] = 0;
+        }
+
+        printf("FP16 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
+
+}
+
+
+// INFO: start of FP16 baseline network implementation
+//// Feedforward Step
+void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
+                uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
+
+    // Linear layer: OUT = X * W^T + B
+    __fp16 test = 0.0;
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        __fp16 acc = biases[ldB * out];
+        //printf("FP16 baseline init: acc[%u] = %f\n", 1 + compute_id + out * ldB, acc);
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            acc += image[in] * weights[out * ldW + in];
+            test = image[in] * weights[out * ldW + in];
+            // INFO: If this is not set harts start reading outside the mem map
+            // FIXME: Next harts should start computation of the subsequent image
+            if(compute_id + out * ldB > OUT_CH * 5 - 1){
+                acc = 0;
+            }
+        }
+        // OUT is accumulated in activations 
+        activations[ldB * out] = acc;
+        //printf("FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
+    }
+    core_sync = 1;
+
 }
