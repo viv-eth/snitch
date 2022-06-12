@@ -1268,13 +1268,13 @@ void training_step_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 // INFO: start of FP8 baseline network implementation
 //// Feedforward Step
 void feedforward_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                char *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
-                uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
+                char *weights, uint32_t ldW, char *biases, char *activations,
+                uint32_t ldB, char *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
 
     // Linear layer: OUT = X * W^T + B
-    __fp16 test = 0.0;
+    char test = 0.0;
     for (uint32_t out = 0; out < OUT_CH; out++) {
-        __fp16 acc = biases[ldB * out];
+        char acc = biases[ldB * out];
         //printf("FP16 baseline init: acc[%u] = %f\n", 1 + compute_id + out * ldB, acc);
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             acc += image[in] * weights[out * ldW + in];
@@ -1295,20 +1295,20 @@ void feedforward_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 }
 
 void gradient_update_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
-                uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
-                uint32_t compute_id, __fp16 *loss, uint32_t compute_num){
+                char *weight_grads, uint32_t ldW, char *bias_grads, char *activations, 
+                uint32_t ldB, char *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, char *loss, uint32_t compute_num){
 
     
-    __fp16 b_grad_update = 0.0;
-    __fp16 W_grad_update = 0.0;
+    char b_grad_update = 0.0;
+    char W_grad_update = 0.0;
     volatile uint32_t idx_eff;
 
 
     // get the value saved at target address
     uint32_t target_n = *target;
     // compute the loss
-    __fp16 loss_val = 0.0 - log(activations[target_n -compute_id]);
+    char loss_val = 0.0 - log(activations[target_n -compute_id]);
 
     // save the value into the loss pointer
     if(!compute_id){
@@ -1350,18 +1350,18 @@ void gradient_update_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 }
 
 void training_step_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads,
+                char *weights, char *weight_grads, uint32_t ldW, char *biases, char *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images){
 
-    __fp16 lr = 0.5;
+    char lr = 0.5;
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         // make sure that biases outside of the number of
         // output channels are zero
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
-            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((__fp16) number_of_images);
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((char) number_of_images);
         } else {
             biases[ldB * out] = 0;
         }
@@ -1369,7 +1369,7 @@ void training_step_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             
             if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
-                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((__fp16) number_of_images);
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((char) number_of_images);
             } 
         }
     }
