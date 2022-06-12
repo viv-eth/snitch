@@ -15,8 +15,13 @@
 // Padding in between matrices for preventing
 // banking conflicts in the beginning
 #define MAT_PADDING 8
-
 #define MAT_ROW_PADDING 4
+
+// define whether to run baseline network or not
+#define BASELINE 1
+
+// define which parts of the network to run
+#define RUN_FEEDFORWARD 1
 
 void mnist(const network_t *n){
 
@@ -67,25 +72,25 @@ void mnist(const network_t *n){
     // @brief Cluster Memory Structure for each cluster to ensure
     // we can access the data of both by using the constant
     // cluster base offset
-    // void *ptr = (double *)snrt_cluster_memory().start;
-    // // void *ptr_start = ptr;
-    // double *max= ptr; // zero initialized
-    // ptr += max_size;
-    // double *loss = ptr; // zero initialized
-    // ptr += loss_size;
-    // double *images = ptr;
-    // ptr += number_of_images*image_size;
-    // double *biases = ptr; // bias GRADIENTS zero initialized
-    // ptr += bias_mat_size;
-    // double *activations = ptr;
-    // ptr += act_mat_size;
-    // double *weights = ptr; // weight GRADIENTS zero initialized
-    // ptr += weight_mat_size;
-    // // NOTE: core sync flag used to indictae whether computation is done or not
-    // uint32_t *core_sync = ptr; // zero initialized
-    // ptr += core_sync_flag_size;
-    // uint32_t *targets = ptr;
-    // ptr += number_of_images*target_size;
+    void *ptr = (double *)snrt_cluster_memory().start;
+    // void *ptr_start = ptr;
+    double *max= ptr; // zero initialized
+    ptr += max_size;
+    double *loss = ptr; // zero initialized
+    ptr += loss_size;
+    double *images = ptr;
+    ptr += number_of_images*image_size;
+    double *biases = ptr; // bias GRADIENTS zero initialized
+    ptr += bias_mat_size;
+    double *activations = ptr;
+    ptr += act_mat_size;
+    double *weights = ptr; // weight GRADIENTS zero initialized
+    ptr += weight_mat_size;
+    // NOTE: core sync flag used to indictae whether computation is done or not
+    uint32_t *core_sync = ptr; // zero initialized
+    ptr += core_sync_flag_size;
+    uint32_t *targets = ptr;
+    ptr += number_of_images*target_size;
     // NOTE: following lines for debugging purposes only
     // void *ptr_end = (double *)snrt_cluster_memory().end;
     // if(compute_id == 0){   
@@ -128,24 +133,24 @@ void mnist(const network_t *n){
     // // }
 
     // INFO FP16 cluster memory setup
-    void *ptr = (__fp16*)snrt_cluster_memory().start;
-    __fp16 *max= ptr; // zero initialized
-    ptr += max_size;
-    __fp16 *loss = ptr; // zero initialized
-    ptr += loss_size;
-    __fp16 *biases = ptr; // bias GRADIENTS zero initialized
-    ptr += bias_mat_size;
-    __fp16 *activations = ptr;
-    ptr += act_mat_size;
-    __fp16 *weights = ptr; // weight GRADIENTS zero initialized
-    ptr += weight_mat_size;
-    __fp16 *images = ptr;
-    ptr += number_of_images*image_size;
-    // NOTE: core sync flag used to indictae whether computation is done or not
-    uint32_t *core_sync = ptr; // zero initialized
-    ptr += core_sync_flag_size;
-    uint32_t *targets = ptr;
-    ptr += number_of_images*target_size;
+    // void *ptr = (__fp16*)snrt_cluster_memory().start;
+    // __fp16 *max= ptr; // zero initialized
+    // ptr += max_size;
+    // __fp16 *loss = ptr; // zero initialized
+    // ptr += loss_size;
+    // __fp16 *biases = ptr; // bias GRADIENTS zero initialized
+    // ptr += bias_mat_size;
+    // __fp16 *activations = ptr;
+    // ptr += act_mat_size;
+    // __fp16 *weights = ptr; // weight GRADIENTS zero initialized
+    // ptr += weight_mat_size;
+    // __fp16 *images = ptr;
+    // ptr += number_of_images*image_size;
+    // // NOTE: core sync flag used to indictae whether computation is done or not
+    // uint32_t *core_sync = ptr; // zero initialized
+    // ptr += core_sync_flag_size;
+    // uint32_t *targets = ptr;
+    // ptr += number_of_images*target_size;
     // NOTE: following lines for debugging purposes only
     // void *ptr_end = (double *)snrt_cluster_memory().end;
     // if(compute_id == 0){   
@@ -250,71 +255,101 @@ void mnist(const network_t *n){
             volatile uint32_t ldI = IN_CH;
 
             //printf("ldW: %u, ldB: %u, ldI: %u\n", ldW, ldB, ldI);
+            if(RUN_FEEDFORWARD){
+                // perform the forward pass
+                if(!compute_id){
+                    printf("FF start\n");
+                }
 
-            if(!compute_id){
-                printf("FF start\n");
-            }
+                // Start of feedforward
+                if(n->dtype == FP64){
+                    if(BASELINE){
+                        // INFO: baseline
+                        benchmark_get_cycle();
+                        feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                                        ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+                        softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
+                                    &weights[W_offset], ldW, &activations[b_offset], ldB,
+                                    &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+                        benchmark_get_cycle();
+                    } else {
+                        // INFO: FP64 with SSRs
+                        benchmark_get_cycle();
+                        feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                                        ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                                        setup_SSR);
+                        softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], ldW, &activations[b_offset], ldB,
+                                        &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+                        benchmark_get_cycle();
 
-            // Start of feedforward
-            benchmark_get_cycle();
-            // INFO: baseline
-            // feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
-
-            // INFO: FP64 with SSRs
-            // feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-            //                 setup_SSR);
-
-            // INFO: FP32 with SSRs and SIMD
-            // feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-            //                 setup_SSR); 
-
-            // INFO: FP32 baseline
-            // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
-
-            // INFO: FP16 baseline
-            // feedforward_fp16(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-            //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]); 
-
-            // INFO: FP16 with SSRs and SIMD
-            feedforward_fp16_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                            setup_SSR); 
+                    }
+                } else {
+                    printf("Error: unsupported data type\n");
+                }
 
 
-            // INFO: FP64 baseline
-            // softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+                // INFO: FP64 with SSRs
+                // feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                //                 setup_SSR);
 
-            // INFO: FP64 with SSRs
-            // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+                // INFO: FP32 with SSRs and SIMD
+                // feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                //                 setup_SSR); 
 
-            // softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
-            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
-            benchmark_get_cycle();
+                // INFO: FP32 baseline
+                // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
 
-            if(!compute_id){
-                printf("FF end\n");
+                // INFO: FP16 baseline
+                // feedforward_fp16(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]); 
+
+                // INFO: FP16 with SSRs and SIMD
+                // feedforward_fp16_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                //                 setup_SSR); 
+
+
+                // INFO: FP64 baseline
+                // softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+                //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+
+                // INFO: FP64 with SSRs
+                // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+                //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+
+                // softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
+                //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+                //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+
+                if(!compute_id){
+                    printf("FF end\n");
+                }
             }
 
         } else {
-            snrt_cluster_hw_barrier();
-            snrt_cluster_hw_barrier();
-            // snrt_cluster_hw_barrier();
-            // snrt_cluster_hw_barrier();
+            if(BASELINE){
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+            } else if(!BASELINE && n->dtype == FP64){
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                // snrt_cluster_hw_barrier(); --> NOTE: for other dtypes required
+                // snrt_cluster_hw_barrier();
+
+            }
         }
 
         // wait until clusters are synchronized to not

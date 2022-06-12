@@ -41,7 +41,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        //printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
 
@@ -259,9 +259,9 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of SSR region.
     snrt_ssr_disable();
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
     
     core_sync = 1;
 
@@ -344,7 +344,7 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            //printf("FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
