@@ -1049,7 +1049,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     register volatile float ft1 asm("ft1"); // stores weights
     register volatile float ft2 asm("ft2"); // stores biases
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
-    const register float zero = 0.0;
+    const register float zero = 0.0f;
 
     __fp16 acc = 0.0;
 
@@ -1089,13 +1089,16 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
         snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &biases[out*ldB]);
-        register v4f16 reduce_reg;
-        register v4f16 sum;
-        register float test;
+        register v2f32 reduce_reg;
+        register v2f32 sum;
+        register v2f32 test;
+        register v4f16 dotp;
+        register v2f32 tacc;
+
         acc = biases[ldB*out];
         asm volatile(
-            "fadd.s fs2, %[zero], %[zero]\n"
-            : 
+            "vfadd.s    %[tacc], %[zero], %[zero]\n" // dummy instruction for debugging
+            : [test] "+&f"(test), [tacc] "+&f"(tacc)
             : [zero] "f"(zero)
         );
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
@@ -1103,25 +1106,27 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 
                 // calculate the dot product of the image and the weights (increment by four columns in each iteration)
                 asm volatile(
-                    "vfdotpex.s.h   %[reduce_reg], ft1, ft0 \n"
-                    //"vfcpka.s.s   fs1, %[zero], %[zero] \n"
-                    "vfsum.s        %[sum], %[reduce_reg] \n"
-                    "vfadd.s        %[sum], %[sum], ft2 \n"
-                : [reduce_reg] "+&f"(reduce_reg), [sum] "+&f"(sum)
+                    "vfcpka.s.s       %[dotp], %[zero], %[zero]\n"
+                    "vfcpka.s.s       %[sum], %[zero], %[zero] \n"
+                    "vfdotpex.s.h     %[dotp], ft1, ft0 \n"
+                    "vfsum.s          %[sum], %[dotp] \n"
+                    "vfadd.s          %[tacc], %[tacc], %[sum] \n"
+                : [sum] "+&f"(sum), [dotp] "+&f"(dotp), [tacc] "+&f"(tacc)
                 : [zero] "f"(zero)
                 : "ft0", "ft1", "ft2"
                 );
 
-                acc = sum;
                 in += 4;
             }
+
+            acc += tacc[0] + tacc[1];
 
         }
 
         // Q: Why do we need to do this?
         snrt_cluster_hw_barrier();
 
-        //activations[ldB * out] = acc;
+        activations[ldB * out] = acc;
 
     }
 
@@ -1147,13 +1152,19 @@ void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
 
     // Linear layer: OUT = X * W^T + B
-    __fp16 test = 0.0;
+    __fp16 test = 0.0f;
     for (uint32_t out = 0; out < OUT_CH; out++) {
         __fp16 acc = biases[ldB * out];
         //printf("FP16 baseline init: acc[%u] = %f\n", 1 + compute_id + out * ldB, acc);
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             acc += image[in] * weights[out * ldW + in];
-            test = image[in] * weights[out * ldW + in];
+            test += image[in] * weights[out * ldW + in];
+            if(!compute_id){
+                if(in % 4 == 0){
+                    printf("debugging: test[%u] = %f\n", in/4, test);
+                    test = 0.0f;
+                }
+            }
             // INFO: If this is not set harts start reading outside the mem map
             // FIXME: Next harts should start computation of the subsequent image
             if(compute_id + out * ldB > OUT_CH * 5 - 1){
@@ -1250,6 +1261,120 @@ void training_step_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     }
 
     for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP32 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        printf("FP16 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
+}
+
+// INFO: start of FP8 baseline network implementation
+//// Feedforward Step
+void feedforward_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                char *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
+                uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
+
+    // Linear layer: OUT = X * W^T + B
+    __fp16 test = 0.0;
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        __fp16 acc = biases[ldB * out];
+        //printf("FP16 baseline init: acc[%u] = %f\n", 1 + compute_id + out * ldB, acc);
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            acc += image[in] * weights[out * ldW + in];
+            test = image[in] * weights[out * ldW + in];
+            // INFO: If this is not set harts start reading outside the mem map
+            // FIXME: Next harts should start computation of the subsequent image
+            if(compute_id + out * ldB > OUT_CH * 5 - 1){
+                acc = 0;
+            }
+        }
+        // OUT is accumulated in activations 
+        activations[ldB * out] = acc;
+        //printf("FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
+    }
+    core_sync = 1;
+
+}
+
+void gradient_update_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
+                uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, __fp16 *loss, uint32_t compute_num){
+
+    
+    __fp16 b_grad_update = 0.0;
+    __fp16 W_grad_update = 0.0;
+    volatile uint32_t idx_eff;
+
+
+    // get the value saved at target address
+    uint32_t target_n = *target;
+    // compute the loss
+    __fp16 loss_val = 0.0 - log(activations[target_n -compute_id]);
+
+    // save the value into the loss pointer
+    if(!compute_id){
+        loss[0] += loss_val;
+    } else {
+        loss[0] += 0;
+    }
+
+    
+    //printf("loss = %f\n", loss[0]);
+    
+
+    // the effective index is the iteration index of the biases variable
+    // across all entries
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        // printf("bias grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
+        // printf("biases[%u] = %f\n", compute_id + ldB * out, biases[ldB * out]);
+        idx_eff = compute_id + ldB * out;
+        // Gradient Calculation for SoftMax activation with Cross Entropy Loss
+        b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+
+        //printf("b_grad_update = %f\n", b_grad_update);
+
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            W_grad_update = b_grad_update * image[in];
+            
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weight_grads[out * ldW + in] += W_grad_update;
+            }
+        }
+            
+        bias_grads[ldB * out] = b_grad_update;
+        //printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    }
+
+    snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
+
+}
+
+void training_step_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images){
+
+    __fp16 lr = 0.5;
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        // make sure that biases outside of the number of
+        // output channels are zero
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((__fp16) number_of_images);
+        } else {
+            biases[ldB * out] = 0;
+        }
+
+        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            
+            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((__fp16) number_of_images);
+            } 
+        }
+    }
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP16 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     }
 }
