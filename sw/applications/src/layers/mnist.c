@@ -23,6 +23,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
+#define RUN_TRAINING_STEP 1
 
 void mnist(const network_t *n){
 
@@ -412,161 +413,310 @@ void mnist(const network_t *n){
         // wait until clusters are synchronized to not
         // start gradient update until all activations are 
         // computed
-    //     snrt_global_barrier();
+        snrt_global_barrier();
 
-    //     if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
-    //         // determine the row offset at which current compute cluster is
-    //         volatile uint32_t W_offset = compute_id * IN_CH;
-    //         volatile uint32_t b_offset = compute_id;
-    //         // Calculate number of rows for each compute
-    //         // core. If multiples of each other we have to 
-    //         // forcefully set it to 1
-    //         volatile uint32_t div = n->OUT_CH % compute_num;
-    //         if(div == 0){
-    //             div = 1;
-    //         }
+        if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
+            // determine the row offset at which current compute cluster is
+            volatile uint32_t W_offset = compute_id * IN_CH;
+            volatile uint32_t b_offset = compute_id;
+            // Calculate number of rows for each compute
+            // core. If multiples of each other we have to 
+            // forcefully set it to 1
+            volatile uint32_t div = n->OUT_CH % compute_num;
+            if(div == 0){
+                div = 1;
+            }
 
 
-    //         // determine the row stride of each matrix    
-    //         volatile uint32_t ldW = compute_num * IN_CH;
-    //         volatile uint32_t ldB = compute_num;
-    //         volatile uint32_t ldI = IN_CH;
+            // determine the row stride of each matrix    
+            volatile uint32_t ldW = compute_num * IN_CH;
+            volatile uint32_t ldB = compute_num;
+            volatile uint32_t ldI = IN_CH;
 
-    //         uint32_t *act_ptr = ((uint32_t)activations) - cluster_offset;
+            // TODO: change this to cluster-cluster DMA transfer
 
-    //         uint32_t *img_ptr = ((uint32_t)images) - cluster_offset;
+            uint32_t *act_ptr = ((uint32_t)activations) - cluster_offset;
+            uint32_t *img_ptr = ((uint32_t)images) - cluster_offset;
 
-    //         //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
-    //         //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
+            //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
+            //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
 
-    //         if(!compute_id){
-    //             printf("Gradient Update start\n");
-    //         }
+            if(!compute_id){
+                printf("Gradient Update start\n");
+            }
 
-    //         benchmark_get_cycle();
-    //         // INFO: baseline
-    //         // gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
-    //         //                 &weights[W_offset], ldW, 
-    //         //                 &biases[b_offset], &act_ptr[b_offset], 
-    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-    //         //                 loss, compute_num);
+            if(RUN_GRADIENT_UPDATE){
+                switch (n->dtype) {
+                    case(FP64):
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
+                                                &weights[W_offset], ldW, 
+                                                &biases[b_offset], &act_ptr[b_offset], 
+                                                ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                                loss, compute_num);
+                            benchmark_get_cycle();
+                        } else {
+                            // INFO: FP64 with SSRs
+                            gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, 
+                                            &biases[b_offset], &act_ptr[b_offset], 
+                                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                            loss, compute_num, setup_SSR);
+                        } 
+                        break;
+                    case(FP32):
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
+                                                &weights[W_offset], ldW, 
+                                                &biases[b_offset], &act_ptr[b_offset], 
+                                                ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                                loss, compute_num);
+                            benchmark_get_cycle();
+                        } else {
+                            // INFO: FP32 with SSRs and SIMD
+                            benchmark_get_cycle();
+                            gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, 
+                                            &biases[b_offset], &act_ptr[b_offset], 
+                                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                            loss, compute_num, setup_SSR);
+                            benchmark_get_cycle();
+                        }
+                        break;
+                    case (FP16):
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            gradient_update_fp16(n->IN_CH1, n->IN_CH2, div, 
+                                                &weights[W_offset], ldW, 
+                                                &biases[b_offset], &act_ptr[b_offset], 
+                                                ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                                loss, compute_num);
+                            benchmark_get_cycle();
+                        } else {
+                            // INFO: FP16 with SSRs and SIMD
+                            printf("ERROR: Not implemented yet.\n");
+                        }
+                        break;
+                    case(FP8):
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            gradient_update_fp8(n->IN_CH1, n->IN_CH2, div, 
+                                                &weights[W_offset], ldW, 
+                                                &biases[b_offset], &act_ptr[b_offset], 
+                                                ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                                loss, compute_num);
+                            benchmark_get_cycle();
+                        } else {
+                            // INFO: FP8 with SSRs and SIMD
+                            printf("ERROR: Not implemented yet.\n");
+                        }
+                        break;
+                    default:
+                        printf("ERROR: Unknown data type.\n");
+                        break;
+                }
+            }
 
-    //         // INFO: FP64 with SSRs
-    //         // gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-    //         //                 &weights[W_offset], ldW, 
-    //         //                 &biases[b_offset], &act_ptr[b_offset], 
-    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-    //         //                 loss, compute_num, setup_SSR);
+            if(!compute_id){
+                printf("Gradient Update done\n");
+                printf("total loss = %f\n", loss[0]/(image+1));
+            }
 
-    //         // INFO: FP32 with SSRs and SIMD
-    //         gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-    //                         &weights[W_offset], ldW, 
-    //                         &biases[b_offset], &act_ptr[b_offset], 
-    //                         ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-    //                         loss, compute_num, setup_SSR);
-
-    //         // INFO: FP32 baseline
-    //         // gradient_update_fp32(n->IN_CH1, n->IN_CH2, div, 
-    //         //                 &weights[W_offset], ldW, 
-    //         //                 &biases[b_offset], &act_ptr[b_offset], 
-    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-    //         //                 loss, compute_num);
-
-    //         // INFO: FP16 baseline
-    //         // gradient_update_fp16(n->IN_CH1, n->IN_CH2, div, 
-    //         //                 &weights[W_offset], ldW, 
-    //         //                 &biases[b_offset], &act_ptr[b_offset], 
-    //         //                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-    //         //                 loss, compute_num);
-    //         benchmark_get_cycle();
-
-    //         if(!compute_id){
-    //             printf("Gradient Update done\n");
-    //         }
-
-    //         if(!compute_id){
-    //             printf("total loss = %f\n", loss[0]/(image+1));
-    //         }
-
-    //     } else {
-    //         snrt_cluster_hw_barrier();
-    //         snrt_cluster_hw_barrier();
-    //         snrt_cluster_hw_barrier();
-    //     }
+        } else {
+            switch (n->dtype)
+            {
+            case FP64:
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                break;
+            case FP32:
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                break;
+            case FP16:
+            if(BASELINE){
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+            } else {
+                printf("ERROR: Not implemented yet.\n");
+            }
+                break;
+            case FP8:
+                if(BASELINE){
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                snrt_cluster_hw_barrier();
+                } else {
+                    printf("ERROR: Not implemented yet.\n");
+                }
+                break;
+            default:
+                printf("ERROR: Unknown data type.\n");
+                break;
+            }
+        }
     }
 
-    // snrt_global_barrier();
+    snrt_global_barrier();
 
-    // // after looping through one batch of the dataset
-    // // we update the biases and weights on Cluster 0
-    // if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
-    //     // determine the row offset at which current compute cluster is
-    //     volatile uint32_t W_offset = compute_id * IN_CH;
-    //     volatile uint32_t b_offset = compute_id;
-    //     // Calculate number of rows for each compute
-    //     // core. If multiples of each other we have to 
-    //     // forcefully set it to 1
-    //     volatile uint32_t div = n->OUT_CH % compute_num;
-    //     if(div == 0){
-    //         div = 1;
-    //     }
+    // after looping through one batch of the dataset
+    // we update the biases and weights on Cluster 0
+    if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
+        // determine the row offset at which current compute cluster is
+        volatile uint32_t W_offset = compute_id * IN_CH;
+        volatile uint32_t b_offset = compute_id;
+        // Calculate number of rows for each compute
+        // core. If multiples of each other we have to 
+        // forcefully set it to 1
+        volatile uint32_t div = n->OUT_CH % compute_num;
+        if(div == 0){
+            div = 1;
+        }
 
 
-    //     // determine the row stride of each matrix    
-    //     volatile uint32_t ldW = compute_num * IN_CH;
-    //     volatile uint32_t ldB = compute_num;
-    //     volatile uint32_t ldI = IN_CH;
+        // determine the row stride of each matrix    
+        volatile uint32_t ldW = compute_num * IN_CH;
+        volatile uint32_t ldB = compute_num;
+        volatile uint32_t ldI = IN_CH;
 
-    //     double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-    //     double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+        double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+        double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
 
-    //     //TODO: load the LR from the network struct or via DRAM perloading
-    //     //*learning_rate = 0.5;
+        //TODO: load the LR from the network struct or via DRAM perloading
+        //*learning_rate = 0.5;
 
-    //     if(!compute_id){
-    //             printf("Training step start\n");
-    //     }
+        if(!compute_id){
+                printf("Training step start\n");
+        }
 
-    //     benchmark_get_cycle();
-    //     // INFO: FP64 baseline
-    //     // training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
-    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //     //         compute_id, compute_num, number_of_images);
+        switch(n->dtype)
+        {
+            case FP64:
+                if(BASELINE){
+                    // INFO: baseline
+                    benchmark_get_cycle();
+                    training_step_fp64(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                        &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                        compute_id, compute_num, number_of_images);
+                    benchmark_get_cycle();
+                } else {
+                    // INFO: FP64 with SSRs
+                    benchmark_get_cycle();
+                    training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                        &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                        compute_id, compute_num, number_of_images, setup_SSR);
+                    benchmark_get_cycle();
+                }
+                break;
+            case FP32:
+                if(BASELINE){
+                    // INFO: baseline
+                    benchmark_get_cycle();
+                    training_step_fp32(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                        &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                        compute_id, compute_num, number_of_images);
+                    benchmark_get_cycle();
+                } else {
+                    // INFO: FP32 with SSRs and SIMD
+                    benchmark_get_cycle();
+                    training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                        &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                        compute_id, compute_num, number_of_images, setup_SSR);
+                    benchmark_get_cycle();
+                }
+                break;
+            case FP16:
+                if(BASELINE){
+                    // INFO: baseline
+                    benchmark_get_cycle();
+                    training_step_fp16(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                        &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                        compute_id, compute_num, number_of_images);
+                    benchmark_get_cycle();
+                } else {
+                    // INFO: FP16 with SSRs and SIMD
+                    printf("ERROR: Not implemented yet.\n");
+                }
+                break;
+            case FP8:
+                if(BASELINE){
+                    // INFO: baseline
+                    benchmark_get_cycle();
+                    training_step_fp8(n->IN_CH1, n->IN_CH2, div, 
+                                        &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                        &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                        compute_id, compute_num, number_of_images);
+                    benchmark_get_cycle();
+                } else {
+                    // INFO: FP8 with SSRs and SIMD
+                    printf("ERROR: Not implemented yet.\n");
+                }
+                break;
+            default:
+                printf("ERROR: Unknown data type.\n");
+                break;
+        }
 
-    //     // INFO: FP64 with SSRs
-    //     // training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //     //         compute_id, compute_num, number_of_images, setup_SSR);
+        if(!compute_id){
+                printf("Training step done\n");
+        }
 
-    //     // INFO: FP32 baseline
-    //     // training_step_fp32(n->IN_CH1, n->IN_CH2, div, 
-    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //     //         compute_id, compute_num, number_of_images);
-
-    //     // INFO: FP32 with SSRs and SIMD
-    //     training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-    //             &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //             &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //             compute_id, compute_num, number_of_images, setup_SSR);
-
-    //     // INFO: FP16 baseline
-    //     // training_step_fp16(n->IN_CH1, n->IN_CH2, div, 
-    //     //         &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-    //     //         &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
-    //     //         compute_id, compute_num, number_of_images);
-
-    //     benchmark_get_cycle();
-
-    //     if(!compute_id){
-    //             printf("Training step done\n");
-    //     }
-
-    // } else {
-    //     snrt_cluster_hw_barrier();
-    //     snrt_cluster_hw_barrier();
-    //     snrt_cluster_hw_barrier();
-    // }
+    } else {
+        switch(n->dtype){
+            case FP64:
+                if(BASELINE){
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                } else {
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                }
+                break;
+            case FP32:
+                if(BASELINE){
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                } else {
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                }
+                break;
+            case FP16:
+                if(BASELINE){
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                } else {
+                    printf("ERROR: Not implemented yet.\n");
+                }
+                break;
+            case FP8:
+                if(BASELINE){
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                    snrt_cluster_hw_barrier();
+                } else {
+                    printf("ERROR: Not implemented yet.\n");
+                }
+                break;
+        }
+    }
 }
