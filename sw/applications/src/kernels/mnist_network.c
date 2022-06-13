@@ -653,7 +653,7 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 void softmax_activation_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, uint32_t ldW, float *activations, uint32_t ldB,
                 float *image, uint32_t ldI, uint32_t compute_id, 
-                uint32_t compute_num, float *max, uint32_t* core_sync, uint32_t setup_SSR){
+                uint32_t compute_num, float *max, uint32_t* core_sync){
 
     float max_core;
     float sum = 0.0;
@@ -922,18 +922,9 @@ void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, uint32_t ldW, float *biases, float *activations,
                 uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
-
-    // if(!compute_id){
-    //     for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
-    //         printf("image[%u] = %f\n", in, image[in]);
-    //     }
-    // }
-
     
     // Linear layer: OUT = X * W^T + B
     for (uint32_t out = 0; out < OUT_CH; out++) {
-        //printf("Step: %u\n", out + compute_id);
-        printf("weights[%u] = %f\n", out*ldW, weights[out*ldW]);
         register float acc = biases[ldB * out];
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             acc += image[in] * weights[out * ldW + in];
@@ -945,7 +936,7 @@ void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        //printf("FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        printf("FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
     core_sync = 1;
