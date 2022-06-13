@@ -23,8 +23,9 @@ sw/applications/snRuntime/Makefile
 sw/applications/snRuntime/cmake_install.cmake
 sw/applications/snRuntime/common.ld
 hw/system/occamy/test/
-hw/system/occamy/test/bootrom.bin
 docs/ug/occamy_addrmap.md
 hw/system/occamy/addrmap/addrmap.tex
 hw/system/occamy/src/
 hw/system/occamy/test/
+docs/
+hw/system/occamy/addrmap/
