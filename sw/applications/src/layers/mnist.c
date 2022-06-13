@@ -22,6 +22,7 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
+#define RUN_GRADIENT_UPDATE 1
 
 void mnist(const network_t *n){
 
@@ -274,7 +275,6 @@ void mnist(const network_t *n){
                                         &weights[W_offset], ldW, &activations[b_offset], ldB,
                                         &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
                             benchmark_get_cycle();
-                            break;
                         } else {
                             // INFO: FP64 with SSRs
                             benchmark_get_cycle();
@@ -286,8 +286,8 @@ void mnist(const network_t *n){
                                             &weights[W_offset], ldW, &activations[b_offset], ldB,
                                             &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
                             benchmark_get_cycle();
-                            break;
                         }
+                        break;
 
                     case FP32:
                         if(BASELINE){
@@ -300,7 +300,6 @@ void mnist(const network_t *n){
                                             &weights[W_offset], ldW, &activations[b_offset], ldB, 
                                             &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
                             benchmark_get_cycle();
-                            break;
                         } else {
                             // INFO: FP32 with SSRs and SIMD
                             benchmark_get_cycle();
@@ -312,58 +311,48 @@ void mnist(const network_t *n){
                                             &weights[W_offset], ldW, &activations[b_offset], ldB, 
                                             &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
                             benchmark_get_cycle();
-                            break;
                         }
+                        break;
 
+                    case FP16:
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            feedforward_fp16(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+                            softmax_activation_fp16(n->IN_CH1, n->IN_CH2, div,
+                                            &weights[W_offset], ldW, &activations[b_offset], ldB, 
+                                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+                            benchmark_get_cycle();
+                        } else {
+                            // INFO: FP16 with SSRs and SIMD
+                            printf("ERROR: Not implemented yet.\n");
+                        }
+                        break;
+                    
+                    case FP8:
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            feedforward_fp8(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+                            softmax_activation_fp8(n->IN_CH1, n->IN_CH2, div,
+                                            &weights[W_offset], ldW, &activations[b_offset], ldB, 
+                                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+                            benchmark_get_cycle();
+                        } else {
+                            // INFO: FP8 with SSRs and SIMD
+                            printf("ERROR: Not implemented yet.\n");
+                        }
+                        break;
 
                     default:
                         printf("ERROR: unsupported data type\n");
                         break;
 
                 }
-
-                // INFO: FP64 with SSRs
-                // feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                //                 setup_SSR);
-
-                // INFO: FP32 with SSRs and SIMD
-                // feedforward_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                //                 setup_SSR); 
-
-                // INFO: FP32 baseline
-                // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
-
-                // INFO: FP16 baseline
-                // feedforward_fp16(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]); 
-
-                // INFO: FP16 with SSRs and SIMD
-                // feedforward_fp16_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                //                 ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                //                 setup_SSR); 
-
-
-                // INFO: FP64 baseline
-                // softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-                //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
-
-                // INFO: FP64 with SSRs
-                // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-                //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
-
-                // softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
-                //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-                //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
 
                 if(!compute_id){
                     printf("FF end\n");
@@ -394,6 +383,26 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
+                    }
+                    break;
+                case (FP16):
+                    if(BASELINE){
+                        // INFO: baseline
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    } else {
+                        // INFO: FP16 with SSRs and SIMD
+                        printf("ERROR: Not implemented yet.\n");
+                    }
+                    break;
+                case(FP8):
+                    if(BASELINE){
+                        // INFO: baseline
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    } else {
+                        // INFO: FP8 with SSRs and SIMD
+                        printf("ERROR: Not implemented yet.\n");
                     }
                 default:
                     break;
