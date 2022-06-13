@@ -262,34 +262,38 @@ void mnist(const network_t *n){
                 }
 
                 // Start of feedforward
-                if(n->dtype == FP64){
-                    if(BASELINE){
-                        // INFO: baseline
-                        benchmark_get_cycle();
-                        feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
-                                        &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                                        ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
-                        softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
-                                    &weights[W_offset], ldW, &activations[b_offset], ldB,
-                                    &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
-                        benchmark_get_cycle();
-                    } else {
-                        // INFO: FP64 with SSRs
-                        benchmark_get_cycle();
-                        feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                                        &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                                        ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
-                                        setup_SSR);
-                        softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                switch(n->dtype){
+                    case FP64:
+                        if(BASELINE){
+                            // INFO: baseline
+                            benchmark_get_cycle();
+                            feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+                            softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
                                         &weights[W_offset], ldW, &activations[b_offset], ldB,
-                                        &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
-                        benchmark_get_cycle();
+                                        &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
+                            benchmark_get_cycle();
+                            break;
+                        } else {
+                            // INFO: FP64 with SSRs
+                            benchmark_get_cycle();
+                            feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
+                                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
+                                            setup_SSR);
+                            softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], ldW, &activations[b_offset], ldB,
+                                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+                            benchmark_get_cycle();
+                            break;
+                        }
 
-                    }
-                } else {
-                    printf("Error: unsupported data type\n");
+                    default:
+                        printf("ERROR: unsupported data type\n");
+                        break;
+
                 }
-
 
                 // INFO: FP64 with SSRs
                 // feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
@@ -340,15 +344,20 @@ void mnist(const network_t *n){
             }
 
         } else {
-            if(BASELINE){
-                snrt_cluster_hw_barrier();
-                snrt_cluster_hw_barrier();
-            } else if(!BASELINE && n->dtype == FP64){
-                snrt_cluster_hw_barrier();
-                snrt_cluster_hw_barrier();
-                // snrt_cluster_hw_barrier(); --> NOTE: for other dtypes required
-                // snrt_cluster_hw_barrier();
-
+            switch (n->dtype) {
+                case(FP64):
+                    if(BASELINE){
+                        // INFO: baseline
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    } else {
+                        // INFO: FP64 with SSRs
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    }
+                    break;
+                default:
+                    break;
             }
         }
 
