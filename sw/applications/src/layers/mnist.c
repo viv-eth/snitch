@@ -215,7 +215,6 @@ void mnist(const network_t *n){
                                     sizeof(uint32_t) * number_of_images);        // size
                 
                 snrt_dma_wait_all();
-
     }
 
     snrt_cluster_hw_barrier();
@@ -421,31 +420,35 @@ void mnist(const network_t *n){
         snrt_global_barrier();
 
         // if(snrt_is_dm_core() && cluster_id==1) {
-        //     //printf("Entering here\n");
+        //     printf("Starting cluster2cluster copy\n");
         //     // this only works when SSRs are *NOT* used
         //     // WARN: make sure that pointer types are according to network precision
         //     *act_ptr = ((uint32_t)activations) - cluster_offset;
+        //     printf("act_ptr: %p\n", act_ptr);
         //     *img_ptr = ((uint32_t)images) - cluster_offset;
+        //     printf("img_ptr: %p\n", img_ptr);
 
-        //     for(uint32_t t=0; t < n->OUT_CH; t++){
-        //         printf("act_ptr[%u] = %f \n", t, act_ptr[t]);
-        //     }
+        //     // for(uint32_t t=0; t < n->OUT_CH; t++){
+        //     //     printf("act_ptr[%u] = %f \n", t, act_ptr[t]);
+        //     // }
 
         //     // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
-        //     if(setup_SSR){
-        //                 snrt_dma_txid_t txid_activations = 
-        //                     snrt_dma_start_1d(activations,                                   // destination
-        //                                       act_ptr,      // source
-        //                                       n->dtype * n->OUT_CH);                         // size
+        //     //if(setup_SSR){
+        //                 // snrt_dma_txid_t txid_activations = 
+        //                 //     snrt_dma_start_1d(activations,                                   // destination
+        //                 //                       &act_ptr,      // source
+        //                 //                       n->dtype * n->OUT_CH);                         // size
 
-        //                 snrt_dma_txid_t txid_IMG = 
-        //                     snrt_dma_start_1d(images,                                      // destination
-        //                                       img_ptr,                                     // source
-        //                                       n->dtype * number_of_images * IN_CH);        // size
+        //                 // snrt_dma_txid_t txid_IMG = 
+        //                 //     snrt_dma_start_1d(images,                                      // destination
+        //                 //                       img_ptr,                                     // source
+        //                 //                       n->dtype * number_of_images * IN_CH);        // size
                         
-        //                 snrt_dma_wait_all();
+        //                 // snrt_dma_wait_all();
 
-        //     }
+        //     //} 
+
+        //     printf("Cluster2cluster copy done\n");
         // }
 
         // snrt_cluster_hw_barrier();
@@ -487,7 +490,7 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                             gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                                                 &weights[W_offset], ldW, 
-                                                &biases[b_offset], &activations[b_offset], 
+                                                &biases[b_offset], &act_ptr[b_offset], 
                                                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                                                 loss, compute_num);
                             benchmark_get_cycle();
