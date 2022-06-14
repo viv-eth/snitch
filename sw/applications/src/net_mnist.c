@@ -30,7 +30,11 @@ int main(){
     
     mnist(&mini_mnist_t);
 
-    snrt_global_barrier();
+    //snrt_global_barrier();
+    // INFO: replacing global barrier with custom barrier for RTL sims
+    uint32_t cluster_num = snrt_cluster_num();
+    uint32_t cluster_core_num = snrt_cluster_core_num();
+    snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
     return 0;
 }

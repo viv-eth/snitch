@@ -166,8 +166,8 @@ void mnist(const network_t *n){
     uint32_t cluster_offset = 0x00040000;
     // define pointers for cluster2cluster communication
     // WARN: make sure dtype is correct
-    double *act_ptr;
-    double *img_ptr;
+    // double *act_ptr;
+    // double *img_ptr;
 
     // each cluster should set their sync flag to zero initially
     core_sync[compute_id] = 0;
@@ -417,8 +417,29 @@ void mnist(const network_t *n){
         // wait until clusters are synchronized to not
         // start gradient update until all activations are 
         // computed
-        snrt_global_barrier();
+        //snrt_global_barrier();
+        // INFO: replacing global barrier with custom barrier for RTL sims
+        snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
+        if(snrt_is_dm_core() && cluster_id){
+            double *act_ptr = ((uint32_t)activations) - cluster_offset;
+            snrt_dma_txid_t txid_activations = 
+                    snrt_dma_start_1d(activations,                                   // destination
+                                      act_ptr,                                      // source
+                                      n->dtype * n->OUT_CH);                         // size
+            printf("CLID[%u]: cluster 1 activation ptr: 0x%p\n", cluster_id, activations);
+            printf("CLID[%u]: cluster 1 image ptr: 0x%p\n", cluster_id, images);
+            printf("CLID[%u]: cluster 0 activation ptr: 0x%p\n", cluster_id, ((uint32_t)activations) - cluster_offset);
+            printf("CLID[%u]: cluster 0 image ptr: 0x%p\n", cluster_id, ((uint32_t)images) - cluster_offset);
+        }
+
+        if(snrt_is_dm_core() && !cluster_id){
+            printf("CLID[%u]: cluster 0 activation ptr: 0x%p\n", cluster_id, activations);
+            printf("CLID[%u]: cluster 0 image ptr: 0x%p\n", cluster_id, images);
+        }
+
+
+        // code below causes out of memory warnings & stalls 
         // if(snrt_is_dm_core() && cluster_id==1) {
         //     printf("Starting cluster2cluster copy\n");
         //     // this only works when SSRs are *NOT* used
@@ -436,7 +457,7 @@ void mnist(const network_t *n){
         //     //if(setup_SSR){
         //                 // snrt_dma_txid_t txid_activations = 
         //                 //     snrt_dma_start_1d(activations,                                   // destination
-        //                 //                       &act_ptr,      // source
+        //                 //                       &act_ptr,                                      // source
         //                 //                       n->dtype * n->OUT_CH);                         // size
 
         //                 // snrt_dma_txid_t txid_IMG = 
@@ -473,8 +494,8 @@ void mnist(const network_t *n){
 
             // TODO: change this to cluster-cluster DMA transfer
 
-            act_ptr = ((uint32_t)activations) - cluster_offset;
-            img_ptr = ((uint32_t)images) - cluster_offset;
+            double *act_ptr = ((uint32_t)activations) - cluster_offset;
+            double *img_ptr = ((uint32_t)images) - cluster_offset;
 
             //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
@@ -618,7 +639,9 @@ void mnist(const network_t *n){
         }
     }
 
-    snrt_global_barrier();
+    //snrt_global_barrier();
+    // INFO: replacing global barrier with custom barrier for RTL sims
+    snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
     // after looping through one batch of the dataset
     // we update the biases and weights on Cluster 0
