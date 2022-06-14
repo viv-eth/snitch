@@ -74,7 +74,7 @@ void snrt_barrier(struct snrt_barrier *barr, uint32_t n) {
 }
 
 // Generic barrier for clusters
-void snrt_cluster_barrier(uint32_t n) {
+void snrt_generic_cluster_barrier(uint32_t n) {
     // Remember previous iteration
     volatile struct snrt_barrier *barr = &global_barrier;
     uint32_t prev_it = barr->barrier_iteration;
