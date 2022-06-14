@@ -134,6 +134,11 @@ void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
                 uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync);
 
+void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *activations, uint32_t ldB,
+                __fp16 *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, __fp16 *max, uint32_t* core_sync);
+
 void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
                 uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
@@ -148,6 +153,11 @@ void training_step_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 void feedforward_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 char *weights, uint32_t ldW, char *biases, char *activations,
                 uint32_t ldB, char *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync);
+
+void softmax_activation_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                char *weights, uint32_t ldW, char *activations, uint32_t ldB,
+                char *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, char *max, uint32_t* core_sync);
 
 void gradient_update_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 char *weight_grads, uint32_t ldW, char *bias_grads, char *activations, 

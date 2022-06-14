@@ -8,8 +8,8 @@
 // Correctness of results are checked automatically
 
 #include "mnist.h"
-// #include "data_five_mnist.h" //--> For FP64 tests
-#include "data_fp32_mnist.h" // --> For FP32 tests
+#include "data_five_mnist.h" //--> For FP64 tests
+//#include "data_fp32_mnist.h" // --> For FP32 tests
 // #include "data_fp16_mnist.h" // --> For FP16 tests
 #include "network.h"
 #include "math.h"

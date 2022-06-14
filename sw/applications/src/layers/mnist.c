@@ -18,11 +18,11 @@
 #define MAT_ROW_PADDING 4
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
+#define RUN_GRADIENT_UPDATE 1
 #define RUN_TRAINING_STEP 0
 
 void mnist(const network_t *n){
@@ -45,7 +45,7 @@ void mnist(const network_t *n){
 
     // number of total images that we load
     // NOTE: partial load for simulation purposes only
-    uint32_t number_of_images = 5;
+    uint32_t number_of_images = 1;
 
     // size of the weight matrix, same for weight gradients
     // on cluster 0 we store the weights, on cluster 1 the
@@ -70,55 +70,23 @@ void mnist(const network_t *n){
     // learning rate of the network
     uint32_t lr_size = sizeof(float);
 
-    // // INFO FP64 cluster memory setup
-    // // @brief Cluster Memory Structure for each cluster to ensure
-    // // we can access the data of both by using the constant
-    // // cluster base offset
-    // void *ptr = (double *)snrt_cluster_memory().start;
-    // // void *ptr_start = ptr;
-    // double *max= ptr; // zero initialized
-    // ptr += max_size;
-    // double *loss = ptr; // zero initialized
-    // ptr += loss_size;
-    // double *images = ptr;
-    // ptr += number_of_images*image_size;
-    // double *biases = ptr; // bias GRADIENTS zero initialized
-    // ptr += bias_mat_size;
-    // double *activations = ptr;
-    // ptr += act_mat_size;
-    // double *weights = ptr; // weight GRADIENTS zero initialized
-    // ptr += weight_mat_size;
-    // // NOTE: core sync flag used to indictae whether computation is done or not
-    // uint32_t *core_sync = ptr; // zero initialized
-    // ptr += core_sync_flag_size;
-    // uint32_t *targets = ptr;
-    // ptr += number_of_images*target_size;
-    // // NOTE: following lines for debugging purposes only
-    // // void *ptr_end = (double *)snrt_cluster_memory().end;
-    // // if(compute_id == 0){   
-    // //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
-    // //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
-    // //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
-    // //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
-    // // }
-
-    // INFO FP32 cluster memory setup
-    // images remain in float precision
-    void *ptr = (float *)snrt_cluster_memory().start;
-    float *max= ptr; // zero initialized
+    // INFO FP64 cluster memory setup
+    // @brief Cluster Memory Structure for each cluster to ensure
+    // we can access the data of both by using the constant
+    // cluster base offset
+    void *ptr = (double *)snrt_cluster_memory().start;
+    // void *ptr_start = ptr;
+    double *max= ptr; // zero initialized
     ptr += max_size;
-    float *loss = ptr; // zero initialized
+    double *loss = ptr; // zero initialized
     ptr += loss_size;
-    float *images = ptr;
+    double *images = ptr;
     ptr += number_of_images*image_size;
-    float *biases = ptr; // bias GRADIENTS zero initialized
+    double *biases = ptr; // bias GRADIENTS zero initialized
     ptr += bias_mat_size;
-    float *activations = ptr;
+    double *activations = ptr;
     ptr += act_mat_size;
-    // INFO: setting weights as last element so 
-    // when we iterate over data we can zero out
-    // excessive rows --> FIXME: this does not work in the RTL probably
-    float *weights = ptr; // weight GRADIENTS zero initialized
+    double *weights = ptr; // weight GRADIENTS zero initialized
     ptr += weight_mat_size;
     // NOTE: core sync flag used to indictae whether computation is done or not
     uint32_t *core_sync = ptr; // zero initialized
@@ -133,6 +101,38 @@ void mnist(const network_t *n){
     //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
     //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // }
+
+    // // INFO FP32 cluster memory setup
+    // // images remain in float precision
+    // void *ptr = (float *)snrt_cluster_memory().start;
+    // float *max= ptr; // zero initialized
+    // ptr += max_size;
+    // float *loss = ptr; // zero initialized
+    // ptr += loss_size;
+    // float *images = ptr;
+    // ptr += number_of_images*image_size;
+    // float *biases = ptr; // bias GRADIENTS zero initialized
+    // ptr += bias_mat_size;
+    // float *activations = ptr;
+    // ptr += act_mat_size;
+    // // INFO: setting weights as last element so 
+    // // when we iterate over data we can zero out
+    // // excessive rows --> FIXME: this does not work in the RTL probably
+    // float *weights = ptr; // weight GRADIENTS zero initialized
+    // ptr += weight_mat_size;
+    // // NOTE: core sync flag used to indictae whether computation is done or not
+    // uint32_t *core_sync = ptr; // zero initialized
+    // ptr += core_sync_flag_size;
+    // uint32_t *targets = ptr;
+    // ptr += number_of_images*target_size;
+    // // NOTE: following lines for debugging purposes only
+    // // void *ptr_end = (double *)snrt_cluster_memory().end;
+    // // if(compute_id == 0){   
+    // //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+    // //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+    // //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+    // //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    // // }
 
     // INFO FP16 cluster memory setup
     // void *ptr = (__fp16*)snrt_cluster_memory().start;
@@ -164,6 +164,10 @@ void mnist(const network_t *n){
 
     // cluster offset in an Occamy quadrant
     uint32_t cluster_offset = 0x00040000;
+    // define pointers for cluster2cluster communication
+    // WARN: make sure dtype is correct
+    double *act_ptr;
+    double *img_ptr;
 
     // each cluster should set their sync flag to zero initially
     core_sync[compute_id] = 0;
@@ -194,7 +198,7 @@ void mnist(const network_t *n){
                 snrt_dma_txid_t txid_IMG = 
                     snrt_dma_start_1d(images,                                   // destination
                                     n->images,                                  // source
-                                    n->dtype * number_of_images * IN_CH);  // size
+                                    n->dtype * number_of_images * IN_CH);       // size
 
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
@@ -223,7 +227,7 @@ void mnist(const network_t *n){
     // uint32_t *dataset_dram = (void *)0x8004000;
 
     // We now loop through the images
-    for(uint32_t image = 0; image < 1; image++){
+    for(uint32_t image = 0; image < number_of_images; image++){
 
         // if(!compute_id){
         //     for(uint32_t in = 0; in < 784; in++){
@@ -416,6 +420,36 @@ void mnist(const network_t *n){
         // computed
         snrt_global_barrier();
 
+        // if(snrt_is_dm_core() && cluster_id==1) {
+        //     //printf("Entering here\n");
+        //     // this only works when SSRs are *NOT* used
+        //     // WARN: make sure that pointer types are according to network precision
+        //     *act_ptr = ((uint32_t)activations) - cluster_offset;
+        //     *img_ptr = ((uint32_t)images) - cluster_offset;
+
+        //     for(uint32_t t=0; t < n->OUT_CH; t++){
+        //         printf("act_ptr[%u] = %f \n", t, act_ptr[t]);
+        //     }
+
+        //     // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
+        //     if(setup_SSR){
+        //                 snrt_dma_txid_t txid_activations = 
+        //                     snrt_dma_start_1d(activations,                                   // destination
+        //                                       act_ptr,      // source
+        //                                       n->dtype * n->OUT_CH);                         // size
+
+        //                 snrt_dma_txid_t txid_IMG = 
+        //                     snrt_dma_start_1d(images,                                      // destination
+        //                                       img_ptr,                                     // source
+        //                                       n->dtype * number_of_images * IN_CH);        // size
+                        
+        //                 snrt_dma_wait_all();
+
+        //     }
+        // }
+
+        // snrt_cluster_hw_barrier();
+
         if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
             // determine the row offset at which current compute cluster is
             volatile uint32_t W_offset = compute_id * IN_CH;
@@ -436,8 +470,8 @@ void mnist(const network_t *n){
 
             // TODO: change this to cluster-cluster DMA transfer
 
-            uint32_t *act_ptr = ((uint32_t)activations) - cluster_offset;
-            uint32_t *img_ptr = ((uint32_t)images) - cluster_offset;
+            act_ptr = ((uint32_t)activations) - cluster_offset;
+            img_ptr = ((uint32_t)images) - cluster_offset;
 
             //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
@@ -453,7 +487,7 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                             gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                                                 &weights[W_offset], ldW, 
-                                                &biases[b_offset], &act_ptr[b_offset], 
+                                                &biases[b_offset], &activations[b_offset], 
                                                 ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                                                 loss, compute_num);
                             benchmark_get_cycle();
@@ -534,8 +568,7 @@ void mnist(const network_t *n){
             case FP64:
                 if(RUN_GRADIENT_UPDATE){
                     snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
+                    //snrt_cluster_hw_barrier(); // --> for DMA transfer
                 } else {
                     printf("INFO: Gradient Update not run\n");
                 }

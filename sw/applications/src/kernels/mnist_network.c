@@ -41,7 +41,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        //printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
 
@@ -103,7 +103,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            //printf("Cluster 0: activation[%u] = %f\n", out + 1, activations[out]);
+            printf("Cluster 0: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -141,8 +141,8 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // the effective index is the iteration index of the biases variable
     // across all entries
     for(uint32_t out = 0; out < OUT_CH; out++){
-        // printf("bias grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
-        // printf("biases[%u] = %f\n", compute_id + ldB * out, biases[ldB * out]);
+        //printf("BEFORE: bias grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
+        printf("activations[%u] = %f\n", compute_id + ldB * out, activations[ldB * out]);
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
@@ -1084,7 +1084,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         register v2f32 sum;
         register v2f32 test;
         register v4f16 dotp;
-        register v2f32 tacc;
+        register float tacc;
 
         acc = biases[ldB*out];
         asm volatile(
@@ -1101,7 +1101,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                     "vfcpka.s.s       %[sum], %[zero], %[zero] \n"
                     "vfdotpex.s.h     %[dotp], ft1, ft0 \n"
                     "vfsum.s          %[sum], %[dotp] \n"
-                    "vfadd.s          %[tacc], %[tacc], %[sum] \n"
+                    "fadd.s          %[tacc], %[tacc], %[sum] \n"
                 : [sum] "+&f"(sum), [dotp] "+&f"(dotp), [tacc] "+&f"(tacc)
                 : [zero] "f"(zero)
                 : "ft0", "ft1", "ft2"
@@ -1110,7 +1110,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 in += 4;
             }
 
-            acc += tacc[0] + tacc[1];
+            acc += tacc;
 
         }
 
@@ -1170,6 +1170,70 @@ void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     core_sync = 1;
 
 }
+
+//// Activation Step
+void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *activations, uint32_t ldB,
+                __fp16 *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, __fp16 *max, uint32_t* core_sync){}
+
+//     __fp16 max_core;
+//     __fp16 sum = 0.0;
+        
+//     while(!(core_sync[0])){
+//         max_core = 0.0;
+//     }
+
+//     max_core = activations[0];
+
+//     if(core_sync[compute_id]){
+
+//         //core_sync[compute_id] = 0;
+
+//         for(uint32_t out = 0; out < OUT_CH; out++){
+//             if(activations[ldB * out] > max_core) {
+//                 max_core = activations[ldB * out];
+//             }
+//         }
+
+//         max[compute_id] = max_core;
+
+//     }
+    
+//     snrt_cluster_hw_barrier();
+
+//     //printf("Max value of compute core %u is %f\n", compute_id, max_core);
+
+//     __fp16 max_global = max[0];
+
+//     // Reduction on single core
+//     if(compute_id == 0){
+//         for(uint32_t core = 0; core < compute_num; core++){
+//             if(max[core] > max_global){
+//                 max_global = max[core];
+//             }
+//         }
+
+//         // FIXME: actually OUT_CH should be multiplied by number of compute cores
+//         for(uint32_t out = 0; out < OUT_CH*5; out++){
+//             if(activations[out]){
+//                 activations[out] = exp(activations[out] - max_global);
+//                 sum += activations[out];
+//             } else {
+//                 activations[out] = 0.0;
+//             }
+//         }
+
+
+//         for(uint32_t out = 0; out < OUT_CH*5; out++){
+//             activations[out] /= sum;
+//             printf("FP16 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+//         }
+//     }
+
+//     //core_sync[compute_id] = 0;
+//     snrt_cluster_hw_barrier();
+// }
 
 void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
@@ -1284,6 +1348,70 @@ void feedforward_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     core_sync = 1;
 
 }
+
+//// Activation Step
+void softmax_activation_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                char *weights, uint32_t ldW, char *activations, uint32_t ldB,
+                char *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, char *max, uint32_t* core_sync){}
+
+//     char max_core;
+//     char sum = 0.0;
+        
+//     while(!(core_sync[0])){
+//         max_core = 0.0;
+//     }
+
+//     max_core = activations[0];
+
+//     if(core_sync[compute_id]){
+
+//         //core_sync[compute_id] = 0;
+
+//         for(uint32_t out = 0; out < OUT_CH; out++){
+//             if(activations[ldB * out] > max_core) {
+//                 max_core = activations[ldB * out];
+//             }
+//         }
+
+//         max[compute_id] = max_core;
+
+//     }
+    
+//     snrt_cluster_hw_barrier();
+
+//     //printf("Max value of compute core %u is %f\n", compute_id, max_core);
+
+//     char max_global = max[0];
+
+//     // Reduction on single core
+//     if(compute_id == 0){
+//         for(uint32_t core = 0; core < compute_num; core++){
+//             if(max[core] > max_global){
+//                 max_global = max[core];
+//             }
+//         }
+
+//         // FIXME: actually OUT_CH should be multiplied by number of compute cores
+//         for(uint32_t out = 0; out < OUT_CH*5; out++){
+//             if(activations[out]){
+//                 activations[out] = exp(activations[out] - max_global);
+//                 sum += activations[out];
+//             } else {
+//                 activations[out] = 0.0;
+//             }
+//         }
+
+
+//         for(uint32_t out = 0; out < OUT_CH*5; out++){
+//             activations[out] /= sum;
+//             printf("FP8 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+//         }
+//     }
+
+//     //core_sync[compute_id] = 0;
+//     snrt_cluster_hw_barrier();
+// }
 
 void gradient_update_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 char *weight_grads, uint32_t ldW, char *bias_grads, char *activations, 
