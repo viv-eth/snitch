@@ -810,9 +810,7 @@ void mnist(const network_t *n){
             case FP64:
                 if(BASELINE){
                     if(RUN_TRAINING_STEP){
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
+                        // no HW barriers required for Baseline
                     } else {
                         if(!compute_id){
                             printf("INFO: Training Step not run\n");
