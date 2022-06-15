@@ -18,12 +18,12 @@
 #define MAT_ROW_PADDING 4
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 1
+#define RUN_TRAINING_STEP 0
 
 void mnist(const network_t *n){
 
@@ -70,55 +70,23 @@ void mnist(const network_t *n){
     // learning rate of the network
     uint32_t lr_size = sizeof(float);
 
-    // INFO FP64 cluster memory setup
-    // @brief Cluster Memory Structure for each cluster to ensure
-    // we can access the data of both by using the constant
-    // cluster base offset
-    void *ptr = (double *)snrt_cluster_memory().start;
-    // void *ptr_start = ptr;
-    double *max= ptr; // zero initialized
-    ptr += max_size;
-    double *loss = ptr; // zero initialized
-    ptr += loss_size;
-    double *images = ptr;
-    ptr += number_of_images*image_size;
-    double *biases = ptr; // bias GRADIENTS zero initialized
-    ptr += bias_mat_size;
-    double *activations = ptr;
-    ptr += act_mat_size;
-    double *weights = ptr; // weight GRADIENTS zero initialized
-    ptr += weight_mat_size;
-    // NOTE: core sync flag used to indictae whether computation is done or not
-    uint32_t *core_sync = ptr; // zero initialized
-    ptr += core_sync_flag_size;
-    uint32_t *targets = ptr;
-    ptr += number_of_images*target_size;
-    // NOTE: following lines for debugging purposes only
-    // void *ptr_end = (double *)snrt_cluster_memory().end;
-    // if(compute_id == 0){   
-    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
-    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
-    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
-    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
-    // }
-
-    // // INFO FP32 cluster memory setup
-    // // images remain in float precision
-    // void *ptr = (float *)snrt_cluster_memory().start;
-    // float *max= ptr; // zero initialized
+    // // INFO FP64 cluster memory setup
+    // // @brief Cluster Memory Structure for each cluster to ensure
+    // // we can access the data of both by using the constant
+    // // cluster base offset
+    // void *ptr = (double *)snrt_cluster_memory().start;
+    // // void *ptr_start = ptr;
+    // double *max= ptr; // zero initialized
     // ptr += max_size;
-    // float *loss = ptr; // zero initialized
+    // double *loss = ptr; // zero initialized
     // ptr += loss_size;
-    // float *images = ptr;
+    // double *images = ptr;
     // ptr += number_of_images*image_size;
-    // float *biases = ptr; // bias GRADIENTS zero initialized
+    // double *biases = ptr; // bias GRADIENTS zero initialized
     // ptr += bias_mat_size;
-    // float *activations = ptr;
+    // double *activations = ptr;
     // ptr += act_mat_size;
-    // // INFO: setting weights as last element so 
-    // // when we iterate over data we can zero out
-    // // excessive rows --> FIXME: this does not work in the RTL probably
-    // float *weights = ptr; // weight GRADIENTS zero initialized
+    // double *weights = ptr; // weight GRADIENTS zero initialized
     // ptr += weight_mat_size;
     // // NOTE: core sync flag used to indictae whether computation is done or not
     // uint32_t *core_sync = ptr; // zero initialized
@@ -133,6 +101,35 @@ void mnist(const network_t *n){
     // //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
     // //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // // }
+
+    // INFO FP32 cluster memory setup
+    // images remain in float precision
+    void *ptr = (float *)snrt_cluster_memory().start;
+    float *max= ptr; // zero initialized
+    ptr += max_size;
+    float *loss = ptr; // zero initialized
+    ptr += loss_size;
+    float *images = ptr;
+    ptr += number_of_images*image_size;
+    float *biases = ptr; // bias GRADIENTS zero initialized
+    ptr += bias_mat_size;
+    float *activations = ptr;
+    ptr += act_mat_size;
+    float *weights = ptr; // weight GRADIENTS zero initialized
+    ptr += weight_mat_size;
+    // NOTE: core sync flag used to indictae whether computation is done or not
+    uint32_t *core_sync = ptr; // zero initialized
+    ptr += core_sync_flag_size;
+    uint32_t *targets = ptr;
+    ptr += number_of_images*target_size;
+    // NOTE: following lines for debugging purposes only
+    // void *ptr_end = (double *)snrt_cluster_memory().end;
+    // if(compute_id == 0){   
+    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    // }
 
     // INFO FP16 cluster memory setup
     // void *ptr = (__fp16*)snrt_cluster_memory().start;
@@ -541,7 +538,7 @@ void mnist(const network_t *n){
                             gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, 
                                             &biases[b_offset], &activations[b_offset], 
-                                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                            ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
                                             loss, compute_num, setup_SSR);
                             benchmark_get_cycle();
                         }
@@ -606,32 +603,41 @@ void mnist(const network_t *n){
                 }
                 break;
             case FP32:
-                if(RUN_GRADIENT_UPDATE){
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
+                if(BASELINE){
+                    if(RUN_GRADIENT_UPDATE){
+                        snrt_cluster_hw_barrier();
+                    } else {
+                        if(!compute_id){
+                            printf("INFO: Gradient Update not run\n");
+                        }
+                    }
                 } else {
-                    if(!compute_id){
-                        printf("INFO: Gradient Update not run\n");
+                    if(RUN_GRADIENT_UPDATE){
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    } else {
+                        if(!compute_id){
+                            printf("INFO: Gradient Update not run\n");
+                        }
                     }
                 }
                 break;
             case FP16:
-            if(BASELINE){
-                if(RUN_GRADIENT_UPDATE){
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
+                if(BASELINE){
+                    if(RUN_GRADIENT_UPDATE){
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    } else {
+                        if(!compute_id){
+                            printf("INFO: Gradient Update not run\n");
+                        }
+                    }
                 } else {
                     if(!compute_id){
-                        printf("INFO: Gradient Update not run\n");
+                        printf("ERROR: Not implemented yet.\n");
                     }
                 }
-            } else {
-                if(!compute_id){
-                    printf("ERROR: Not implemented yet.\n");
-                }
-            }
                 break;
             case FP8:
                 if(BASELINE){

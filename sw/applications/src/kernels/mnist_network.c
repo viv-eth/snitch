@@ -256,9 +256,9 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of SSR region.
     snrt_ssr_disable();
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
     
     core_sync = 1;
 
@@ -339,10 +339,10 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
         }
 
 
-        for(uint32_t out = 0; out < OUT_CH*5; out++){
-            activations[out] /= sum;
-            printf("SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
-        }
+        // for(uint32_t out = 0; out < OUT_CH*5; out++){
+        //     activations[out] /= sum;
+        //     printf("SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+        // }
     }
 
     snrt_cluster_hw_barrier();
@@ -437,9 +437,9 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of the SSR region. 
     snrt_ssr_disable();
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    // }
 
     snrt_cluster_hw_barrier();
 
@@ -490,20 +490,11 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double) * ldW);
     }
 
-    // SSR start address need to be configured each time
-    // snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, weight_grads);
-    //snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, bias_grads);
-    // snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, weights);
-
-    // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     printf("FP64 with SSRs: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    //     printf("FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
-    // }
-
     // Start of SSR region
     snrt_ssr_enable();
 
     for(uint32_t out = 0; out < OUT_CH; out++){
+        // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
         snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &bias_grads[out*ldB]);
@@ -547,9 +538,9 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of the SSR region. 
     snrt_ssr_disable();
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("TRAINING STEP FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("TRAINING STEP FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    // }
 }
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
@@ -705,7 +696,7 @@ void softmax_activation_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            printf("FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+            printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -936,7 +927,7 @@ void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        printf("FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
     core_sync = 1;
@@ -991,7 +982,7 @@ void gradient_update_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update;
-        printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        printf("GRADIENT UPDATE FP32 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
