@@ -22,7 +22,7 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
+#define RUN_GRADIENT_UPDATE 1
 #define RUN_TRAINING_STEP 0
 
 void mnist(const network_t *n){
