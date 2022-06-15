@@ -23,7 +23,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0
+#define RUN_TRAINING_STEP 1
 
 void mnist(const network_t *n){
 
@@ -666,7 +666,7 @@ void mnist(const network_t *n){
     // TODO: implement correct DMA transfer
     if(setup_SSR && RUN_TRAINING_STEP){
         // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
-        if(snrt_is_dm_core() && cluster_id==1) {
+        if(snrt_is_dm_core() && cluster_id==0) {
             // WARN: make sure that pointer types are according to network precision
             double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
             double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
@@ -679,7 +679,7 @@ void mnist(const network_t *n){
                                 n->OUT_CH);               // repetitions
 
             snrt_dma_txid_t txid_BG = 
-                snrt_dma_start_1d(biases,                 // destination
+                snrt_dma_start_1d(activations,                 // destination
                                 bias_grad_ptr,            // source
                                 n->dtype * n->OUT_CH);    // size
 
@@ -737,7 +737,7 @@ void mnist(const network_t *n){
                         benchmark_get_cycle();
                         training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], &weights[W_offset], ldW, 
-                                            &biases[b_offset], &biases[b_offset], ldB, 
+                                            &biases[b_offset], &activations[b_offset], ldB, 
                                             compute_id, compute_num, number_of_images, setup_SSR);
                         benchmark_get_cycle();
                     }
@@ -756,7 +756,7 @@ void mnist(const network_t *n){
                         benchmark_get_cycle();
                         training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], &weights[W_offset], ldW, 
-                                            &biases[b_offset], &biases[b_offset], ldB, 
+                                            &biases[b_offset], &activations[b_offset], ldB, 
                                             compute_id, compute_num, number_of_images, setup_SSR);
                         benchmark_get_cycle();
                     }
@@ -817,9 +817,9 @@ void mnist(const network_t *n){
                     }
                 } else {
                     if(RUN_TRAINING_STEP){
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
                     } else {
                         if(!compute_id){
                             printf("INFO: Training Step not run\n");

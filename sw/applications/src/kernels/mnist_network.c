@@ -170,8 +170,8 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
-        // printf("FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-        // printf("FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        printf("TRAINING STEP FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        printf("TRAINING STEP FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
 
         // make sure that biases outside of the number of
         // output channels are zero
@@ -190,7 +190,7 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     }
 
     for(uint32_t out = 0; out < OUT_CH; out++){
-        // printf("TRAINING STEP FP64 Baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        printf("TRAINING STEP FP64 Baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     }
 }
 
@@ -491,9 +491,9 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     }
 
     // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, weight_grads);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, bias_grads);
-    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, weights);
+    // snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, weight_grads);
+    //snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, bias_grads);
+    // snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, weights);
 
     // for(uint32_t out = 0; out < OUT_CH; out++){
     //     printf("FP64 with SSRs: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
@@ -504,6 +504,9 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     snrt_ssr_enable();
 
     for(uint32_t out = 0; out < OUT_CH; out++){
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
+        snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &bias_grads[out*ldB]);
         // collect the bias gradients in a reg
         register double acc_b = bias_grads[ldB * out];
         // make sure that biases outside of the number of
