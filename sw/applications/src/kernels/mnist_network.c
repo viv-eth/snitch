@@ -41,8 +41,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-        //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
+        // printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
     core_sync = 1;
@@ -103,7 +102,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            printf("SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -155,7 +154,7 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
-        printf("GRADIENT UPDATE FP64 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        // printf("GRADIENT UPDATE FP64 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
@@ -191,7 +190,7 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     }
 
     for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("TRAINING STEP FP64 Baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        // printf("TRAINING STEP FP64 Baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     }
 }
 
@@ -257,9 +256,9 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of SSR region.
     snrt_ssr_disable();
 
-    // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //     printf("FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    // }
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
     
     core_sync = 1;
 
@@ -342,7 +341,7 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            // printf("FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+            printf("SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -438,9 +437,9 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of the SSR region. 
     snrt_ssr_disable();
 
-    // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     printf("FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
-    // }
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    }
 
     snrt_cluster_hw_barrier();
 
@@ -545,9 +544,9 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of the SSR region. 
     snrt_ssr_disable();
 
-    // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     printf("FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    // }
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("TRAINING STEP FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
 }
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions

@@ -18,12 +18,12 @@
 #define MAT_ROW_PADDING 4
 
 // define whether to run baseline network or not
-#define BASELINE 1
+#define BASELINE 0
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 1
+#define RUN_GRADIENT_UPDATE 0
+#define RUN_TRAINING_STEP 0
 
 void mnist(const network_t *n){
 
@@ -450,9 +450,8 @@ void mnist(const network_t *n){
         // }
 
 
-        if(setup_SSR){
+        if(setup_SSR && RUN_GRADIENT_UPDATE){
             if(snrt_is_dm_core() && cluster_id==1) {
-                // this only works when SSRs are *NOT* used
                 // WARN: make sure that pointer types are according to network precision
                 double *act_ptr = ((uint32_t)activations) - cluster_offset;
                 double *img_ptr = ((uint32_t)images) - cluster_offset;
@@ -665,7 +664,7 @@ void mnist(const network_t *n){
     snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
     // TODO: implement correct DMA transfer
-    if(setup_SSR){
+    if(setup_SSR && RUN_TRAINING_STEP){
         // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
         if(snrt_is_dm_core() && cluster_id==1) {
             // WARN: make sure that pointer types are according to network precision
