@@ -22,7 +22,7 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 1
+#define RUN_GRADIENT_UPDATE 0
 #define RUN_TRAINING_STEP 0
 
 void mnist(const network_t *n){
@@ -172,8 +172,14 @@ void mnist(const network_t *n){
     // each cluster should set their sync flag to zero initially
     core_sync[compute_id] = 0;
 
-    // define whether SSRs should be used or not
-    uint32_t setup_SSR = 1;
+    uint32_t setup_SSR;
+    if(BASELINE){
+        // baseline does *not* use SSRs
+        setup_SSR = 0;
+    } else {
+        // define whether SSRs should be used or not
+        setup_SSR = 1;
+    }
 
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
@@ -227,12 +233,6 @@ void mnist(const network_t *n){
 
     // We now loop through the images
     for(uint32_t image = 0; image < number_of_images; image++){
-
-        // if(!compute_id){
-        //     for(uint32_t in = 0; in < 784; in++){
-        //         printf("image[%u] = %f\n", in, images[in]);
-        //     }
-        // } --> this prints the correct image
 
         // we calculate the pointer postion of the current image
         uint32_t curr_img = image * IN_CH;
@@ -331,7 +331,9 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP16 with SSRs and SIMD
-                            printf("ERROR: Not implemented yet.\n");
+                            if(!compute_id){
+                                printf("ERROR: Not implemented yet.\n");
+                            }
                         }
                         break;
                     
@@ -348,12 +350,16 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP8 with SSRs and SIMD
-                            printf("ERROR: Not implemented yet.\n");
+                            if(!compute_id){
+                                printf("ERROR: Not implemented yet.\n");
+                            }
                         }
                         break;
 
                     default:
-                        printf("ERROR: unsupported data type\n");
+                        if(!compute_id){
+                                printf("ERROR: unsupported data type\n");
+                        }
                         break;
 
                 }
@@ -396,7 +402,9 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP16 with SSRs and SIMD
-                        printf("ERROR: Not implemented yet.\n");
+                        if(!compute_id){
+                            printf("ERROR: Not implemented yet.\n");
+                        }
                     }
                     break;
                 case(FP8):
@@ -406,7 +414,9 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP8 with SSRs and SIMD
-                        printf("ERROR: Not implemented yet.\n");
+                        if(!compute_id){
+                            printf("ERROR: Not implemented yet.\n");
+                        }
                     }
                     break;
                 default:
@@ -421,58 +431,49 @@ void mnist(const network_t *n){
         // INFO: replacing global barrier with custom barrier for RTL sims
         snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
-        if(snrt_is_dm_core() && cluster_id){
-            double *act_ptr = ((uint32_t)activations) - cluster_offset;
-            snrt_dma_txid_t txid_activations = 
-                    snrt_dma_start_1d(activations,                                   // destination
-                                      act_ptr,                                      // source
-                                      n->dtype * n->OUT_CH);                         // size
-            printf("CLID[%u]: cluster 1 activation ptr: 0x%p\n", cluster_id, activations);
-            printf("CLID[%u]: cluster 1 image ptr: 0x%p\n", cluster_id, images);
-            printf("CLID[%u]: cluster 0 activation ptr: 0x%p\n", cluster_id, ((uint32_t)activations) - cluster_offset);
-            printf("CLID[%u]: cluster 0 image ptr: 0x%p\n", cluster_id, ((uint32_t)images) - cluster_offset);
-        }
-
-        if(snrt_is_dm_core() && !cluster_id){
-            printf("CLID[%u]: cluster 0 activation ptr: 0x%p\n", cluster_id, activations);
-            printf("CLID[%u]: cluster 0 image ptr: 0x%p\n", cluster_id, images);
-        }
-
-
-        // code below causes out of memory warnings & stalls 
-        // if(snrt_is_dm_core() && cluster_id==1) {
-        //     printf("Starting cluster2cluster copy\n");
-        //     // this only works when SSRs are *NOT* used
-        //     // WARN: make sure that pointer types are according to network precision
-        //     *act_ptr = ((uint32_t)activations) - cluster_offset;
-        //     printf("act_ptr: %p\n", act_ptr);
-        //     *img_ptr = ((uint32_t)images) - cluster_offset;
-        //     printf("img_ptr: %p\n", img_ptr);
-
-        //     // for(uint32_t t=0; t < n->OUT_CH; t++){
-        //     //     printf("act_ptr[%u] = %f \n", t, act_ptr[t]);
-        //     // }
-
-        //     // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
-        //     //if(setup_SSR){
-        //                 // snrt_dma_txid_t txid_activations = 
-        //                 //     snrt_dma_start_1d(activations,                                   // destination
-        //                 //                       &act_ptr,                                      // source
-        //                 //                       n->dtype * n->OUT_CH);                         // size
-
-        //                 // snrt_dma_txid_t txid_IMG = 
-        //                 //     snrt_dma_start_1d(images,                                      // destination
-        //                 //                       img_ptr,                                     // source
-        //                 //                       n->dtype * number_of_images * IN_CH);        // size
-                        
-        //                 // snrt_dma_wait_all();
-
-        //     //} 
-
-        //     printf("Cluster2cluster copy done\n");
+        // Code below for testing cluster2cluster DMA transfer
+        // if(snrt_is_dm_core() && cluster_id){
+        //     double *act_ptr = ((uint32_t)activations) - cluster_offset;
+        //     snrt_dma_txid_t txid_activations = 
+        //             snrt_dma_start_1d(activations,                                   // destination
+        //                               act_ptr,                                      // source
+        //                               n->dtype * n->OUT_CH);                         // size
+        //     printf("CLID[%u]: cluster 1 activation ptr: 0x%p\n", cluster_id, activations);
+        //     printf("CLID[%u]: cluster 1 image ptr: 0x%p\n", cluster_id, images);
+        //     printf("CLID[%u]: cluster 0 activation ptr: 0x%p\n", cluster_id, ((uint32_t)activations) - cluster_offset);
+        //     printf("CLID[%u]: cluster 0 image ptr: 0x%p\n", cluster_id, ((uint32_t)images) - cluster_offset);
         // }
 
-        // snrt_cluster_hw_barrier();
+        // if(snrt_is_dm_core() && !cluster_id){
+        //     printf("CLID[%u]: cluster 0 activation ptr: 0x%p\n", cluster_id, activations);
+        //     printf("CLID[%u]: cluster 0 image ptr: 0x%p\n", cluster_id, images);
+        // }
+
+
+        if(setup_SSR){
+            if(snrt_is_dm_core() && cluster_id==1) {
+                // this only works when SSRs are *NOT* used
+                // WARN: make sure that pointer types are according to network precision
+                double *act_ptr = ((uint32_t)activations) - cluster_offset;
+                double *img_ptr = ((uint32_t)images) - cluster_offset;
+
+                // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
+                snrt_dma_txid_t txid_activations = 
+                    snrt_dma_start_1d(activations,                                 // destination
+                                    act_ptr,                                       // source
+                                    n->dtype * n->OUT_CH);                         // size
+
+                snrt_dma_txid_t txid_IMG = 
+                    snrt_dma_start_1d(images,                                    // destination
+                                    img_ptr,                                     // source
+                                    n->dtype * number_of_images * IN_CH);        // size
+                
+                snrt_dma_wait_all();
+
+            } 
+        }
+
+        snrt_cluster_hw_barrier();
 
         if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 1) {
             // determine the row offset at which current compute cluster is
@@ -492,7 +493,8 @@ void mnist(const network_t *n){
             volatile uint32_t ldB = compute_num;
             volatile uint32_t ldI = IN_CH;
 
-            // TODO: change this to cluster-cluster DMA transfer
+            // INFO: without SSRs we can use direct cluster2cluster communication
+            // however, when SSRs are set we need to DMA transfer the data
 
             double *act_ptr = ((uint32_t)activations) - cluster_offset;
             double *img_ptr = ((uint32_t)images) - cluster_offset;
@@ -519,8 +521,8 @@ void mnist(const network_t *n){
                             // INFO: FP64 with SSRs
                             gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, 
-                                            &biases[b_offset], &act_ptr[b_offset], 
-                                            ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                            &biases[b_offset], &activations[b_offset], 
+                                            ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
                                             loss, compute_num, setup_SSR);
                         } 
                         break;
@@ -539,7 +541,7 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                             gradient_update_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, 
-                                            &biases[b_offset], &act_ptr[b_offset], 
+                                            &biases[b_offset], &activations[b_offset], 
                                             ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                                             loss, compute_num, setup_SSR);
                             benchmark_get_cycle();
@@ -557,7 +559,9 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP16 with SSRs and SIMD
-                            printf("ERROR: Not implemented yet.\n");
+                            if(!compute_id){
+                                printf("ERROR: Not implemented yet.\n");
+                            }
                         }
                         break;
                     case(FP8):
@@ -572,11 +576,15 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP8 with SSRs and SIMD
-                            printf("ERROR: Not implemented yet.\n");
+                            if(!compute_id){
+                                printf("ERROR: Not implemented yet.\n");
+                            }
                         }
                         break;
                     default:
-                        printf("ERROR: Unknown data type.\n");
+                        if(!compute_id){
+                            printf("ERROR: Unknown data type.\n");
+                        }
                         break;
                 }
 
@@ -592,9 +600,10 @@ void mnist(const network_t *n){
             case FP64:
                 if(RUN_GRADIENT_UPDATE){
                     snrt_cluster_hw_barrier();
-                    //snrt_cluster_hw_barrier(); // --> for DMA transfer
                 } else {
-                    printf("INFO: Gradient Update not run\n");
+                    if(!compute_id){
+                        printf("INFO: Gradient Update not run\n");
+                    }
                 }
                 break;
             case FP32:
@@ -603,7 +612,9 @@ void mnist(const network_t *n){
                     snrt_cluster_hw_barrier();
                     snrt_cluster_hw_barrier();
                 } else {
-                    printf("INFO: Gradient Update not run\n");
+                    if(!compute_id){
+                        printf("INFO: Gradient Update not run\n");
+                    }
                 }
                 break;
             case FP16:
@@ -613,10 +624,14 @@ void mnist(const network_t *n){
                     snrt_cluster_hw_barrier();
                     snrt_cluster_hw_barrier();
                 } else {
-                    printf("INFO: Gradient Update not run\n");
+                    if(!compute_id){
+                        printf("INFO: Gradient Update not run\n");
+                    }
                 }
             } else {
-                printf("ERROR: Not implemented yet.\n");
+                if(!compute_id){
+                    printf("ERROR: Not implemented yet.\n");
+                }
             }
                 break;
             case FP8:
@@ -626,14 +641,20 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Gradient Update not run\n");
+                        if(!compute_id){
+                            printf("INFO: Gradient Update not run\n");
+                        }
                     }
                 } else {
-                    printf("ERROR: Not implemented yet.\n");
+                    if(!compute_id){
+                        printf("ERROR: Not implemented yet.\n");
+                    }
                 }
                 break;
             default:
-                printf("ERROR: Unknown data type.\n");
+                if(!compute_id){
+                    printf("ERROR: Unknown data type.\n");
+                }
                 break;
             }
         }
@@ -642,6 +663,33 @@ void mnist(const network_t *n){
     //snrt_global_barrier();
     // INFO: replacing global barrier with custom barrier for RTL sims
     snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
+
+    // TODO: implement correct DMA transfer
+    if(setup_SSR){
+        // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
+        if(snrt_is_dm_core() && cluster_id==1) {
+            // WARN: make sure that pointer types are according to network precision
+            double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+            double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+            snrt_dma_txid_t txid_WG = 
+                snrt_dma_start_2d(weights,                // destination
+                                weight_grad_ptr,          // source
+                                n->dtype * IN_CH,         // size
+                                n->dtype * IN_CH ,        // destination stride
+                                n->dtype * IN_CH ,        // source stride
+                                n->OUT_CH);               // repetitions
+
+            snrt_dma_txid_t txid_BG = 
+                snrt_dma_start_1d(biases,                 // destination
+                                bias_grad_ptr,            // source
+                                n->dtype * n->OUT_CH);    // size
+
+            
+            snrt_dma_wait_all();
+            } 
+    }
+
+    snrt_cluster_hw_barrier();
 
     // after looping through one batch of the dataset
     // we update the biases and weights on Cluster 0
@@ -689,8 +737,8 @@ void mnist(const network_t *n){
                         // INFO: FP64 with SSRs
                         benchmark_get_cycle();
                         training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                                            &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-                                            &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                            &weights[W_offset], &weights[W_offset], ldW, 
+                                            &biases[b_offset], &biases[b_offset], ldB, 
                                             compute_id, compute_num, number_of_images, setup_SSR);
                         benchmark_get_cycle();
                     }
@@ -708,8 +756,8 @@ void mnist(const network_t *n){
                         // INFO: FP32 with SSRs and SIMD
                         benchmark_get_cycle();
                         training_step_fp32_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                                            &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
-                                            &biases[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                            &weights[W_offset], &weights[W_offset], ldW, 
+                                            &biases[b_offset], &biases[b_offset], ldB, 
                                             compute_id, compute_num, number_of_images, setup_SSR);
                         benchmark_get_cycle();
                     }
@@ -739,11 +787,15 @@ void mnist(const network_t *n){
                         benchmark_get_cycle();
                     } else {
                         // INFO: FP8 with SSRs and SIMD
-                        printf("ERROR: Not implemented yet.\n");
+                        if(!compute_id){
+                            printf("ERROR: Not implemented yet.\n");
+                        }
                     }
                     break;
                 default:
-                    printf("ERROR: Unknown data type.\n");
+                    if(!compute_id){
+                        printf("ERROR: Unknown data type.\n");
+                    }
                     break;
             }
 
@@ -762,7 +814,9 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Training Step not run\n");
+                        if(!compute_id){
+                            printf("INFO: Training Step not run\n");
+                        }
                     }
                 } else {
                     if(RUN_TRAINING_STEP){
@@ -770,7 +824,9 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Training Step not run\n");
+                        if(!compute_id){
+                            printf("INFO: Training Step not run\n");
+                        }
                     }
                 }
                 break;
@@ -781,7 +837,9 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Training Step not run\n");
+                        if(!compute_id){
+                            printf("INFO: Training Step not run\n");
+                        }
                     }
                 } else {
                     if(RUN_TRAINING_STEP){
@@ -789,7 +847,9 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Training Step not run\n");
+                        if(!compute_id){
+                            printf("INFO: Training Step not run\n");
+                        }
                     }
                 }
                 break;
@@ -800,10 +860,14 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Training Step not run\n");
+                        if(!compute_id){
+                            printf("INFO: Training Step not run\n");
+                        }
                     }
                 } else {
-                    printf("ERROR: Not implemented yet.\n");
+                    if(!compute_id){
+                        printf("ERROR: Not implemented yet.\n");
+                    }
                 }
                 break;
             case FP8:
@@ -813,10 +877,14 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        printf("INFO: Training Step not run\n");
+                        if(!compute_id){
+                            printf("INFO: Training Step not run\n");
+                        }
                     }
                 } else {
-                    printf("ERROR: Not implemented yet.\n");
+                    if(!compute_id){
+                        printf("ERROR: Not implemented yet.\n");
+                    }
                 }
                 break;
         }

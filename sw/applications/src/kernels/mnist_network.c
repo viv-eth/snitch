@@ -35,13 +35,13 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             acc += image[in] * weights[out * ldW + in];
             // INFO: If this is not set harts start reading outside the mem map
             // FIXME: Next harts should start computation of the subsequent image
-            if(compute_id + out * ldB > OUT_CH * 5){
+            if(compute_id + out * ldB > OUT_CH * 5 - 1){
                 acc = 0;
             }
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        printf("FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
 
@@ -157,7 +157,7 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
-        //printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
@@ -169,7 +169,7 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images){
 
-    float lr = 0.5;
+    double lr = 0.5;
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
@@ -192,9 +192,9 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
     }
 
-    // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     printf("FP64 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    // }
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("FP64 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    }
 }
 
 // INFO: start of FP64 network implementation using SSRs
