@@ -23,7 +23,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0
+#define RUN_TRAINING_STEP 1
 
 void mnist(const network_t *n){
 
@@ -450,8 +450,8 @@ void mnist(const network_t *n){
         if(setup_SSR && RUN_GRADIENT_UPDATE){
             if(snrt_is_dm_core() && cluster_id==1) {
                 // WARN: make sure that pointer types are according to network precision
-                double *act_ptr = ((uint32_t)activations) - cluster_offset;
-                double *img_ptr = ((uint32_t)images) - cluster_offset;
+                float *act_ptr = ((uint32_t)activations) - cluster_offset;
+                float *img_ptr = ((uint32_t)images) - cluster_offset;
 
                 // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
                 snrt_dma_txid_t txid_activations = 
@@ -492,8 +492,8 @@ void mnist(const network_t *n){
             // INFO: without SSRs we can use direct cluster2cluster communication
             // however, when SSRs are set we need to DMA transfer the data
 
-            double *act_ptr = ((uint32_t)activations) - cluster_offset;
-            double *img_ptr = ((uint32_t)images) - cluster_offset;
+            float *act_ptr = ((uint32_t)activations) - cluster_offset;
+            float *img_ptr = ((uint32_t)images) - cluster_offset;
 
             //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
@@ -674,8 +674,8 @@ void mnist(const network_t *n){
         // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
         if(snrt_is_dm_core() && cluster_id==0) {
             // WARN: make sure that pointer types are according to network precision
-            double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-            double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+            float *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+            float *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
             snrt_dma_txid_t txid_WG = 
                 snrt_dma_start_2d(weights,                // destination
                                 weight_grad_ptr,          // source
@@ -716,8 +716,8 @@ void mnist(const network_t *n){
         volatile uint32_t ldB = compute_num;
         volatile uint32_t ldI = IN_CH;
 
-        double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-        double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+        float *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+        float *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
 
         //TODO: load the LR from the network struct or via DRAM perloading
         //*learning_rate = 0.5;
@@ -823,9 +823,6 @@ void mnist(const network_t *n){
                     }
                 } else {
                     if(RUN_TRAINING_STEP){
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
                     } else {
                         if(!compute_id){
                             printf("INFO: Training Step not run\n");
@@ -836,9 +833,7 @@ void mnist(const network_t *n){
             case FP32:
                 if(BASELINE){
                     if(RUN_TRAINING_STEP){
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
+
                     } else {
                         if(!compute_id){
                             printf("INFO: Training Step not run\n");
