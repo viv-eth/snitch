@@ -902,8 +902,6 @@ void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
         printf("FP32 with SSRs and SIMD: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     }
 
-    snrt_cluster_hw_barrier();
-
 }
 
 // INFO: start of FP32 baseline network implementation
