@@ -784,13 +784,6 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
 
             weight_grads[out*ldW + in] = reduce_reg_u.v[0];
             weight_grads[out*ldW + in + 1] = reduce_reg_u.v[1];
-
-            // snrt_ssr_disable();
-            // printf("reduce_reg[0] = %f\n", weight_grads[out*ldW + in]);
-            // printf("reduce_reg[1] = %f\n", weight_grads[out*ldW + in + 1]);
-            // snrt_ssr_enable();
-
-
             in += 2;
         }
 
@@ -800,6 +793,10 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
     }
 
     snrt_ssr_disable();
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        printf("GRADIENT UPDATE FP32 SIMD with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    }
 
     snrt_cluster_hw_barrier();
 }
