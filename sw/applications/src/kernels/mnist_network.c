@@ -44,7 +44,8 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
-    core_sync = 1;
+    // core_sync = 1;
+    snrt_cluster_hw_barrier();
 
 } // WORKS on Cluster 0
 
@@ -62,7 +63,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     max_core = activations[0];
     
-    if(core_sync[compute_id]){
+    // if(core_sync[compute_id]){
 
         //core_sync[compute_id] = 0;
 
@@ -74,7 +75,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         max[compute_id] = max_core;
     
-    }
+    // }
     snrt_cluster_hw_barrier();
 
     //printf("Max value of compute core %u is %f\n", compute_id, max_core);

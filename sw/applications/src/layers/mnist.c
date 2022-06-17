@@ -373,6 +373,7 @@ void mnist(const network_t *n){
                         // INFO: baseline
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP64 with SSRs
                         snrt_cluster_hw_barrier();
