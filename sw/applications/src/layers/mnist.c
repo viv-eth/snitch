@@ -22,8 +22,8 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
-#define RUN_TRAINING_STEP 0
+#define RUN_GRADIENT_UPDATE 1
+#define RUN_TRAINING_STEP 1
 
 void mnist(const network_t *n){
 
@@ -396,7 +396,8 @@ void mnist(const network_t *n){
                     if(BASELINE){
                         // INFO: baseline
                         snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP16 with SSRs and SIMD
                         if(!compute_id){
@@ -627,8 +628,6 @@ void mnist(const network_t *n){
                 if(BASELINE){
                     if(RUN_GRADIENT_UPDATE){
                         snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
                     } else {
                         if(!compute_id){
                             printf("INFO: Gradient Update not run\n");
@@ -854,9 +853,7 @@ void mnist(const network_t *n){
             case FP16:
                 if(BASELINE){
                     if(RUN_TRAINING_STEP){
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
+                        
                     } else {
                         if(!compute_id){
                             printf("INFO: Training Step not run\n");

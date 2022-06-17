@@ -1145,7 +1145,8 @@ void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         printf("FEEDFORWARD FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
-    core_sync = 1;
+    //core_sync = 1;
+    snrt_cluster_hw_barrier();
 
 }
 
@@ -1163,21 +1164,24 @@ void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         max_core = 0.0;
     }
 
+    //printf("DEBUG: activation[%u] = %f\n", compute_id + 1, activations[0]); OK
+
     max_core = activations[0];
 
-    if(core_sync[compute_id]){
+    //if(core_sync[compute_id]){
 
         //core_sync[compute_id] = 0;
 
-        for(uint32_t out = 0; out < OUT_CH; out++){
-            if(activations[ldB * out] > max_core) {
-                max_core = activations[ldB * out];
-            }
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        //printf("DEBUG: activation[%u] = %f\n", compute_id + 1 + out * ldB, activations[out * ldB]);
+        if(activations[ldB * out] > max_core) {
+            max_core = activations[ldB * out];
         }
-
-        max[compute_id] = max_core;
-
     }
+
+    max[compute_id] = max_core;
+
+    //}
     
     snrt_cluster_hw_barrier();
 
@@ -1195,13 +1199,14 @@ void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH*5; out++){
-            act_ptr = &activations[out];
-            //test[out]  = exp(test[out] - max_global);
-            printf("DEBUG: act_ptr[%u] = %f\n", out, act_ptr[out]);
+            act_ptr = &activations[0];
+            //printf("DEBUG: act_ptr[%u] = %f\n", out + 1, act_ptr[out]);
             if(act_ptr[out] != 0.0f){
                 //printf("DEBUG NON ZERO: act_ptr[%u] = %f\n", out, act_ptr[out]);
                 act_ptr[out] = exp(act_ptr[out] - max_global);
+                //printf("DEBUG: act_ptr[%u] = %f\n", out, act_ptr[out]);
                 sum += act_ptr[out];
+                //printf("DEBUG: sum = %f\n", sum);
             } else {
                 //printf("DEBUG ZERO: act_ptr[%u] = %f\n", out, act_ptr[out]);
                 act_ptr[out] = 0.0;
@@ -1212,12 +1217,12 @@ void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             act_ptr[out] /= sum;
             activations[out] = act_ptr[out];
-            printf("FP16 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+            printf("SOFTMAX FP16 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
 //     //core_sync[compute_id] = 0;
-//     snrt_cluster_hw_barrier();
+    snrt_cluster_hw_barrier();
 }
 
 void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -1234,7 +1239,9 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // get the value saved at target address
     uint32_t target_n = *target;
     // compute the loss
-    __fp16 loss_val = 0.0 - log(activations[target_n -compute_id]);
+    // TODO: check if indexig of target var correct
+    //printf("DEBUG: activations[%u] = %f\n", target_n - compute_id, activations[target_n - compute_id]);
+    __fp16 loss_val = 0.0 - log(activations[target_n - compute_id]);
 
     // save the value into the loss pointer
     if(!compute_id){
@@ -1268,7 +1275,7 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update;
-        //printf("bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        printf("GRADIENT UPDATE FP16 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
