@@ -789,7 +789,12 @@ void mnist(const network_t *n){
                         benchmark_get_cycle();
                     } else {
                         // INFO: FP16 with SSRs and SIMD
-                        printf("ERROR: Not implemented yet.\n");
+                        benchmark_get_cycle();
+                        training_step_fp16_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
+                                            &weights[W_offset], &weights[W_offset], ldW, 
+                                            &biases[b_offset], &activations[b_offset], ldB, 
+                                            compute_id, compute_num, number_of_images, setup_SSR);
+                        benchmark_get_cycle();
                     }
                     break;
                 case FP8:
@@ -864,7 +869,8 @@ void mnist(const network_t *n){
             case FP16:
                 if(BASELINE){
                     if(RUN_TRAINING_STEP){
-
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
                     } else {
                         if(!compute_id){
                             printf("INFO: Training Step not run\n");
