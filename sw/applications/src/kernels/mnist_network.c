@@ -1146,7 +1146,6 @@ void gradient_update_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
 
     float b_grad_update = 0.0f;
     __fp16 W_grad_update = 0.0f;
-    __fp16 acc = 0.0;
     volatile uint32_t idx_eff;
 
     // get the value saved at target address
@@ -1194,30 +1193,53 @@ void gradient_update_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
-        printf("DEBUG: EFFECTIVE b_grad_update[%u] = %f\n", compute_id + out + 1, b_grad_update);
+        // printf("DEBUG: EFFECTIVE b_grad_update[%u] = %f\n", compute_id + out + 1, b_grad_update);
         // TODO: check the SSR enable/disable signals in each loop!!
         snrt_ssr_enable();
-        register float b_grad_update_reg;
+        register float sum;
+        register float acc;
         register v4f16 reduce_reg;
         register v4f16 dotp;
-        for(uint32_t in = 0; in < IN_CH; in++){
-            asm volatile(
-                "vfcpka.s.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update]\n" 
-                "vfcpka.h.s       %[reduce_reg], %[b_grad_update_reg], %[b_grad_update_reg]\n"
-                "vfcpkb.h.s       %[reduce_reg], %[b_grad_update_reg], %[b_grad_update_reg]\n"
-                "vfdotpex.s.h      %[dotp], %[reduce_reg], ft0\n"
+        asm volatile (
+            "vfcpka.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
+            "vfcpkb.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
+            "fadd.s           %[acc], %[zero], %[zero]\n"
+        : [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp), [acc] "+&f"(acc)
+        : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0f)
+        : "ft0", "ft1"
+        );
+        for(uint32_t in = 0; in < IN_CH;){
+            if(!(compute_id * IN_CH + out * ldW + in + 3 > IN_CH * (OUT_CH-1) * 5)){
+                asm volatile(
+                    "vfcpka.s.s       %[dotp], %[zero], %[zero]\n"
+                    "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
+                    "vfmul.h          %[dotp], %[reduce_reg], ft0\n"
+                    //"vfdotpex.s.h     %[dotp], %[reduce_reg], ft0\n"
+                    //"vfsum.s          %[sum], %[dotp]\n"
+                    //"fadd.s           %[acc], %[acc], %[sum]\n"
 
-            : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp)
-            : [b_grad_update] "f"(b_grad_update)
-            : "ft0"
-            );
+                : [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp), [acc] "+&f"(acc), [sum] "+&f"(sum)
+                : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0f)
+                : "ft0", "ft1"
+                );
+
+                    //printf("DEBUG: index = %u\n", compute_id * IN_CH + out * ldW + in + 4);
+                    weight_grads[out*ldW + in + 0] += dotp[0];
+                    weight_grads[out*ldW + in + 1] += dotp[1];
+                    weight_grads[out*ldW + in + 2] += dotp[2];
+                    weight_grads[out*ldW + in + 3] += dotp[3];
+            }
+
+            in += 4;
         }
 
         snrt_ssr_disable();
 
+        bias_grads[ldB * out] = b_grad_update;
+        printf("GRADIENT UPDATE FP16 SIMD with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+
     }
 
-    printf("done with gradient update\n");
     snrt_cluster_hw_barrier();
 
 }
