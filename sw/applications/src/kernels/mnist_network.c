@@ -1314,34 +1314,34 @@ void training_step_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
             biases[ldB * out] = 0;
         }
         
-        // snrt_ssr_enable();
-        // // SSR start addresses need to be configured each time
-        // snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
-        // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
-        // snrt_ssr_disable();
-        // register v4f16 reduce_reg;
+        snrt_ssr_enable();
+        // SSR start addresses need to be configured each time
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+        snrt_ssr_disable();
+        register v4f16 reduce_reg;
         // snrt_cluster_hw_barrier();
-        // for(uint32_t in = 0; in < IN_CH;){
-        //     snrt_ssr_enable();
-        //     if(!(compute_id*IN_CH + out * ldW + in + 3 > IN_CH * (OUT_CH - 1) * 5)){
-        //         //weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images); FP32 reference
-        //         asm volatile(
-        //             "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
-        //             "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> banshee: add floating point exception for divide by zero
-        //         : [reduce_reg] "+&f"(reduce_reg)
-        //         : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec)
-        //         : "ft0", "ft1"  
-        //         );
+        for(uint32_t in = 0; in < IN_CH;){
+            snrt_ssr_enable();
+            if(!(compute_id*IN_CH + out * ldW + in + 3 > IN_CH * (OUT_CH - 1) * 5)){
+                //weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images); FP32 reference
+                asm volatile(
+                    "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
+                    "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> banshee: add floating point exception for divide by zero
+                : [reduce_reg] "+&f"(reduce_reg)
+                : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec)
+                : "ft0", "ft1"  
+                );
 
-        //         weights[out*ldW + in + 0] = reduce_reg[0];
-        //         weights[out*ldW + in + 1] = reduce_reg[1];
-        //         weights[out*ldW + in + 2] = reduce_reg[2];
-        //         weights[out*ldW + in + 3] = reduce_reg[3];
-        //     } 
+                weights[out*ldW + in + 0] = reduce_reg[0];
+                weights[out*ldW + in + 1] = reduce_reg[1];
+                weights[out*ldW + in + 2] = reduce_reg[2];
+                weights[out*ldW + in + 3] = reduce_reg[3];
+            } 
 
-        //     in += 4;
-        //     snrt_ssr_disable();
-        // }
+            in += 4;
+            snrt_ssr_disable();
+        }
 
 
     }

@@ -23,7 +23,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0
+#define RUN_TRAINING_STEP 1
 
 void mnist(const network_t *n){
 
@@ -872,14 +872,10 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Training Step not run\n");
-                        }
+                        printf("INFO: Training Step not run\n");
                     }
                 } else {
-                    if(!compute_id){
-                        printf("ERROR: Not implemented yet.\n");
-                    }
+                    
                 }
                 break;
             case FP8:
