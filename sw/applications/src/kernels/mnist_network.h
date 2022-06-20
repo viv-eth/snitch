@@ -130,9 +130,9 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 uint32_t setup_SSR);
 
 void gradient_update_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
-                uint32_t ldB, float *image, uint32_t *target, uint32_t ldI, 
-                uint32_t compute_id, float *loss, uint32_t compute_num, uint32_t setup_SSR);
+                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
+                uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, __fp16 *loss, uint32_t compute_num, uint32_t setup_SSR);
 
 // INFO Function calls for FP16 WITHOUT SSRs and SIMD
 void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 

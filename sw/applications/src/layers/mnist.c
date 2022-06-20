@@ -410,10 +410,6 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
-                        // snrt_cluster_hw_barrier();
                     }
                     break;
                 case(FP8):
