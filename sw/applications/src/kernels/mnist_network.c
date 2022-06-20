@@ -599,7 +599,7 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 : [ reduce_reg ] "=f"(reduce_reg)
                 : [ zero ] "f"(zero), [ acc ] "f"(acc) 
                 : "ft0", "ft1");
-             for(uint32_t in = 0; in < IN_CH1*IN_CH2;){
+             for(uint32_t in = 0; in < IN_CH;){
                 asm volatile(
                     "vfmac.s    %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
                     //"vfsum.s    %[test], %[reduce_reg] \n"
@@ -1029,7 +1029,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     const register float zero = 0.0f;
 
-    __fp16 acc = 0.0;
+    __fp16 acc = 0.0f;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -1054,10 +1054,10 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                         sizeof(double), 
                         sizeof(double) * ldW);
 
-        // setup of DATA MOVER for biases
-        snrt_ssr_loop_1d(SNRT_SSR_DM2,
-                        OUT_CH,
-                        sizeof(double));
+        // // setup of DATA MOVER for biases
+        // snrt_ssr_loop_1d(SNRT_SSR_DM2,
+        //                 OUT_CH,
+        //                 sizeof(double));
     }
 
     // Start of SSR region
@@ -1066,7 +1066,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     for (uint32_t out = 0; out < OUT_CH; out++) {
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
-        snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &biases[out*ldB]);
+        // snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &biases[out*ldB]);
         register v2f32 reduce_reg;
         register v2f32 sum;
         register v2f32 test;
@@ -1075,7 +1075,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 
         acc = biases[ldB*out];
         asm volatile(
-            "vfadd.s    %[tacc], %[zero], %[zero]\n" // dummy instruction for debugging
+            "fadd.s    %[tacc], %[zero], %[zero]\n" // dummy instruction for debugging
             : [test] "+&f"(test), [tacc] "+&f"(tacc)
             : [zero] "f"(zero)
         );
@@ -1088,7 +1088,7 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                     "vfcpka.s.s       %[sum], %[zero], %[zero] \n"
                     "vfdotpex.s.h     %[dotp], ft1, ft0 \n"
                     "vfsum.s          %[sum], %[dotp] \n"
-                    "fadd.s          %[tacc], %[tacc], %[sum] \n"
+                    "fadd.s           %[tacc], %[tacc], %[sum] \n"
                 : [sum] "+&f"(sum), [dotp] "+&f"(dotp), [tacc] "+&f"(tacc)
                 : [zero] "f"(zero)
                 : "ft0", "ft1", "ft2"
@@ -1096,13 +1096,21 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 
                 in += 4;
             }
-
+            snrt_ssr_disable();
+            //printf("DEBUG: tacc[%u] = %f\n", compute_id + out + 1, tacc);
+            //printf("DEBUG: acc[%u] = %f\n", compute_id + out + 1, acc);
+            printf("DEBUG: tacc[%u] + acc[%u] = %f\n", compute_id + out + 1, compute_id + out + 1, tacc + acc);
+            snrt_ssr_enable();
             acc += tacc;
+            snrt_ssr_disable();
+            printf("DEBUG: acc_up[%u] = %f\n", compute_id + out + 1, acc);
+            snrt_ssr_enable();
 
         }
 
         // Q: Why do we need to do this?
-        snrt_cluster_hw_barrier();
+        //snrt_cluster_hw_barrier(); --> actually not needed, but execution has to be prolonged for some
+        // strange reason --> Discuss with GIM
 
         activations[ldB * out] = acc;
 
@@ -1120,9 +1128,96 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         printf("FP16 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
     }
 
+    snrt_cluster_hw_barrier();
+
 }
 
+//// Gradient Update
+void gradient_update_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
+                uint32_t ldB, float *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, float *loss, uint32_t compute_num, uint32_t setup_SSR){
 
+    // set up SSR registers (there is a total of three data movers)
+    register volatile double ft0 asm("ft0"); // stores image
+    register volatile double ft1 asm("ft1"); // stores weight gradients
+   
+    asm volatile("" : "=f"(ft0), "=f"(ft1));
+
+    __fp16 b_grad_update = 0.0f;
+    __fp16 W_grad_update = 0.0f;
+    __fp16 acc = 0.0;
+    volatile uint32_t idx_eff;
+
+    // get the value saved at target address
+    uint32_t target_n = *target;
+    
+    // compute the loss
+    __fp16 loss_val = 0.0 - log(activations[target_n -compute_id]);
+
+    // save the value into the loss pointer
+    if(!compute_id){
+        loss[0] += loss_val;
+    } else {
+        loss[0] += 0;
+    }
+
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+
+    // SSR strides and bounds only have to be configured
+    // once in the beginning
+    if (setup_SSR) {
+
+        // setup of input data (MNIST image)
+        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldI);
+        
+        // SSR setup of weights
+        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                        IN_CH, 
+                        OUT_CH, 
+                        sizeof(double), 
+                        sizeof(double) * ldW);
+
+    }
+
+    // Start of SSR region
+    snrt_ssr_enable();
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        // SSR start address need to be configured each time
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+        idx_eff = compute_id + ldB * out;
+        // Gradient Calculation for SoftMax activation with Cross Entropy Loss
+        b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        register float b_grad_update_reg;
+        register v4f16 reduce_reg;
+        for(uint32_t in = 0; in < IN_CH; in++){
+            asm volatile(
+                "vfcpka.s.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update]\n" 
+                "vfcpka.h.s       %[reduce_reg], %[b_grad_update_reg], %[b_grad_update_reg]\n"
+                "vfcpkb.h.s       %[reduce_reg], %[b_grad_update_reg], %[b_grad_update_reg]\n"
+
+            : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg)
+            : [b_grad_update] "f"(b_grad_update)
+            : "ft0"
+            );
+        }
+
+    }
+
+    snrt_ssr_disable();
+
+    printf("done with gradient update\n");
+    snrt_cluster_hw_barrier();
+
+}
 // INFO: start of FP16 baseline network implementation
 //// Feedforward Step
 void feedforward_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -1169,10 +1264,6 @@ void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     max_core = activations[0];
 
-    //if(core_sync[compute_id]){
-
-        //core_sync[compute_id] = 0;
-
     for(uint32_t out = 0; out < OUT_CH; out++){
         //printf("DEBUG: activation[%u] = %f\n", compute_id + 1 + out * ldB, activations[out * ldB]);
         if(activations[ldB * out] > max_core) {
@@ -1181,8 +1272,6 @@ void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     }
 
     max[compute_id] = max_core;
-
-    //}
     
     snrt_cluster_hw_barrier();
 
@@ -1222,7 +1311,6 @@ void softmax_activation_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
     }
 
-//     //core_sync[compute_id] = 0;
     snrt_cluster_hw_barrier();
 }
 
@@ -1251,8 +1339,8 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         loss[0] += 0;
     }
 
-    
-    //printf("loss = %f\n", loss[0]);
+    // get the total number of input features
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
     
 
     // the effective index is the iteration index of the biases variable
@@ -1266,7 +1354,7 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         //printf("b_grad_update = %f\n", b_grad_update);
 
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        for(uint32_t in = 0; in < IN_CH; in++){
             
             W_grad_update = b_grad_update * image[in];
             
