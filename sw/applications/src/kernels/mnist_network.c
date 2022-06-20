@@ -1185,6 +1185,8 @@ void gradient_update_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
 
     }
 
+    // TODO: check if this is actually correct ...
+
 
     for(uint32_t out = 0; out < OUT_CH; out++){
         // SSR start address need to be configured each time
