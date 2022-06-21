@@ -220,6 +220,7 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     register volatile double ft0 asm("ft0"); // stores image
     register volatile double ft1 asm("ft1"); // stores weights
+    register double acc = 0.0;
     asm volatile("" : "=f"(ft0), "=f"(ft1));
 
     // get the total number of input features
@@ -244,7 +245,7 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double) * ldW);
     }
     
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);;
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
         // we need to read the image for every new iteration
@@ -253,10 +254,8 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         // Start of SSR region
         snrt_ssr_enable();
-        register double acc = biases[ldB * out];
-        if(compute_id + out * ldB > OUT_CH * 5){
-            acc = 0;
-        } else {
+        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            acc = biases[ldB * out];
             for(uint32_t in = 0; in < IN_CH; in++){
             asm volatile(
                 "fmadd.d %[acc], ft0, ft1, %[acc] \n"
@@ -266,6 +265,7 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
 
         activations[ldB * out] = acc;
+        acc = 0.0;
         // End of SSR region.
         snrt_ssr_disable();
 
