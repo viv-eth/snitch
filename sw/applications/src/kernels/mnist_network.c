@@ -237,37 +237,36 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double), 
                         sizeof(double) * ldI);
         
-
+        // setup of weights
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
                         IN_CH, 
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldW);
     }
-    
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
         // we need to read the image for every new iteration
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
         // Start of SSR region
-        snrt_ssr_enable();
-        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
-            acc = biases[ldB * out];
-            for(uint32_t in = 0; in < IN_CH; in++){
-            asm volatile(
-                "fmadd.d %[acc], ft0, ft1, %[acc] \n"
-            : [ acc ] "+f"(acc)
-            ::"ft0", "ft1");
-            }
-        }
+        // snrt_ssr_enable();
+        // if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+        //     acc = biases[ldB * out];
+        //     for(uint32_t in = 0; in < IN_CH; in++){
+        //     asm volatile(
+        //         "fmadd.d %[acc], ft0, ft1, %[acc] \n"
+        //     : [ acc ] "+f"(acc)
+        //     ::"ft0", "ft1");
+        //     }
+        // }
 
-        activations[ldB * out] = acc;
-        acc = 0.0;
-        // End of SSR region.
-        snrt_ssr_disable();
+        // activations[ldB * out] = acc;
+        // acc = 0.0;
+        // // End of SSR region.
+        // snrt_ssr_disable();
 
     }
 
@@ -675,26 +674,16 @@ void softmax_activation_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     float max_core;
     float sum = 0.0;
-        
-    while(!(core_sync[0])){
-        max_core = 0.0;
-    }
 
     max_core = activations[0];
 
-    if(core_sync[compute_id]){
-
-        //core_sync[compute_id] = 0;
-
-        for(uint32_t out = 0; out < OUT_CH; out++){
-            if(activations[ldB * out] > max_core) {
-                max_core = activations[ldB * out];
-            }
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        if(activations[ldB * out] > max_core) {
+            max_core = activations[ldB * out];
         }
-
-        max[compute_id] = max_core;
-
     }
+
+    max[compute_id] = max_core;
     
     snrt_cluster_hw_barrier();
 
@@ -949,10 +938,10 @@ void feedforward_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-        //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
+        printf("FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
-    core_sync = 1;
+
+    snrt_cluster_hw_barrier();
 
 }
 
@@ -964,7 +953,11 @@ void gradient_update_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     
     float b_grad_update = 0.0;
     float W_grad_update = 0.0;
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
     volatile uint32_t idx_eff;
+
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
 
     // get the value saved at target address
@@ -991,21 +984,26 @@ void gradient_update_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        b_checksum += b_grad_update;
 
         //printf("b_grad_update = %f\n", b_grad_update);
 
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        for(uint32_t in = 0; in < IN_CH; in++){
             
             W_grad_update = b_grad_update * image[in];
             
-            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+            if(!(compute_id*IN_CH + out * ldW + in > IN_CH * (OUT_CH * 5 - 1))){
                 weight_grads[out * ldW + in] += W_grad_update;
+                W_checksum += W_grad_update;
             }
         }
             
         bias_grads[ldB * out] = b_grad_update;
-        printf("GRADIENT UPDATE FP32 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        // printf("GRADIENT UPDATE FP32 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
+
+    printf("GRADIENT UPDATE FP32 Baseline: b_checksum = %f\n", b_checksum);
+    printf("GRADIENT UPDATE FP32 Baseline: W_checksum = %f\n", W_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 

@@ -18,11 +18,11 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
+#define RUN_GRADIENT_UPDATE 1
 #define RUN_TRAINING_STEP 0
 
 void mnist(const network_t *n){
@@ -70,55 +70,26 @@ void mnist(const network_t *n){
     // learning rate of the network
     uint32_t lr_size = sizeof(float);
 
-    // INFO FP64 cluster memory setup
-    // @brief Cluster Memory Structure for each cluster to ensure
-    // we can access the data of both by using the constant
-    // cluster base offset
-    void *ptr = (double *)snrt_cluster_memory().start;
-    // void *ptr_start = ptr;
-    double *max= ptr; // zero initialized
-    ptr += max_size;
-    double *loss = ptr; // zero initialized
-    ptr += loss_size;
-    double *images = ptr;
-    ptr += number_of_images*image_size;
-    double *biases = ptr; // bias GRADIENTS zero initialized
-    ptr += bias_mat_size;
-    double *activations = ptr;
-    ptr += act_mat_size;
-    double *weights = ptr; // weight GRADIENTS zero initialized
-    ptr += weight_mat_size;
-    // NOTE: core sync flag used to indictae whether computation is done or not
-    // WARN: fails in the RTL
-    uint32_t *core_sync = ptr; // zero initialized
-    ptr += core_sync_flag_size;
-    uint32_t *targets = ptr;
-    ptr += number_of_images*target_size;
-    // NOTE: following lines for debugging purposes only
-    // void *ptr_end = (double *)snrt_cluster_memory().end;
-    // if(compute_id == 0){   
-    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
-    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
-    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
-    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
-    // }
-
-    // // INFO FP32 cluster memory setup
-    // // images remain in float precision
-    // void *ptr = (float *)snrt_cluster_memory().start;
-    // float *max= ptr; // zero initialized
+    // // INFO FP64 cluster memory setup
+    // // @brief Cluster Memory Structure for each cluster to ensure
+    // // we can access the data of both by using the constant
+    // // cluster base offset
+    // void *ptr = (double *)snrt_cluster_memory().start;
+    // // void *ptr_start = ptr;
+    // double *max= ptr; // zero initialized
     // ptr += max_size;
-    // float *loss = ptr; // zero initialized
+    // double *loss = ptr; // zero initialized
     // ptr += loss_size;
-    // float *images = ptr;
+    // double *images = ptr;
     // ptr += number_of_images*image_size;
-    // float *biases = ptr; // bias GRADIENTS zero initialized
+    // double *biases = ptr; // bias GRADIENTS zero initialized
     // ptr += bias_mat_size;
-    // float *activations = ptr;
+    // double *activations = ptr;
     // ptr += act_mat_size;
-    // float *weights = ptr; // weight GRADIENTS zero initialized
+    // double *weights = ptr; // weight GRADIENTS zero initialized
     // ptr += weight_mat_size;
     // // NOTE: core sync flag used to indictae whether computation is done or not
+    // // WARN: fails in the RTL
     // uint32_t *core_sync = ptr; // zero initialized
     // ptr += core_sync_flag_size;
     // uint32_t *targets = ptr;
@@ -131,6 +102,35 @@ void mnist(const network_t *n){
     // //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
     // //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
     // // }
+
+    // INFO FP32 cluster memory setup
+    // images remain in float precision
+    void *ptr = (float *)snrt_cluster_memory().start;
+    float *max= ptr; // zero initialized
+    ptr += max_size;
+    float *loss = ptr; // zero initialized
+    ptr += loss_size;
+    float *images = ptr;
+    ptr += number_of_images*image_size;
+    float *biases = ptr; // bias GRADIENTS zero initialized
+    ptr += bias_mat_size;
+    float *activations = ptr;
+    ptr += act_mat_size;
+    float *weights = ptr; // weight GRADIENTS zero initialized
+    ptr += weight_mat_size;
+    // NOTE: core sync flag used to indictae whether computation is done or not
+    uint32_t *core_sync = ptr; // zero initialized
+    ptr += core_sync_flag_size;
+    uint32_t *targets = ptr;
+    ptr += number_of_images*target_size;
+    // NOTE: following lines for debugging purposes only
+    // void *ptr_end = (double *)snrt_cluster_memory().end;
+    // if(compute_id == 0){   
+    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    // }
 
     // // INFO FP16 cluster memory setup
     // void *ptr = (__fp16*)snrt_cluster_memory().start;
@@ -396,6 +396,7 @@ void mnist(const network_t *n){
                         // INFO: baseline
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP32 with SSRs and SIMD
                         snrt_cluster_hw_barrier();
@@ -462,8 +463,8 @@ void mnist(const network_t *n){
             if(snrt_is_dm_core() && cluster_id==1) {
                 snrt_dma_start_tracking();
                 // WARN: make sure that pointer types are according to network precision
-                double *act_ptr = ((uint32_t)activations) - cluster_offset;
-                double *img_ptr = ((uint32_t)images) - cluster_offset;
+                float *act_ptr = ((uint32_t)activations) - cluster_offset;
+                float *img_ptr = ((uint32_t)images) - cluster_offset;
 
                 // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
                 snrt_dma_txid_t txid_activations = 
@@ -506,8 +507,8 @@ void mnist(const network_t *n){
             // INFO: without SSRs we can use direct cluster2cluster communication
             // however, when SSRs are set we need to DMA transfer the data
 
-            double *act_ptr = ((uint32_t)activations) - cluster_offset;
-            double *img_ptr = ((uint32_t)images) - cluster_offset;
+            float *act_ptr = ((uint32_t)activations) - cluster_offset;
+            float *img_ptr = ((uint32_t)images) - cluster_offset;
 
             //double *core_sync_ptr = ((uint32_t)core_sync) - cluster_offset;
             //printf("activations[%u] = %f\n", b_offset, act_ptr[b_offset]);
@@ -682,8 +683,8 @@ void mnist(const network_t *n){
         if(snrt_is_dm_core() && cluster_id==0) {
             snrt_dma_start_tracking();
             // WARN: make sure that pointer types are according to network precision
-            double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-            double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+            float *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+            float *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
             snrt_dma_txid_t txid_WG = 
                 snrt_dma_start_2d(weights,                // destination
                                 weight_grad_ptr,          // source
@@ -726,8 +727,8 @@ void mnist(const network_t *n){
         volatile uint32_t ldB = compute_num;
         volatile uint32_t ldI = IN_CH;
 
-        double *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
-        double *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
+        float *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
+        float *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
 
         //TODO: load the LR from the network struct or via DRAM perloading
         //*learning_rate = 0.5;
