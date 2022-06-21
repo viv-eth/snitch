@@ -41,7 +41,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
+        printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
     // core_sync = 1;
@@ -103,7 +103,7 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            // printf("SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
+            printf("SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
