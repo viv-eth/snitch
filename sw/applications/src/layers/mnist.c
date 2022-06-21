@@ -18,7 +18,7 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 1
+#define BASELINE 0
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
@@ -287,9 +287,9 @@ void mnist(const network_t *n){
                                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                             ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
                                             setup_SSR);
-                            softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                                            &weights[W_offset], ldW, &activations[b_offset], ldB,
-                                            &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
+                            // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                            //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+                            //                 &images[curr_img], ldI, compute_id, compute_num, max, &core_sync, setup_SSR);
                             benchmark_get_cycle();
                         }
                         break;
@@ -376,7 +376,7 @@ void mnist(const network_t *n){
                 }
             }
 
-        } else if (!snrt_is_compute_core() && !(snrt_cluster_compute_core_idx() < compute_num) && cluster_id == 0){
+        } else if (!snrt_is_compute_core() && cluster_id == 0){
             switch (n->dtype) {
                 case(FP64):
                     if(BASELINE){
@@ -387,8 +387,8 @@ void mnist(const network_t *n){
                     } else {
                         // INFO: FP64 with SSRs
                         snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                        // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                     }
                     break;
                 case(FP32):
@@ -424,9 +424,7 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP8 with SSRs and SIMD
-                        if(!compute_id){
-                            printf("ERROR: Not implemented yet.\n");
-                        }
+                        printf("ERROR: Not implemented yet.\n");
                     }
                     break;
                 default:
@@ -619,9 +617,7 @@ void mnist(const network_t *n){
                 if(RUN_GRADIENT_UPDATE){
                     snrt_cluster_hw_barrier();
                 } else {
-                    if(!compute_id){
-                        printf("INFO: Gradient Update not run\n");
-                    }
+                    printf("INFO: Gradient Update not run\n");
                 }
                 break;
             case FP32:
@@ -629,9 +625,7 @@ void mnist(const network_t *n){
                     if(RUN_GRADIENT_UPDATE){
                         snrt_cluster_hw_barrier();
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Gradient Update not run\n");
-                        }
+                        printf("INFO: Gradient Update not run\n");
                     }
                 } else {
                     if(RUN_GRADIENT_UPDATE){
@@ -665,20 +659,14 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Gradient Update not run\n");
-                        }
+                        printf("INFO: Gradient Update not run\n");
                     }
                 } else {
-                    if(!compute_id){
-                        printf("ERROR: Not implemented yet.\n");
-                    }
+                    printf("ERROR: Not implemented yet.\n");
                 }
                 break;
             default:
-                if(!compute_id){
-                    printf("ERROR: Unknown data type.\n");
-                }
+                printf("ERROR: Unknown data type.\n");
                 break;
             }
         }
@@ -837,23 +825,19 @@ void mnist(const network_t *n){
         }
 
 
-    } else if(!snrt_is_compute_core() && !(snrt_cluster_compute_core_idx() < compute_num) && cluster_id == 0){
+    } else if(!snrt_is_compute_core() && cluster_id == 0){
         switch(n->dtype){
             case FP64:
                 if(BASELINE){
                     if(RUN_TRAINING_STEP){
                         // no HW barriers required for Baseline
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Training Step not run\n");
-                        }
+                        printf("INFO: Training Step not run\n");
                     }
                 } else {
                     if(RUN_TRAINING_STEP){
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Training Step not run\n");
-                        }
+                        printf("INFO: Training Step not run\n");
                     }
                 }
                 break;
@@ -862,18 +846,14 @@ void mnist(const network_t *n){
                     if(RUN_TRAINING_STEP){
 
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Training Step not run\n");
-                        }
+                        printf("INFO: Training Step not run\n");
                     }
                 } else {
                     if(RUN_TRAINING_STEP){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Training Step not run\n");
-                        }
+                        printf("INFO: Training Step not run\n");
                     }
                 }
                 break;
@@ -896,14 +876,10 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     } else {
-                        if(!compute_id){
-                            printf("INFO: Training Step not run\n");
-                        }
+                        printf("INFO: Training Step not run\n");
                     }
                 } else {
-                    if(!compute_id){
-                        printf("ERROR: Not implemented yet.\n");
-                    }
+                    printf("ERROR: Not implemented yet.\n");
                 }
                 break;
         }

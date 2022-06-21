@@ -60,26 +60,17 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     double max_core;
     double sum = 0.0;
-        
-    while(!(core_sync[0])){
-        max_core = 0.0;
-    }
 
     max_core = activations[0];
-    
-    // if(core_sync[compute_id]){
 
-        //core_sync[compute_id] = 0;
-
-        for(uint32_t out = 0; out < OUT_CH; out++){
-            if(activations[ldB * out] > max_core) {
-                max_core = activations[ldB * out];
-            }
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        if(activations[ldB * out] > max_core) {
+            max_core = activations[ldB * out];
         }
+    }
 
-        max[compute_id] = max_core;
+    max[compute_id] = max_core;
     
-    // }
     snrt_cluster_hw_barrier();
 
     //printf("Max value of compute core %u is %f\n", compute_id, max_core);
@@ -111,7 +102,6 @@ void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
     }
 
-    //core_sync[compute_id] = 0;
     snrt_cluster_hw_barrier();
 } // WORKS on Cluster 0
 
@@ -254,21 +244,20 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double) * ldW);
     }
     
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);
-    
-    // Start of SSR region
-    snrt_ssr_enable();
+    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weights);;
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
         // we need to read the image for every new iteration
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        // Start of SSR region
+        snrt_ssr_enable();
         register double acc = biases[ldB * out];
         if(compute_id + out * ldB > OUT_CH * 5){
             acc = 0;
         } else {
-            for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+            for(uint32_t in = 0; in < IN_CH; in++){
             asm volatile(
                 "fmadd.d %[acc], ft0, ft1, %[acc] \n"
             : [ acc ] "+f"(acc)
@@ -277,15 +266,14 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
 
         activations[ldB * out] = acc;
+        // End of SSR region.
+        snrt_ssr_disable();
 
     }
 
-    // End of SSR region.
-    snrt_ssr_disable();
-
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
     
     snrt_cluster_hw_barrier(); 
 
