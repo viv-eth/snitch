@@ -180,11 +180,15 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t number_of_images){
 
     double lr = 0.5;
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
+
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
-        printf("TRAINING STEP FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-        printf("TRAINING STEP FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        // printf("TRAINING STEP FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+        // printf("TRAINING STEP FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
 
         // make sure that biases outside of the number of
         // output channels are zero
@@ -194,17 +198,23 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        b_checksum += biases[ldB * out];
+
+        for(uint32_t in = 0; in < IN_CH; in++){
             
-            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+            if(!(compute_id*IN_CH + out * ldW + in > IN_CH * (OUT_CH * 5 - 1))){
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
+                W_checksum += weights[out * ldW + in];
             } 
         }
     }
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("TRAINING STEP FP64 Baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("TRAINING STEP FP64 Baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    // }
+
+    printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
+    printf("TRAINING STEP FP64 Baseline: W_checksum = %f\n", W_checksum);
 }
 
 // INFO: start of FP64 network implementation using SSRs
@@ -476,6 +486,9 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // FIXME: learning rate should be defined in network struct
     double lr = 0.5;
 
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
+
     double nimg = ((double)number_of_images);
 
     // get the total number of input features
@@ -533,19 +546,22 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
+        b_checksum += biases[ldB * out];
+
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
                 register double acc_w = weight_grads[out * ldW + in];
                 asm volatile(
                     "fmul.d        %[acc_w], %[lr], ft0 \n"             // acc = lr * weight_grads[out * ldW + in]
                     "fdiv.d        %[acc_w], %[acc_w], %[nimg] \n"      // acc = acc / nimg
-                    "fsub.d        %[acc_w], ft2, %[acc_w] \n"          // acc = weights[out * ldW + in] - acc
+                    "fsub.d        %[acc_w], %[acc_w], ft2 \n"          // acc = acc - weights[out * ldW + in]
                     :[ acc_w ] "+f"(acc_w), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
                     :
                     :"ft0", "ft2"
                 );
 
                 weights[out * ldW + in] = acc_w;
+                W_checksum += weights[out * ldW + in];
                 //weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images); reference
             } 
         }
@@ -557,6 +573,9 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // for(uint32_t out = 0; out < OUT_CH; out++){
     //     printf("TRAINING STEP FP64 with SSRs: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
     // }
+
+    printf("TRAINING STEP FP64 with SSRs: b_checksum = %f\n", b_checksum);
+    printf("TRAINING STEP FP64 with SSRs: W_checksum = %f\n", W_checksum);
 }
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
