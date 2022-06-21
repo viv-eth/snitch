@@ -1015,6 +1015,10 @@ void training_step_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t number_of_images){
 
     float lr = 0.5;
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
+
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
@@ -1026,17 +1030,19 @@ void training_step_fp32(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        b_checksum += biases[ldB * out];
+
+        for(uint32_t in = 0; in < IN_CH; in++){
             
-            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+            if(!(compute_id*IN_CH + out * ldW + in > IN_CH * (OUT_CH * 5 - 1))){
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
+                W_checksum += weights[out * ldW + in];
             } 
         }
     }
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP32 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    printf("TRAINING STEP FP32 Baseline: b_checksum = %f\n", b_checksum);
+    printf("TRAINING STEP FP32 Baseline: W_checksum = %f\n", W_checksum);
 }
 
 // INFO: start of FP16 network implementation using SSRs and SIMD instructions
