@@ -257,11 +257,11 @@ void feedforward_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of SSR region.
     snrt_ssr_disable();
 
-    // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //     printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    // }
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        printf("FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
     
-    core_sync = 1;
+    snrt_cluster_hw_barrier(); 
 
 }
 
@@ -292,27 +292,24 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 
     }
 
-    if(core_sync[compute_id]){
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
-
-        // Start of SSR region
-        snrt_ssr_enable();
-        for(uint32_t out = 0; out < OUT_CH; out++){
-            asm volatile(
-                        "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
-                        "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
-                        "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
-                        "beqz       t0, 2f\n"                   // else go to loop start
-                        "1: \n"     
-                        "fmv.d      %[max_core], fs2 \n"
-                        "2: \n"
-                        : [ max_core ] "+f"(max_core)::"ft0");
-        }
-
-        max[compute_id] = max_core;
     
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
+
+    // Start of SSR region
+    snrt_ssr_enable();
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        asm volatile(
+                    "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
+                    "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
+                    "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
+                    "beqz       t0, 2f\n"                   // else go to loop start
+                    "1: \n"     
+                    "fmv.d      %[max_core], fs2 \n"
+                    "2: \n"
+                    : [ max_core ] "+f"(max_core)::"ft0");
     }
-        
+
+    max[compute_id] = max_core;
 
     // End of the SSR region. 
     snrt_ssr_disable();
@@ -340,10 +337,10 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
         }
 
 
-        // for(uint32_t out = 0; out < OUT_CH*5; out++){
-        //     activations[out] /= sum;
-        //     printf("SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
-        // }
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            activations[out] /= sum;
+            printf("SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+        }
     }
 
     snrt_cluster_hw_barrier();

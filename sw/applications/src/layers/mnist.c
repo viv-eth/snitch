@@ -18,7 +18,7 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 1
+#define BASELINE 0
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
@@ -386,6 +386,7 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                     } else {
                         // INFO: FP64 with SSRs
+                        snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                     }
