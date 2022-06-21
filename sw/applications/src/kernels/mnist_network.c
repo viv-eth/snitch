@@ -26,22 +26,26 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 double *weights, uint32_t ldW, double *biases, double *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync){
 
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
     
     // Linear layer: OUT = X * W^T + B
     for (uint32_t out = 0; out < OUT_CH; out++) {
         //printf("Step: %u\n", out + compute_id);
         register double acc = biases[ldB * out];
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
-            acc += image[in] * weights[out * ldW + in];
+        for(uint32_t in = 0; in < IN_CH; in++){
+            // acc += image[in] * weights[out * ldW + in];
             // INFO: If this is not set harts start reading outside the mem map
             // FIXME: Next harts should start computation of the subsequent image
-            if(compute_id + out * ldB > OUT_CH * 5 - 1){
+            if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+                acc += image[in] * weights[out * ldW + in];
+            } else {
                 acc = 0;
             }
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
+        // printf("FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
     // core_sync = 1;
