@@ -372,6 +372,8 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     
     double b_grad_update = 0.0;
     double W_grad_update = 0.0;
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
     volatile uint32_t idx_eff;
 
     // get the value saved at target address
@@ -431,13 +433,15 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        b_checksum += b_grad_update;
 
-        for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
+        for(uint32_t in = 0; in < IN_CH; in++){
             
             W_grad_update = b_grad_update * image[in];
             
-            if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
+            if(!(compute_id*IN_CH + out * ldW + in > IN_CH * (OUT_CH * 5 - 1))){
                 weight_grads[out * ldW + in] += W_grad_update;
+                W_checksum += W_grad_update;
             }
         }
             
@@ -447,9 +451,11 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // End of the SSR region. 
     snrt_ssr_disable();
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    // }
+    printf("GRADIENT UPDATE FP64 with SSRs: b_checksum = %f\n", b_checksum);
+    printf("GRADIENT UPDATE FP64 with SSRs: W_checksum = %f\n", W_checksum);
 
     snrt_cluster_hw_barrier();
 
