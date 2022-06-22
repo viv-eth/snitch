@@ -263,17 +263,17 @@ typedef struct cnn_layer_struct {
     uint32_t pad;
 
     double *ifmap;
-    double *weights;
-    double *biases;
-    double *ofmap;
+    // double *weights;
+    // double *biases;
+    // double *ofmap;
 
-    uint32_t TILE_CI;
-    uint32_t cluster2cluster;
-    uint32_t im2col;
+    // uint32_t TILE_CI;
+    // uint32_t cluster2cluster;
+    // uint32_t im2col;
 
-    // BATCHNORM
-    double *gamma;
-    double *beta;
+    // // BATCHNORM
+    // double *gamma;
+    // double *beta;
 
     precision_t dtype;
 } cnn_layer;

@@ -58,3 +58,18 @@ typedef struct network_t_ {
     precision_t dtype;
     
 } network_t;
+
+// TODO: add description for MNIST CNN network struct
+typedef struct cnn_t_ {
+    uint16_t CO;
+    uint16_t CI;
+    uint16_t H;
+    uint16_t W;
+    
+    uint16_t padding;
+
+    double *image;
+
+    precision_t dtype;
+    
+} cnn_t;
