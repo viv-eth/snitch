@@ -579,7 +579,9 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     register volatile float ft0 asm("ft0"); // stores image
     register volatile float ft1 asm("ft1"); // stores weights
     asm volatile("" : "=f"(ft0), "=f"(ft1));
-    register float acc;
+    register float acc = 0.0;
+    register float acc2 = 0.0;
+    register float z_test = 0;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -605,29 +607,28 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                         sizeof(double) * ldW);
     }
 
-    // Start of SSR region
-    snrt_ssr_enable();
-
     for (uint32_t out = 0; out < OUT_CH; out++) {
         // we need to read the image for every new iteration
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
-        acc = biases[ldB * out];
         register v2f32 reduce_reg;
         register v2f32 sum;
-        const register float zero = 0.0;
+        // Start of SSR region
+        snrt_ssr_enable();
+        const register float zero = 0;
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+            acc = biases[ldB * out];
+            // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM
             asm volatile(
                 "vfcpka.s.s     %[reduce_reg], %[acc], %[zero] \n"
-                : [ reduce_reg ] "=f"(reduce_reg)
-                : [ zero ] "f"(zero), [ acc ] "f"(acc) 
+                : [ reduce_reg ] "+&f"(reduce_reg)
+                : [ zero ] "f"(zero), [ acc ] "f"(acc)
                 : "ft0", "ft1");
              for(uint32_t in = 0; in < IN_CH;){
                 asm volatile(
                     "vfmac.s    %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
-                    //"vfsum.s    %[test], %[reduce_reg] \n"
                     : [ reduce_reg ] "+f"(reduce_reg)
                     :
                     : "ft0", "ft1");
@@ -649,11 +650,12 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         snrt_cluster_hw_barrier();
 
         activations[ldB * out] = acc;
+        acc = 0.0;
+
+        // End of SSR region.
+        snrt_ssr_disable();
 
     }
-
-    // End of SSR region.
-    snrt_ssr_disable();
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
         // cleanup of leftover columns
@@ -663,6 +665,8 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 
         printf("FEEDFORWARD FP32 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
     }
+
+    snrt_cluster_hw_barrier();
 
 }
 
