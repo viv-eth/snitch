@@ -65,10 +65,14 @@ typedef struct cnn_t_ {
     uint16_t CI;
     uint16_t H;
     uint16_t W;
+    uint16_t K;
     
     uint16_t padding;
+    uint16_t stride;
 
     double *image;
+    double *conv1_weights;
+    double *conv1_biases;
 
     precision_t dtype;
     

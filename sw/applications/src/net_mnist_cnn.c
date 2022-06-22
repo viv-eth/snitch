@@ -6,7 +6,7 @@
 // Automatically checks the correctness of the results
 
 #include "mnist_cnn.h"
-#include "data_mnist_cnn.h"
+#include "data_cnn_mnist.h"
 #include "layer.h"
 #include "math.h"
 #include "perf_cnt.h"
@@ -16,7 +16,9 @@
 
 int main() {
 
-    mnist_cnn_t.image = (double*)mnist_cnn_images_dram;
+    mnist_cnn_t.image = (double*)mnist_cnn_image_dram;
+    mnist_cnn_t.conv1_weights = (double*)mnist_cnn_conv1_weights_dram;
+    mnist_cnn_t.conv1_biases = (double*)mnist_cnn_conv1_bias_dram;
     
     mnist_cnn(&mnist_cnn_t);
 
