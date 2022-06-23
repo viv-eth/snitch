@@ -400,8 +400,8 @@ void mnist(const network_t *n){
                     } else {
                         // INFO: FP32 with SSRs and SIMD
                         snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
-                        snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
                         // snrt_cluster_hw_barrier();
                     }
                     break;

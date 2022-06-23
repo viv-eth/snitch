@@ -576,9 +576,9 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id, uint32_t* core_sync,
                 uint32_t setup_SSR){
     
-    register volatile float ft0 asm("ft0"); // stores image
-    register volatile float ft1 asm("ft1"); // stores weights
-    asm volatile("" : "=f"(ft0), "=f"(ft1));
+    // register volatile float ft0 asm("ft0"); // stores image
+    // register volatile float ft1 asm("ft1"); // stores weights
+    // asm volatile("" : "=f"(ft0), "=f"(ft1));
     register float acc = 0.0;
     register float acc2 = 0.0;
     register float z_test = 0;
@@ -620,22 +620,14 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         const register float zero = 0;
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
             acc = biases[ldB * out];
-            // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM
+            // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM --> Issue was missing ft2 clobber (reserved for SSR)
             asm volatile(
                 "vfcpka.s.s     %[reduce_reg], %[acc], %[zero] \n"
+                "frep.o         %[n_frep], 1, 0, 0 \n"
+                "vfmac.s        %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
                 : [ reduce_reg ] "+&f"(reduce_reg)
-                : [ zero ] "f"(zero), [ acc ] "f"(acc)
-                : "ft0", "ft1");
-             for(uint32_t in = 0; in < IN_CH;){
-                asm volatile(
-                    "vfmac.s    %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
-                    : [ reduce_reg ] "+f"(reduce_reg)
-                    :
-                    : "ft0", "ft1");
-
-                    // step the image pointer by two
-                    in += 2;
-            }
+                : [ zero ] "f"(zero), [ acc ] "f"(acc), [ n_frep ] "r"(IN_CH / 2 - 1)
+                : "ft0", "ft1", "ft2");
         }
 
         asm volatile(
@@ -644,10 +636,10 @@ void feedforward_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
                 : [ acc ] "+f"(acc), [ sum ] "=&f"(sum)
                 : [ zero ] "f"(zero),  [ reduce_reg ] "f"(reduce_reg)
-                :"ft0", "ft1");
+                :"ft0", "ft1", "ft2");
 
         // Q: Why do we need to do this?
-        snrt_cluster_hw_barrier();
+        // snrt_cluster_hw_barrier();
 
         activations[ldB * out] = acc;
         acc = 0.0;
