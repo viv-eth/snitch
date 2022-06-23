@@ -91,7 +91,7 @@ void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t
                             // if(data != 0) {
                             //     printf("data[%u][%u] = %.4f\n", pos_y, pos_x, data);
                             //     printf("weight[%u][%u] = %.4f\n", kh_idx, kw_idx, weight);
-                            // } // --> this seems to be working correctly
+                            // } // WORKS
                             kt += weight * data;
                         }
                     }

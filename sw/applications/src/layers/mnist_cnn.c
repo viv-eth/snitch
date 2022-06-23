@@ -30,7 +30,7 @@ void mnist_cnn(const cnn_t *n) {
     uint16_t dim_in_y = n->W;
     uint16_t dim_padded_x = dim_in_x + padding_x_left + padding_x_right;
     uint16_t dim_padded_y = dim_in_y + padding_y_top + padding_y_bottom;
-    uint16_t padded_image_size =  dim_padded_x * dim_padded_y;
+    uint16_t padded_image_size =  dim_padded_x * dim_padded_y * n->dtype;
 
     // determine the dimensions of the output feature map
     uint16_t dim_out_x = floor((n->H - n->K + 2 * n->padding) / n->stride + 1);
@@ -58,13 +58,13 @@ void mnist_cnn(const cnn_t *n) {
     double *conv1_output = ptr;
     ptr += conv1_output_size;
     // NOTE: following lines for debugging purposes only
-    void *ptr_end = (double *)snrt_cluster_memory().end;
-    if(compute_id == 0){    
-        printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
-        printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
-        printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
-        printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
-    }
+    // void *ptr_end = (double *)snrt_cluster_memory().end;
+    // if(compute_id == 0){    
+    //     printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+    //     printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+    //     printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+    //     printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    // }
 
     // load the CONV2D parameters from DRAM into the cluster memory
     if (snrt_is_dm_core() && cluster_id == 0) {
@@ -73,19 +73,19 @@ void mnist_cnn(const cnn_t *n) {
                 snrt_dma_txid_t txid_IMG = 
                     snrt_dma_start_1d(image,                                   // destination
                                     n->image,                                  // source
-                                    n->dtype * padded_image_size);             // size
+                                    image_size);                               // size
 
                 // load conv1_weights from DRAM into cluster memory
                 snrt_dma_txid_t txid_W = 
                     snrt_dma_start_1d(conv1_weights,                           // destination
                                     n->conv1_weights,                          // source
-                                    n->dtype * conv1_weights_size);            // size
+                                    conv1_weights_size);                       // size
 
                 // load conv1_biases from DRAM into cluster memory
                 snrt_dma_txid_t txid_B =
                     snrt_dma_start_1d(conv1_biases,                            // destination
                                     n->conv1_biases,                           // source
-                                    n->dtype * conv1_biases_size);             // size
+                                    conv1_biases_size);             // size
 
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
@@ -137,6 +137,8 @@ void mnist_cnn(const cnn_t *n) {
                 // printf("bias offset: %d\n", bias_offset);
                 // printf("kernel offset: %d\n", kernel_offset);
                 // printf("output offset: %d\n", output_offset);
+                // printf("conv1_weights[%u]: %f\n", kernel_offset, conv1_weights[kernel_offset]);
+                // printf("conv1_biases[%u]: %f\n", bias_offset, conv1_biases[bias_offset]);
 
                 conv2d_fp64(padded_image, &conv1_weights[kernel_offset], &conv1_biases[bias_offset], bias_stride, 
                             n->CI, n->CO / compute_num, n->H, n->W, n->K, n->padding, n->stride,
