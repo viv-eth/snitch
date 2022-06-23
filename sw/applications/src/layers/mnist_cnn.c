@@ -116,7 +116,7 @@ void mnist_cnn(const cnn_t *n) {
 
                 snrt_cluster_hw_barrier();
 
-                printf("Start Convolution\n");
+                printf("Start Convolution fused with ReLu\n");
                 // determine the kernel offset for the current core
                 uint16_t kernel_offset = n->K * n->K * compute_id;
                 // determine the row stride in the weights matrix
@@ -140,10 +140,10 @@ void mnist_cnn(const cnn_t *n) {
                 // printf("conv1_weights[%u]: %f\n", kernel_offset, conv1_weights[kernel_offset]);
                 // printf("conv1_biases[%u]: %f\n", bias_offset, conv1_biases[bias_offset]);
 
-                conv2d_fp64(padded_image, &conv1_weights[kernel_offset], &conv1_biases[bias_offset], bias_stride, 
-                            n->CI, n->CO / compute_num, n->H, n->W, n->K, n->padding, n->stride,
-                            dim_out_x, dim_out_y, weight_row_stride, &conv1_output[output_offset], output_stride);
-                printf("End Convolution\n");
+                conv2d_relu_fused_fp64(padded_image, &conv1_weights[kernel_offset], &conv1_biases[bias_offset], bias_stride, 
+                                    n->CI, n->CO / compute_num, n->H, n->W, n->K, n->padding, n->stride,
+                                    dim_out_x, dim_out_y, weight_row_stride, &conv1_output[output_offset], output_stride);
+                printf("End Convolution fused with ReLu\n");
 
                 break;
 

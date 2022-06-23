@@ -55,7 +55,7 @@ void pad_image(double *image, double *padded_image, uint16_t H, uint16_t W, uint
     // }
 }
 
-void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t bias_stride, uint16_t ci, uint16_t co, 
+void conv2d_relu_fused_fp64(double *padded_image, double *weights, double *biases, uint16_t bias_stride, uint16_t ci, uint16_t co, 
                 uint16_t H, uint16_t W, uint16_t K, uint16_t padding, uint16_t stride, 
                 uint16_t dim_out_x, uint16_t dim_out_y, uint16_t weight_row_stride, double *output, uint16_t output_stride) {
     // Input feature map (Ci x H x W) --> for MNIST: 1 x 28 x 28
@@ -104,15 +104,18 @@ void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t
 
                 }
 
-                // output[co_idx * 8 + out_w + out_h] = total + biases[co_idx];
-                // FIXME: causes out of mem access
-                output[co_idx * output_stride + out_w + out_h] = total + biases[co_idx * bias_stride];
+                // we willl fuse the convolution result with a ReLU activation function
+                // ReLU(x) = max(0, x)
+                if(total + biases[co_idx * bias_stride] < 0) {
+                    output[co_idx * dim_out_x * dim_out_y + out_h * dim_out_x + out_w] = 0;
+                } else {
+                    output[co_idx * output_stride + out_w + out_h] = total + biases[co_idx * bias_stride];
+                }
             }
         }
     }
 
 
     snrt_cluster_hw_barrier();             
-
                 
 }
