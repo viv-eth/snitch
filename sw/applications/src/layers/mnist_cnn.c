@@ -37,25 +37,34 @@ void mnist_cnn(const cnn_t *n) {
     uint16_t dim_out_y = floor((n->W - n->K + 2 * n->padding) / n->stride + 1);
    
     // determine memory size occupation of the CNN
-    uint16_t image_size = dim_in_x * dim_in_y;
+    uint16_t image_size = dim_in_x * dim_in_y * n->dtype;
     uint16_t conv1_weights_size = n->CO * n->CI * n->K * n->K * n->dtype;
     uint16_t conv1_biases_size = n->CO * n->dtype;
-    uint16_t conv1_output_size = n->CO * dim_out_x * dim_out_y;
+    uint16_t conv1_output_size = n->CO * dim_out_x * dim_out_y * n->dtype;
 
 
 
     // INFO FP64 cluster memory setup
     void *ptr = (double *)snrt_cluster_memory().start;
+    void *ptr_start = ptr;
     double *image = ptr;
-    ptr += image_size * n->dtype;
+    ptr += image_size;
     double *padded_image = ptr;
-    ptr += padded_image_size * n->dtype;
+    ptr += padded_image_size;
     double *conv1_weights = ptr;
-    ptr += conv1_weights_size * n->dtype;
+    ptr += conv1_weights_size;
     double *conv1_biases = ptr;
-    ptr += conv1_biases_size * n->dtype;
+    ptr += conv1_biases_size;
     double *conv1_output = ptr;
-    ptr += conv1_output_size * n->dtype;
+    ptr += conv1_output_size;
+    // NOTE: following lines for debugging purposes only
+    void *ptr_end = (double *)snrt_cluster_memory().end;
+    if(compute_id == 0){    
+        printf("Start address of cluster %u memory: 0x%p\n", cluster_id, ptr_start);
+        printf("End address of cluster %u memory: 0x%p\n", cluster_id, ptr_end);
+        printf("Available memory on cluster %u: %u KB\n", cluster_id, (ptr_end - ptr_start) / 1000);
+        printf("Total cluster memory occupation on cluster %u: %u KB\n", cluster_id, (ptr - ptr_start) / 1000);
+    }
 
     // load the CONV2D parameters from DRAM into the cluster memory
     if (snrt_is_dm_core() && cluster_id == 0) {
@@ -111,10 +120,27 @@ void mnist_cnn(const cnn_t *n) {
                 // determine the kernel offset for the current core
                 uint16_t kernel_offset = n->K * n->K * compute_id;
                 // determine the row stride in the weights matrix
-                uint16_t row_stride = n->K * n->K * compute_num;
-                conv2d_fp64(padded_image, &conv1_weights[kernel_offset], conv1_biases, 
+                uint16_t weight_row_stride = n->K * n->K * compute_num;
+                // determine the bias offset for the current core
+                uint16_t bias_offset = compute_id;
+                // determine the bias stride
+                uint16_t bias_stride = compute_num;
+                // determine the output stride in the output matrix
+                uint16_t output_stride = dim_out_x * dim_out_y * compute_num;
+                // determine the output offset for the current core
+                uint16_t output_offset = dim_out_x * dim_out_y * compute_id;
+
+                // printf("weight_row_stride: %d\n", weight_row_stride); --> 200
+                // printf("bias_stride: %d\n", bias_stride); --> 8
+                // printf("output_stride: %d\n", output_stride); --> 6272
+
+                // printf("bias offset: %d\n", bias_offset);
+                // printf("kernel offset: %d\n", kernel_offset);
+                // printf("output offset: %d\n", output_offset);
+
+                conv2d_fp64(padded_image, &conv1_weights[kernel_offset], &conv1_biases[bias_offset], bias_stride, 
                             n->CI, n->CO / compute_num, n->H, n->W, n->K, n->padding, n->stride,
-                            dim_out_x, dim_out_y, row_stride, &conv1_output[compute_id]);
+                            dim_out_x, dim_out_y, weight_row_stride, &conv1_output[output_offset], output_stride);
                 printf("End Convolution\n");
 
                 break;

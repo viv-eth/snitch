@@ -55,9 +55,9 @@ void pad_image(double *image, double *padded_image, uint16_t H, uint16_t W, uint
     // }
 }
 
-void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t ci, uint16_t co, 
+void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t bias_stride, uint16_t ci, uint16_t co, 
                 uint16_t H, uint16_t W, uint16_t K, uint16_t padding, uint16_t stride, 
-                uint16_t dim_out_x, uint16_t dim_out_y, uint16_t row_stride, double *output) {
+                uint16_t dim_out_x, uint16_t dim_out_y, uint16_t weight_row_stride, double *output, uint16_t output_stride) {
     // Input feature map (Ci x H x W) --> for MNIST: 1 x 28 x 28
     // First layer: kernel (Ci x Kh x Kw) --> for MNIST: 1 x 5 x 5 (1 input channel, 5x5 kernel)
     // Output feature map of the first layer: (Co x H x W) --> for MNIST: 16 x 28 x 28 (16 output channels)
@@ -67,8 +67,13 @@ void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t
 
     // accumulator for convolution of the input feature map with the kernel
     double total = 0;
+    double weight;
+    double data;
     // accumulator for kernel indices
     uint16_t kt = 0;
+    // image indices
+    uint16_t pos_x = 0;
+    uint16_t pos_y = 0;
 
     // INFO: parallelize over the output channels
     for (uint16_t co_idx = 0; co_idx < co; co_idx++) {
@@ -79,16 +84,25 @@ void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t
                     kt = 0;
                     for(uint16_t kh_idx = 0; kh_idx < K; kh_idx++) {
                         for(uint16_t kw_idx = 0; kw_idx < K; kw_idx++) {
-                            double weight = weights[kh_idx + kw_idx + co_idx * row_stride];
-                            double data = padded_image[kh_idx + out_w * stride + kw_idx + out_h * stride];
+                            weight = weights[kh_idx * K + kw_idx + co_idx * weight_row_stride];
+                            pos_x = out_h * stride + kh_idx;
+                            pos_y = out_w * stride + kw_idx;
+                            data = padded_image[ci_idx * H * W + pos_y * W + pos_x];
+                            // if(data != 0) {
+                            //     printf("data[%u][%u] = %.4f\n", pos_y, pos_x, data);
+                            //     printf("weight[%u][%u] = %.4f\n", kh_idx, kw_idx, weight);
+                            // } // --> this seems to be working correctly
                             kt += weight * data;
                         }
                     }
 
                     total += kt;
+                    // printf("total = %.4f\n", total);
                 }
 
-                output[co_idx * 8 + out_w + out_h] = total + biases[co_idx];
+                // output[co_idx * 8 + out_w + out_h] = total + biases[co_idx];
+                // FIXME: causes out of mem access
+                // output[co_idx * output_stride + out_w + out_h] = total + biases[co_idx * bias_stride];
             }
         }
     }
