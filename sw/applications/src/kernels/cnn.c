@@ -119,3 +119,10 @@ void conv2d_relu_fused_fp64(double *padded_image, double *weights, double *biase
     snrt_cluster_hw_barrier();             
                 
 }
+
+void max_pooling2d_fp64(double *input, uint16_t co, uint16_t M) {
+
+    uint16_t maxpooling_buffer[M*M];
+
+}
+

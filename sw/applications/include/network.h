@@ -66,6 +66,7 @@ typedef struct cnn_t_ {
     uint16_t H;
     uint16_t W;
     uint16_t K;
+    uint16_t M;
     
     uint16_t padding;
     uint16_t stride;
