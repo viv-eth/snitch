@@ -70,7 +70,7 @@ void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t
     double weight;
     double data;
     // accumulator for kernel indices
-    uint16_t kt = 0;
+    double kt = 0;
     // image indices
     uint16_t pos_x = 0;
     uint16_t pos_y = 0;
@@ -88,21 +88,25 @@ void conv2d_fp64(double *padded_image, double *weights, double *biases, uint16_t
                             pos_x = out_h * stride + kh_idx;
                             pos_y = out_w * stride + kw_idx;
                             data = padded_image[ci_idx * H * W + pos_y * W + pos_x];
+                            kt += weight * data;
                             // if(data != 0) {
                             //     printf("data[%u][%u] = %.4f\n", pos_y, pos_x, data);
                             //     printf("weight[%u][%u] = %.4f\n", kh_idx, kw_idx, weight);
+                            //     printf("kt = %.4f\n", kt);
                             // } // WORKS
-                            kt += weight * data;
                         }
+
+                        total += kt;
+                        // if(total != 0) {
+                        //     printf("total[%u][%u] = %.4f\n", out_h, out_w, total);
+                        // } // WORKS
                     }
 
-                    total += kt;
-                    // printf("total = %.4f\n", total);
                 }
 
                 // output[co_idx * 8 + out_w + out_h] = total + biases[co_idx];
                 // FIXME: causes out of mem access
-                // output[co_idx * output_stride + out_w + out_h] = total + biases[co_idx * bias_stride];
+                output[co_idx * output_stride + out_w + out_h] = total + biases[co_idx * bias_stride];
             }
         }
     }
