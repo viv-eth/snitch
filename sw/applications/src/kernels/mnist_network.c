@@ -360,14 +360,9 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, double *image, uint32_t *target, uint32_t ldI, 
                 uint32_t compute_id, double *loss, uint32_t compute_num, uint32_t setup_SSR){
 
-    // set up SSR registers (there is a total of three data movers)
-    register volatile double ft0 asm("ft0"); // stores image
-    register volatile double ft1 asm("ft1"); // stores weight gradients
-    register volatile double ft2 asm("ft2"); // stores activations
-    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
-    double b_grad_update = 0.0;
-    double W_grad_update = 0.0;
+    register double b_grad_update = 0.0;
+    register double W_grad_update = 0.0;
     double b_checksum = 0.0;
     double W_checksum = 0.0;
     volatile uint32_t idx_eff;
@@ -398,13 +393,6 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldI);
-        
-        // SSR setup of weight gradients
-        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW);
 
 
         // SSR setup of activations
@@ -414,26 +402,51 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     }
 
     // SSR start address need to be configured each time
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-    snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, weight_grads);
-    snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, activations);
-
-    // Start of SSR region
-    snrt_ssr_enable();
 
     // the effective index is the iteration index of the biases variable
     // across all entries
     for(uint32_t out = 0; out < OUT_CH; out++){
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image); // image stored in ft0
+        snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &activations[ldB * out]); // stored in ft2
         // printf("bias grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
         // printf("biases[%u] = %f\n", compute_id + ldB * out, biases[ldB * out]);
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
-        b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        // b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        const register double one = 1;
+        const register double zero = 0;
+        // Start of SSR region
+        snrt_ssr_enable();
+        if(compute_id + out * ldB > OUT_CH * 5 - 1){
+            b_grad_update = 0.0;
+        } else {
+            asm volatile(
+                        "beq          %[idx_eff], %[target_n], 1f\n"
+                        "bne          %[idx_eff], %[target_n], 2f\n"
+                        "1: \n"
+                        "fsub.d       %[b_grad_update], ft2, %[one]\n"
+                        "j            3f\n"
+                        "2: \n"
+                        "fadd.d       %[b_grad_update], ft2, %[zero]\n"
+                        "3: \n"
+                        : [ b_grad_update ] "+f"(b_grad_update)
+                        : [ one ] "f"(one), [ idx_eff ] "r"(idx_eff), [ target_n ] "r"(target_n), 
+                        [ zero ] "f"(zero)
+                        : "ft0", "ft1", "ft2"
+            );
+        }
         b_checksum += b_grad_update;
+
 
         for(uint32_t in = 0; in < IN_CH; in++){
             
-            W_grad_update = b_grad_update * image[in];
+            asm volatile(
+                        "fmul.d         %[W_grad_update], %[b_grad_update], ft0\n"
+                        : [ W_grad_update ] "+f"(W_grad_update)
+                        : [ b_grad_update ] "f"(b_grad_update), [ zero ] "f"(zero)
+                        : "ft0", "ft1", "ft2"
+            );
+            // W_grad_update = b_grad_update * image[in];
             
             if(!(compute_id*IN_CH + out * ldW + in > IN_CH * (OUT_CH * 5 - 1))){
                 weight_grads[out * ldW + in] += W_grad_update;
@@ -442,13 +455,13 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
+        
+        // End of the SSR region. 
+        snrt_ssr_disable();
     }
 
-    // End of the SSR region. 
-    snrt_ssr_disable();
-
     // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+    //     printf("GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, b_grad_update);
     // }
     printf("GRADIENT UPDATE FP64 with SSRs: b_checksum = %f\n", b_checksum);
     printf("GRADIENT UPDATE FP64 with SSRs: W_checksum = %f\n", W_checksum);

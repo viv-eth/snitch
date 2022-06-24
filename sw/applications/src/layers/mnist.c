@@ -18,7 +18,7 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
@@ -530,6 +530,7 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP64 with SSRs
+                            printf("activations[%u] = %f\n", b_offset, activations[b_offset]);
                             benchmark_get_cycle();
                             gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, 
