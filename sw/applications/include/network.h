@@ -35,15 +35,15 @@ typedef struct network_t_ {
     uint32_t IN_CH2;
     uint32_t OUT_CH;
 
-    float *b;
-    float *W;
-    float *b_grad;
-    float *W_grad;
+    // float *b;
+    // float *W;
+    // float *b_grad;
+    // float *W_grad;
 
-    // __fp16 *b;
-    // __fp16 *W;
-    // __fp16 *b_grad;
-    // __fp16 *W_grad;
+    __fp16 *b;
+    __fp16 *W;
+    __fp16 *b_grad;
+    __fp16 *W_grad;
 
     // double *b;
     // double *W;
@@ -51,8 +51,8 @@ typedef struct network_t_ {
     // double *W_grad;
 
     // double *images;
-    float *images;
-    // __fp16 *images;
+    // float *images;
+    __fp16 *images;
     uint32_t *targets;
 
     precision_t dtype;

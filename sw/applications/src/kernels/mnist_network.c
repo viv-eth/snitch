@@ -725,7 +725,7 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
             b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
         }
         b_checksum += b_grad_update;
-        snrt_cluster_hw_barrier();
+        snrt_cluster_hw_barrier(); // Discuss with GIM
         snrt_ssr_enable();
         register v2f32 reduce_reg;
         register const float zero = 0;
@@ -748,11 +748,10 @@ void gradient_update_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OU
             );
 
 
-            snrt_ssr_disable();
+            snrt_ssr_disable(); // Discuss with GIM
             weight_grads[out*ldW + in] += reduce_reg[0];
             weight_grads[out*ldW + in + 1] += reduce_reg[1];
             W_checksum += reduce_reg[0] + reduce_reg[1];
-            // }
             snrt_ssr_enable();
             in += 2;
         }
@@ -782,7 +781,8 @@ void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 
     float lr = 0.5;
 
-    float test; // test variable for debugging
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
 
     // convert number of images to float for vectorized computation
     float nimg = ((float)number_of_images);
@@ -831,6 +831,8 @@ void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
         } else {
             biases[ldB * out] = 0;
         }
+
+        b_checksum += biases[ldB * out];
         
         snrt_ssr_enable();
         // SSR start addresses need to be configured each time
@@ -850,8 +852,12 @@ void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
                 : "ft0", "ft1", "ft2"
                 ); 
 
+                // discuss with GIM: can I FREP this somehow?
+                snrt_ssr_disable(); // Discuss with GIM: why do we need to disable SSRs?
                 weights[out*ldW + in] = reduce_reg[0];
                 weights[out*ldW + in + 1] = reduce_reg[1];
+                W_checksum += reduce_reg[0] + reduce_reg[1];
+                snrt_ssr_enable();
             } 
 
             in += 2;
@@ -863,9 +869,12 @@ void training_step_fp32_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
     }
 
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP32 with SSRs and SIMD: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("FP32 with SSRs and SIMD: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    // }
+
+    printf("FP32 with SSRs and SIMD: b_checksum = %f\n", b_checksum);
+    printf("FP32 with SSRs and SIMD: W_checksum = %f\n", W_checksum);
 
 }
 
@@ -1490,6 +1499,8 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     
     __fp16 b_grad_update = 0.0;
     __fp16 W_grad_update = 0.0;
+    __fp16 b_checksum = 0.0;
+    __fp16 W_checksum = 0.0;
     volatile uint32_t idx_eff;
 
 
@@ -1519,12 +1530,14 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        b_checksum += b_grad_update;
 
         //printf("b_grad_update = %f\n", b_grad_update);
 
         for(uint32_t in = 0; in < IN_CH; in++){
             
             W_grad_update = b_grad_update * image[in];
+            W_checksum += W_grad_update;
             
             if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
                 weight_grads[out * ldW + in] += W_grad_update;
@@ -1532,8 +1545,11 @@ void gradient_update_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
             
         bias_grads[ldB * out] = b_grad_update;
-        printf("GRADIENT UPDATE FP16 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
+        // printf("GRADIENT UPDATE FP16 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
+
+    printf("GRADIENT UPDATE FP16 Baseline: W_checksum = %f\n", W_checksum);
+    printf("GRADIENT UPDATE FP16 Baseline: b_checksum = %f\n", b_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
@@ -1545,6 +1561,8 @@ void training_step_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t number_of_images){
 
     __fp16 lr = 0.5;
+    __fp16 b_checksum = 0.0;
+    __fp16 W_checksum = 0.0;
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
@@ -1556,17 +1574,22 @@ void training_step_fp16(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
+        b_checksum += biases[ldB * out];
+
         for(uint32_t in = 0; in < IN_CH1*IN_CH2; in++){
             
             if(!(compute_id*IN_CH1*IN_CH2 + out * ldW + in > IN_CH1*IN_CH2 * OUT_CH * 5)){
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((__fp16) number_of_images);
+                W_checksum += weights[out * ldW + in];
             } 
         }
     }
 
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        printf("FP16 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-    }
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     printf("FP16 baseline: updated biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
+    // }
+    printf("TRAINING STEP FP16 baseline: W_checksum = %f\n", W_checksum);
+    printf("TRAINING STEP FP16 baseline: b_checksum = %f\n", b_checksum);
 }
 
 // INFO: start of FP8 baseline network implementation
