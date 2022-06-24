@@ -1065,10 +1065,6 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                 uint32_t setup_SSR){
     
     // INFO: for simplicity image is converted to dtype __fp16 --> discuss with GIM 
-    register volatile float ft0 asm("ft0"); // stores image
-    register volatile float ft1 asm("ft1"); // stores weights
-    register volatile float ft2 asm("ft2"); // stores biases
-    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     const register float zero = 0.0f;
 
     __fp16 acc = 0.0f;
@@ -1095,11 +1091,6 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldW);
-
-        // // setup of DATA MOVER for biases
-        // snrt_ssr_loop_1d(SNRT_SSR_DM2,
-        //                 OUT_CH,
-        //                 sizeof(double));
     }
 
     // Start of SSR region
@@ -1108,7 +1099,6 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     for (uint32_t out = 0; out < OUT_CH; out++) {
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
-        // snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &biases[out*ldB]);
         register v2f32 reduce_reg;
         register v2f32 sum;
         register v2f32 test;
@@ -1117,27 +1107,25 @@ void feedforward_fp16_ssr_simd(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
 
         acc = biases[ldB*out];
         asm volatile(
-            "fadd.s    %[tacc], %[zero], %[zero]\n" // dummy instruction for debugging
-            : [test] "+&f"(test), [tacc] "+&f"(tacc)
+            "fadd.s    %[tacc], %[zero], %[zero]\n"
+            : [tacc] "+&f"(tacc)
             : [zero] "f"(zero)
         );
         if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
-            for (uint32_t in = 0; in < IN_CH;) {
+            
                 
-                // calculate the dot product of the image and the weights (increment by four columns in each iteration)
-                asm volatile(
-                    "vfcpka.s.s       %[dotp], %[zero], %[zero]\n"
-                    "vfcpka.s.s       %[sum], %[zero], %[zero] \n"
-                    "vfdotpex.s.h     %[dotp], ft1, ft0 \n"
-                    "vfsum.s          %[sum], %[dotp] \n"
-                    "fadd.s           %[tacc], %[tacc], %[sum] \n"
-                : [sum] "+&f"(sum), [dotp] "+&f"(dotp), [tacc] "+&f"(tacc)
-                : [zero] "f"(zero)
-                : "ft0", "ft1", "ft2"
-                );
-
-                in += 4;
-            }
+            // calculate the dot product of the image and the weights (increment by four columns in each iteration)
+            asm volatile(
+                "frep.o           %[n_frep], 1, 0, 0\n"
+                "vfcpka.s.s       %[dotp], %[zero], %[zero]\n"
+                "vfcpka.s.s       %[sum], %[zero], %[zero] \n"
+                "vfdotpex.s.h     %[dotp], ft1, ft0 \n"
+                "vfsum.s          %[sum], %[dotp] \n"
+                "fadd.s           %[tacc], %[tacc], %[sum] \n"
+            : [sum] "+&f"(sum), [dotp] "+&f"(dotp), [tacc] "+&f"(tacc)
+            : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
+            : "ft0", "ft1", "ft2"
+            );
             snrt_ssr_disable();
             //printf("DEBUG: tacc[%u] = %f\n", compute_id + out + 1, tacc);
             //printf("DEBUG: acc[%u] = %f\n", compute_id + out + 1, acc);
@@ -1625,7 +1613,7 @@ void feedforward_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 void softmax_activation_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 char *weights, uint32_t ldW, char *activations, uint32_t ldB,
                 char *image, uint32_t ldI, uint32_t compute_id, 
-                uint32_t compute_num, char *max, uint32_t* core_sync){}
+                uint32_t compute_num, char *max, uint32_t* core_sync){
 
 //     char max_core;
 //     char sum = 0.0;
@@ -1683,7 +1671,7 @@ void softmax_activation_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 //     //core_sync[compute_id] = 0;
 //     snrt_cluster_hw_barrier();
-// }
+}
 
 void gradient_update_fp8(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 char *weight_grads, uint32_t ldW, char *bias_grads, char *activations, 
