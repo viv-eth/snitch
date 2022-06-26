@@ -22,8 +22,8 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
-#define RUN_TRAINING_STEP 0
+#define RUN_GRADIENT_UPDATE 1
+#define RUN_TRAINING_STEP 1
 
 void mnist(const network_t *n){
 
@@ -275,7 +275,7 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                             feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                                            ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id]);
+                                            ldB, &images[curr_img], ldI, compute_id);
                             softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
                                         &weights[W_offset], ldW, &activations[b_offset], ldB,
                                         &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
@@ -416,6 +416,8 @@ void mnist(const network_t *n){
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
                         snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
                     }
                     break;
                 case(FP8):
@@ -530,7 +532,6 @@ void mnist(const network_t *n){
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP64 with SSRs
-                            printf("activations[%u] = %f\n", b_offset, activations[b_offset]);
                             benchmark_get_cycle();
                             gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, 
@@ -649,6 +650,8 @@ void mnist(const network_t *n){
                 } else {
                     if(RUN_GRADIENT_UPDATE){
                         snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
+                        // snrt_cluster_hw_barrier();
                     } else {
                         printf("[MNIST] INFO: Gradient Update not run\n");
                     }
@@ -682,20 +685,21 @@ void mnist(const network_t *n){
     if(setup_SSR && RUN_TRAINING_STEP){
         // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
         if(snrt_is_dm_core() && cluster_id==0) {
+            // Discuss with GIM how to do DMA benchmarking
             snrt_dma_start_tracking();
             // WARN: make sure that pointer types are according to network precision
             __fp16 *weight_grad_ptr = ((uint32_t)weights) + cluster_offset;
             __fp16 *bias_grad_ptr = ((uint32_t)biases) + cluster_offset;
-            snrt_dma_txid_t txid_WG = 
-                snrt_dma_start_2d(weights,                // destination
-                                weight_grad_ptr,          // source
-                                n->dtype * IN_CH,         // size
-                                n->dtype * IN_CH ,        // destination stride
-                                n->dtype * IN_CH ,        // source stride
-                                n->OUT_CH);               // repetitions
+            // snrt_dma_txid_t txid_WG = 
+            //     snrt_dma_start_2d(weights,                // destination
+            //                     weight_grad_ptr,          // source
+            //                     n->dtype * IN_CH,         // size
+            //                     n->dtype * IN_CH ,        // destination stride
+            //                     n->dtype * IN_CH ,        // source stride
+            //                     n->OUT_CH);               // repetitions
 
             snrt_dma_txid_t txid_BG = 
-                snrt_dma_start_1d(activations,                 // destination
+                snrt_dma_start_1d(activations,            // destination
                                 bias_grad_ptr,            // source
                                 n->dtype * n->OUT_CH);    // size
 
@@ -710,6 +714,7 @@ void mnist(const network_t *n){
 
     // after looping through one batch of the dataset
     // we update the biases and weights on Cluster 0
+
     if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
         // determine the row offset at which current compute cluster is
         volatile uint32_t W_offset = compute_id * IN_CH;
@@ -791,8 +796,9 @@ void mnist(const network_t *n){
                     } else {
                         // INFO: FP16 with SSRs and SIMD
                         benchmark_get_cycle();
+                        // FIXME: cannot assign weights 2x !!
                         training_step_fp16_ssr_simd(n->IN_CH1, n->IN_CH2, div, 
-                                            &weights[W_offset], &weights[W_offset], ldW, 
+                                            &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
                                             &biases[b_offset], &activations[b_offset], ldB, 
                                             compute_id, compute_num, number_of_images, setup_SSR);
                         benchmark_get_cycle();
