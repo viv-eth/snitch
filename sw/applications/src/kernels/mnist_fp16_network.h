@@ -1,0 +1,44 @@
+
+
+// Copyright 2020 ETH Zurich and University of Bologna.
+// Licensed under the Apache License, Version 2.0, see LICENSE for details.
+// SPDX-License-Identifier: Apache-2.0
+
+#pragma once
+
+#include <stdint.h>
+
+void feedforward_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
+                uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id);
+
+void softmax_activation_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *activations, uint32_t ldB,
+                __fp16 *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, __fp16 *max);
+
+void gradient_update_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
+                uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, __fp16 *loss, uint32_t compute_num);
+
+void training_step_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images);
+
+void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
+                uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id,
+                uint32_t setup_SSR);
+
+void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
+                uint32_t ldB, __fp16 *image, uint32_t *target, uint32_t ldI, 
+                uint32_t compute_id, __fp16 *loss, uint32_t compute_num, uint32_t setup_SSR);
+
+void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images, uint32_t setup_SSR);
+
