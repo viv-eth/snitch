@@ -35,15 +35,15 @@ typedef struct network_t_ {
     uint32_t IN_CH2;
     uint32_t OUT_CH;
 
-    // float *b;
-    // float *W;
-    // float *b_grad;
-    // float *W_grad;
+    float *b;
+    float *W;
+    float *b_grad;
+    float *W_grad;
 
-    __fp16 *b;
-    __fp16 *W;
-    __fp16 *b_grad;
-    __fp16 *W_grad;
+    // __fp16 *b;
+    // __fp16 *W;
+    // __fp16 *b_grad;
+    // __fp16 *W_grad;
 
     // double *b;
     // double *W;
@@ -51,13 +51,85 @@ typedef struct network_t_ {
     // double *W_grad;
 
     // double *images;
-    // float *images;
-    __fp16 *images;
+    float *images;
+    // __fp16 *images;
     uint32_t *targets;
 
     precision_t dtype;
     
 } network_t;
+
+typedef struct network_fp64_t_ {
+    uint32_t IN_CH1;
+    uint32_t IN_CH2;
+    uint32_t OUT_CH;
+
+    double *b;
+    double *W;
+    double *b_grad;
+    double *W_grad;
+
+    double *images;
+    uint32_t *targets;
+    float learning_rate;
+
+    precision_t dtype;
+    
+} network_fp64_t;
+
+typedef struct network_fp32_t_ {
+    uint32_t IN_CH1;
+    uint32_t IN_CH2;
+    uint32_t OUT_CH;
+
+    float *b;
+    float *W;
+    float *b_grad;
+    float *W_grad;
+
+    float *images;
+    uint32_t *targets;
+    float learning_rate;
+
+    precision_t dtype;
+    
+} network_fp32_t;
+
+typedef struct network_fp16_t_ {
+    uint32_t IN_CH1;
+    uint32_t IN_CH2;
+    uint32_t OUT_CH;
+
+    __fp16 *b;
+    __fp16 *W;
+    __fp16 *b_grad;
+    __fp16 *W_grad;
+
+    __fp16 *images;
+    uint32_t *targets;
+    float learning_rate;
+
+    precision_t dtype;
+    
+} network_fp16_t;
+
+typedef struct network_fp8_t_ {
+    uint32_t IN_CH1;
+    uint32_t IN_CH2;
+    uint32_t OUT_CH;
+
+    char *b;
+    char *W;
+    char *b_grad;
+    char *W_grad;
+
+    char *images;
+    uint32_t *targets;
+    float learning_rate;
+
+    precision_t dtype;
+    
+} network_fp8_t;
 
 // TODO: add description for MNIST CNN network struct
 typedef struct cnn_t_ {

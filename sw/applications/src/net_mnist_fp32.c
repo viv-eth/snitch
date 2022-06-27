@@ -7,10 +7,8 @@
 // different memory layouts for matrices (transposed/not-transposed)
 // Correctness of results are checked automatically
 
-#include "mnist.h"
-// #include "data_five_mnist.h" //--> For FP64 tests
-#include "data_fp32_mnist_old.h" // --> For FP32 tests
-// #include "data_fp16_mnist.h" // --> For FP16 tests
+#include "mnist_fp32.h"
+#include "data_fp32_mnist.h"
 #include "network.h"
 #include "math.h"
 #include "perf_cnt.h"
@@ -28,7 +26,7 @@ int main(){
     mini_mnist_t.images = (void *)mini_mnist_images_dram;
     mini_mnist_t.targets = (void *)mini_mnist_labels_dram;
     
-    mnist(&mini_mnist_t);
+    mnist_fp32(&mini_mnist_t);
 
     // snrt_global_barrier();
     // INFO: replacing global barrier with custom barrier for RTL sims
