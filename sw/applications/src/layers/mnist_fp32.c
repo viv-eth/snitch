@@ -201,9 +201,6 @@ void mnist_fp32(const network_fp32_t *n){
                     feedforward_fp32_ssr_simd_frep(n->IN_CH1, n->IN_CH2, div, 
                                         &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                         ldB, &images[curr_img], ldI, compute_id, setup_SSR);
-                    // feedforward_fp32(n->IN_CH1, n->IN_CH2, div, 
-                    //                 &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
-                    //                 ldB, &images[curr_img], ldI, compute_id); // for debuging purposes --> this works
                     softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
                                 &weights[W_offset], ldW, &activations[b_offset], ldB,
                                 &images[curr_img], ldI, compute_id, compute_num, max);
@@ -329,8 +326,8 @@ void mnist_fp32(const network_fp32_t *n){
                 } else {
                     // INFO: FP32 with SSRs
                     snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
+                    // snrt_cluster_hw_barrier(); // additional barrier due to SSRs
+                    // snrt_cluster_hw_barrier(); // additional barrier due to SSRs
                 }
             } else {
                 if(!cluster_id){
@@ -441,8 +438,6 @@ void mnist_fp32(const network_fp32_t *n){
             }
         } else {
             if(RUN_TRAINING_STEP){
-                snrt_cluster_hw_barrier();
-                snrt_cluster_hw_barrier();
             } else {
                 printf("[MNIST] INFO: Training Step not run\n");
             }

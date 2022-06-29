@@ -26,6 +26,7 @@ int main(){
     mini_mnist_t.images = (void *)mini_mnist_images_dram;
     mini_mnist_t.targets = (void *)mini_mnist_labels_dram;
     
+    
     mnist_fp32(&mini_mnist_t);
 
     // snrt_global_barrier();

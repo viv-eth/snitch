@@ -20,8 +20,8 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 1
+#define RUN_GRADIENT_UPDATE 0
+#define RUN_TRAINING_STEP 0
 
 void mnist_fp64(const network_fp64_t *n){
 
@@ -180,37 +180,37 @@ void mnist_fp64(const network_fp64_t *n){
 
             if(RUN_FEEDFORWARD){
                 
-                if(!compute_id){
-                    printf("[MNIST] FF start\n");
-                }
+                // if(!compute_id){
+                    // printf("[MNIST] FP64 FF start\n");
+                // }
 
                 // TODO: remove core_sync
                 if(BASELINE){
                     // INFO: baseline
                     benchmark_get_cycle();
-                    feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
+                    feedforward_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id);
-                    softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
+                    softmax_activation_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights[W_offset], ldW, &activations[b_offset], ldB,
                                 &images[curr_img], ldI, compute_id, compute_num, max);
                     benchmark_get_cycle();
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
-                    feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                    feedforward_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
                                     &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id,
                                     setup_SSR);
-                    softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                                    &weights[W_offset], ldW, &activations[b_offset], ldB,
-                                    &images[curr_img], ldI, compute_id, compute_num, max, setup_SSR);
+                    // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                    //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
+                    //                 &images[curr_img], ldI, compute_id, compute_num, max, setup_SSR);
                     benchmark_get_cycle();
                 }
 
-                if(!compute_id){
-                    printf("[MNIST] FF end\n");
-                }
+                // if(!compute_id){
+                    // printf("[MNIST] FP64 FF end\n");
+                // }
 
             }
         } else if (!snrt_is_compute_core() && cluster_id == 0){
@@ -224,12 +224,12 @@ void mnist_fp64(const network_fp64_t *n){
                 } else {
                     // INFO: FP64 with SSRs
                     snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
-                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 }
             } else {
                 if(!cluster_id){
-                    printf("[MNIST] FF not run. \n");
+                    printf("[MNIST] FP64 FF not run. \n");
                 }
             }
         }
@@ -289,9 +289,9 @@ void mnist_fp64(const network_fp64_t *n){
             double *img_ptr = ((uint32_t)images) - cluster_offset;
 
             if(RUN_GRADIENT_UPDATE){
-                if(!compute_id){
-                    printf("[MNIST] GU start\n");
-                }
+                // if(!compute_id){
+                    // printf("[MNIST] FP64 GU start\n");
+                // }
                 if(BASELINE){
                     // INFO: baseline
                     benchmark_get_cycle();
@@ -311,13 +311,13 @@ void mnist_fp64(const network_fp64_t *n){
                                         loss, compute_num, setup_SSR);
                     benchmark_get_cycle();
                 }
-                if(!compute_id){
-                    printf("[MNIST] GU end\n");
-                }
+                // if(!compute_id){
+                    // printf("[MNIST] FP64 GU end\n");
+                // }
             } else {
-                if(!compute_id){
-                    printf("[MNIST] GU not run. \n");
-                }
+                // if(!compute_id){
+                    // printf("[MNIST] FP64 GU not run. \n");
+                // }
             } // end of gradient update
         } else if (!snrt_is_compute_core() && cluster_id == 1){
             if(RUN_GRADIENT_UPDATE){
@@ -330,7 +330,7 @@ void mnist_fp64(const network_fp64_t *n){
                 }
             } else {
                 if(!cluster_id){
-                    printf("[MNIST] GU not run. \n");
+                    printf("[MNIST] FP64 GU not run. \n");
                 }
             }
         }
@@ -401,9 +401,9 @@ void mnist_fp64(const network_fp64_t *n){
 
         if(RUN_TRAINING_STEP){
 
-            if(!compute_id){
-                    printf("[MNIST] Training step start\n");
-            }
+            // if(!compute_id){
+                    // printf("[MNIST] FP64 Training step start\n");
+            // }
 
             if(BASELINE){
                 // INFO: baseline
@@ -417,15 +417,15 @@ void mnist_fp64(const network_fp64_t *n){
                 // INFO: FP64 with SSRs
                 benchmark_get_cycle();
                 training_step_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                                    &weights[W_offset], &weights[W_offset], ldW, 
+                                    &weights[W_offset], &weight_grad_ptr[W_offset], ldW, 
                                     &biases[b_offset], &activations[b_offset], ldB, 
                                     compute_id, compute_num, number_of_images, setup_SSR);
                 benchmark_get_cycle();
             }
 
-            if(!compute_id){
-                    printf("[MNIST] Training step done\n");
-            }
+            // if(!compute_id){
+                    // printf("[MNIST] FP64 Training step done\n");
+            // }
         }
 
     } else if(!snrt_is_compute_core() && cluster_id == 0){
@@ -433,12 +433,12 @@ void mnist_fp64(const network_fp64_t *n){
             if(RUN_TRAINING_STEP){
                 // no HW barriers required for Baseline
             } else {
-                printf("[MNIST] INFO: Training Step not run\n");
+                // printf("[MNIST] FP64 Training Step not run\n");
             }
         } else {
             if(RUN_TRAINING_STEP){
             } else {
-                printf("[MNIST] INFO: Training Step not run\n");
+                // printf("[MNIST] FP64 Training Step not run\n");
             }
         }
     }

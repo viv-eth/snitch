@@ -39,7 +39,7 @@ void feedforward_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("new FEEDFORWARD FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+        printf("FEEDFORWARD FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
         //printf("Core %u done with the computation: core_sync[%u] = %u.\n", compute_id + 1, compute_id + 1, core_sync);   
     }
 
@@ -203,9 +203,9 @@ void training_step_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 // if(!compute_id){
                 //     printf("weight grad[%u] = %f\n", compute_id + out * ldW + in, weight_grads[out * ldW + in]);
                 // }
-                if(!compute_id){
-                    printf("weight[%u] = %f\n", compute_id + out * ldW + in, weights[out * ldW + in]);
-                }
+                // if(!compute_id){
+                //     printf("weight[%u] = %f\n", compute_id + out * ldW + in, weights[out * ldW + in]);
+                // }
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((__fp16) number_of_images);
                 // if(!compute_id){
                 //     printf("weight[%u] = %f\n", compute_id + out * ldW + in, weights[out * ldW + in]);
