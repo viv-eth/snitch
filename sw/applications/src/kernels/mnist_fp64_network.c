@@ -20,6 +20,7 @@ union fp16_v4f16_u {
 };
 typedef char v8f8 __attribute__((vector_size(8)));
 
+// INFO: Custom absolute value function for floating point numbers, since it is also not supported.
 double my_fabs(double x) {
     if(x < 0) {
         return -x;
@@ -28,6 +29,9 @@ double my_fabs(double x) {
     }
 }
 
+// INFO: This is a custom function to determine the expponential of a floating point number.
+//       We assume here the sum representation of an exponential: exp_n(x) = sum_{i=0}^n (x^i/i!).
+//       If two partial sums differ less than epsilon, we can stop the summing.
 double my_exp(double x) 
 { 
     const double epsilon = 1e-7; 
@@ -269,6 +273,13 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id,
                 uint32_t setup_SSR){
 
+    // INFO: due to a compiler bug we need to reserve the registers for the SSR
+    //       otherwise it will use them for stack operations breaking the stream(s)
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+
     register double acc = 0.0;
 
     // get the total number of input features
@@ -319,12 +330,14 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         acc = 0.0;
         // End of SSR region.
         snrt_ssr_disable();
+        // INFO: after disabling the SSRs we can free the registers
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
     }
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        // printf("new FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("new FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
     
     snrt_cluster_hw_barrier(); 
 
@@ -336,72 +349,106 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
                 double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max, uint32_t setup_SSR){
 
+    // INFO: due to a compiler bug we need to reserve the registers for the SSR
+    //       otherwise it will use them for stack operations breaking the stream(s)
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2)); // INFO: these lines also do not break the RTL simulation
+    
     double max_core;
     double sum = 0.0;
 
-    max_core = activations[0];
+    uint32_t idx_eff;
 
     if (setup_SSR) {
 
         const uint32_t ssr0_b = OUT_CH;
         const uint32_t ssr0_i = sizeof(double);
 
-        snrt_ssr_loop_1d(SNRT_SSR_DM0, ssr0_b, ssr0_i);
+        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                        ssr0_b, 
+                        ssr0_i);
 
-    }
+    } // INFO: this line breaks the RTL simulation
+
+    max_core = activations[0]; // INFO: up to here programm finishes successfully in RTL
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        idx_eff = compute_id + ldB * out;
+        if(!(idx_eff > OUT_CH * 5 - 1)){
+            if(activations[ldB * out] > max_core) {
+                max_core = activations[ldB * out];
+            }
+        }
+    } // this also runs successfully in RTL
+
+
 
     
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
-
-    // Start of SSR region
-    snrt_ssr_enable();
-    for(uint32_t out = 0; out < OUT_CH; out++){
-        asm volatile(
-                    "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
-                    "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
-                    "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
-                    "beqz       t0, 2f\n"                   // else go to loop start
-                    "1: \n"     
-                    "fmv.d      %[max_core], fs2 \n"
-                    "2: \n"
-                    : [ max_core ] "+f"(max_core)
-                    :
-                    :"ft0", "ft1", "ft2");
-    }
-
-    max[compute_id] = max_core;
-
-    // End of the SSR region. 
-    snrt_ssr_disable();
-
-    snrt_cluster_hw_barrier();
-
-    double max_global = max[0];
-
-    // Reduction on single core
-    if(compute_id == 0){
-        for(uint32_t core = 0; core < compute_num; core++){
-            if(max[core] > max_global){
-                max_global = max[core];
-            }
-        }
-
-        // FIXME: actually OUT_CH should be multiplied by number of compute cores
-        for(uint32_t out = 0; out < OUT_CH*5; out++){
-            if(activations[out]){
-                activations[out] = exp(activations[out] - max_global);
-                sum += activations[out];
-            } else {
-                activations[out] = 0.0;
-            }
-        }
+    // snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
 
 
-        for(uint32_t out = 0; out < OUT_CH*5; out++){
-            activations[out] /= sum;
-            printf("new SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
-        }
-    }
+    // // Start of SSR region
+    // snrt_ssr_enable();
+    // for(uint32_t out = 0; out < OUT_CH; out++){
+    //     idx_eff = compute_id + ldB * out;
+    //     if(!(idx_eff > OUT_CH * 5 - 1)){
+    //         snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &activations[ldB * out]);
+    //     }
+    //     printf("new ACTIVATION FP64 with SSRs: activations[%u] = %f\n", 1 + compute_id + ldB * out, activations[ldB * out]);
+    //     asm volatile(
+    //                 "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
+    //                 "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
+    //                 "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
+    //                 "beqz       t0, 2f\n"                   // else go to loop start
+    //                 "1: \n"     
+    //                 "fmv.d      %[max_core], fs2 \n"
+    //                 "2: \n"
+    //                 : [ max_core ] "+&f"(max_core)
+    //                 :
+    //                 :"ft0", "ft1", "ft2");
+    // }
+
+
+    // // End of the SSR region. 
+    // snrt_ssr_disable();
+    // INFO: after disabling the SSRs we can free the registers
+    asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2)); // INFO: this line also do not break the RTL simulation
+
+    // max[compute_id] = max_core;
+    // // printf("max[%u] = %f\n", compute_id, max[compute_id]);
+
+    // snrt_cluster_hw_barrier();
+
+    // double max_global = max[0];
+
+    // // Reduction on single core
+    // if(compute_id == 0){
+    //     for(uint32_t core = 0; core < compute_num; core++){
+    //         if(max[core] > max_global){
+    //             max_global = max[core];
+    //         }
+    //     }
+
+    //     // FIXME: actually OUT_CH should be multiplied by number of compute cores
+    //     // TODO: add core multiplicand instad of manually multiplying by correct number
+    //     for(uint32_t out = 0; out < OUT_CH*5; out++){
+    //         if(activations[out]){
+    //             // activations[out] = exp(activations[out] - max_global);
+    //             activations[out] = my_exp(activations[out] - max_global);
+    //             sum += activations[out];
+    //         } else {
+    //             activations[out] = 0.0;
+    //         }
+    //     }
+
+
+    //     // for(uint32_t out = 0; out < OUT_CH*5; out++){
+    //     //     activations[out] /= sum;
+    //     //     printf("new SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+    //     // }
+    // }
 
     snrt_cluster_hw_barrier();
 }
@@ -411,6 +458,13 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 double *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
                 uint32_t ldB, double *image, uint32_t *target, uint32_t ldI, 
                 uint32_t compute_id, double *loss, uint32_t compute_num, uint32_t setup_SSR){
+
+    // INFO: due to a compiler bug we need to reserve the registers for the SSR
+    //       otherwise it will use them for stack operations breaking the stream(s)
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
 
     
     register double b_grad_update = 0.0;
@@ -514,6 +568,8 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         
         // End of the SSR region. 
         snrt_ssr_disable();
+        // INFO: after disabling the SSRs we can free the registers
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
     }
 
     // for(uint32_t out = 0; out < OUT_CH; out++){

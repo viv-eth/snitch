@@ -16,7 +16,7 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 1
+#define BASELINE 0
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
@@ -191,10 +191,10 @@ void mnist_fp64(const network_fp64_t *n){
                     feedforward_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id);
+                    benchmark_get_cycle();
                     softmax_activation_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights[W_offset], ldW, &activations[b_offset], ldB,
                                 &images[curr_img], ldI, compute_id, compute_num, max);
-                    benchmark_get_cycle();
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
@@ -202,9 +202,9 @@ void mnist_fp64(const network_fp64_t *n){
                                     &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id,
                                     setup_SSR);
-                    // softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
-                    //                 &weights[W_offset], ldW, &activations[b_offset], ldB,
-                    //                 &images[curr_img], ldI, compute_id, compute_num, max, setup_SSR);
+                    softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div,
+                                    &weights[W_offset], ldW, &activations[b_offset], ldB,
+                                    &images[curr_img], ldI, compute_id, compute_num, max, setup_SSR);
                     benchmark_get_cycle();
                 }
 
@@ -224,7 +224,7 @@ void mnist_fp64(const network_fp64_t *n){
                 } else {
                     // INFO: FP64 with SSRs
                     snrt_cluster_hw_barrier();
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                     // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 }
             } else {
