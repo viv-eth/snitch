@@ -693,11 +693,16 @@ impl<'a, 'b> Cpu<'a, 'b> {
             x if x == self.engine.config.address.scratch_reg => {
                 self.engine.exit_code.load(Ordering::SeqCst)
             } // scratch_reg
+            // TODO: automise generation of barrier register(s)
             x if x == self.engine.config.address.barrier_reg => {
                 self.cluster_barrier();
                 0
             } // barrier_reg
             x if x == self.engine.config.address.barrier_reg_2 => {
+                self.cluster_barrier();
+                0
+            } // barrier_reg
+            x if x == self.engine.config.address.barrier_reg_3 => {
                 self.cluster_barrier();
                 0
             } // barrier_reg
