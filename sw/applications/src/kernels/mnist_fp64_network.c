@@ -50,11 +50,25 @@ double my_exp(double x)
     return sum; 
 } 
 
+double my_log(double x, double n)
+{
+	double alpha = (x-1)/(x+1), ans = alpha;
+	double save = ans * alpha * alpha;
+
+	for (int i = 2 ; i <= n ; i++)
+	{
+		ans += (1.0/(2*i-1)) * save;
+		save = save * alpha * alpha;
+	}
+
+	return 2.0*ans;
+}
+
 // INFO: start of FP64 baseline network implementation
 
 // The output of the feedforward is accumulated in the activations variable
 void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, double *activations,
+                float *weights, uint32_t ldW, double *biases, double *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id){
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -79,7 +93,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]);  
+        printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
     }
 
     snrt_cluster_hw_barrier();
@@ -87,7 +101,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 } // WORKS on Cluster 0
 
 void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *activations, uint32_t ldB,
+                float *weights, uint32_t ldW, double *activations, uint32_t ldB,
                 double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max){
 
@@ -145,7 +159,7 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             activations[out] /= sum;
-            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
+            printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -153,7 +167,7 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 } // WORKS on Cluster 0
 
 void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
+                float *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
                 uint32_t ldB, double *image, uint32_t *target, uint32_t ldI, 
                 uint32_t compute_id, double *loss, uint32_t compute_num){
 
@@ -166,21 +180,27 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     double b_checksum = 0.0;
     double W_checksum = 0.0;
 
+    double loss_val = 0.0;
+    double loss_wo_log;
+
 
     // get the value saved at target address
-    uint32_t target_n = *target;
+    int32_t target_n = *target;
+
+    // NOTE: Part below is commented for the RTL,
+    // since math library is not supported.
+
     // compute the loss
-    double loss_val = 0.0 - log(activations[target_n -compute_id]);
-
-    // save the value into the loss pointer
     if(!compute_id){
-        loss[0] += loss_val;
-    } else {
-        loss[0] += 0;
-    }
+        loss_val = 0.0 - log(activations[target_n - compute_id]);
+        loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
+        printf("loss with math.h = %f\n", loss_val);
+        printf("loss with my_log = %f\n", loss_wo_log);
+    } 
 
-    
-    //printf("loss = %f\n", loss[0]);
+    // loss[0] = loss_val;
+
+    // printf("loss = %f\n", loss[0]);
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     
@@ -218,13 +238,13 @@ void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 } // WORKS on Cluster 1
 
 void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
+                float *weights, float *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images){
 
-    double lr = 0.5;
+    float lr = 0.5;
     double b_checksum = 0.0;
-    double W_checksum = 0.0;
+    float W_checksum = 0.0;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
@@ -233,9 +253,6 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         idx_eff = compute_id + ldB * out;
-
-        // printf("TRAINING STEP FP64 baseline: old biases[%u] = %f\n", 1 + compute_id + out * ldB, biases[ldB * out]);
-        // printf("TRAINING STEP FP64 baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
 
         // make sure that biases outside of the number of
         // output channels are zero
@@ -252,6 +269,8 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
+                // printf("DEBUG TS: weights[%u] = %f\n", W_idx_eff, weights[out * ldW + in]);
+                // printf("DEBUG TS: weight_grads[%u] = %f\n", W_idx_eff, weight_grads[out * ldW + in]);
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
                 W_checksum += weights[out * ldW + in];
             } 
@@ -264,12 +283,12 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
     printf("TRAINING STEP FP64 Baseline: W_checksum = %f\n", W_checksum);
-}
+} // Cluster 0
 
 // INFO: start of FP64 network implementation using SSRs
 //// Feedforward Step
 void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *biases, double *activations,
+                float *weights, uint32_t ldW, double *biases, double *activations,
                 uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id,
                 uint32_t setup_SSR){
 
@@ -281,6 +300,8 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
 
     register double acc = 0.0;
+    // we use the dummy register in order to fully consume the SSR registers
+    register double dummy = 0.0;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -292,11 +313,9 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     if (setup_SSR) {
 
         // setup of input data (MNIST image)
-        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
                         IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldI);
+                        sizeof(double));
         
         // setup of weights
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
@@ -324,6 +343,13 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             : [ acc ] "+f"(acc)
             : [ n_frep ] "r"(IN_CH - 1)
             :"ft0", "ft1", "ft2");
+        } else {
+            asm volatile(
+                "frep.o     %[n_frep], 1, 0, 0 \n"
+                "fadd.d     %[dummy], ft0, ft1 \n"
+            : [ dummy ] "+f"(dummy) 
+            : [ n_frep ] "r"(IN_CH - 1)
+            :"ft0", "ft1", "ft2");
         }
 
         activations[ldB * out] = acc;
@@ -345,7 +371,7 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 //// Activation Step
 void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, uint32_t ldW, double *activations, uint32_t ldB,
+                float *weights, uint32_t ldW, double *activations, uint32_t ldB,
                 double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max, uint32_t setup_SSR){
 
@@ -370,92 +396,75 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
                         ssr0_b, 
                         ssr0_i);
 
-    } // INFO: this line breaks the RTL simulation
+    } 
 
-    max_core = activations[0]; // INFO: up to here programm finishes successfully in RTL
+    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
+    
+    max_core = activations[0]; 
 
+    // Start of SSR region
+    snrt_ssr_enable();
     for(uint32_t out = 0; out < OUT_CH; out++){
         idx_eff = compute_id + ldB * out;
-        if(!(idx_eff > OUT_CH * 5 - 1)){
-            if(activations[ldB * out] > max_core) {
-                max_core = activations[ldB * out];
-            }
-        }
-    } // this also runs successfully in RTL
-
-
-
-    
-    // snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
-
-
-    // // Start of SSR region
-    // snrt_ssr_enable();
-    // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     idx_eff = compute_id + ldB * out;
-    //     if(!(idx_eff > OUT_CH * 5 - 1)){
-    //         snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &activations[ldB * out]);
-    //     }
-    //     printf("new ACTIVATION FP64 with SSRs: activations[%u] = %f\n", 1 + compute_id + ldB * out, activations[ldB * out]);
-    //     asm volatile(
-    //                 "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
-    //                 "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
-    //                 "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
-    //                 "beqz       t0, 2f\n"                   // else go to loop start
-    //                 "1: \n"     
-    //                 "fmv.d      %[max_core], fs2 \n"
-    //                 "2: \n"
-    //                 : [ max_core ] "+&f"(max_core)
-    //                 :
-    //                 :"ft0", "ft1", "ft2");
-    // }
+        asm volatile(
+                    "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
+                    "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
+                    "bnez       t0, 1f\n"                   // if the value was greater overwrite the old
+                    "beqz       t0, 2f\n"                   // else go to loop start
+                    "1: \n"     
+                    "fmv.d      %[max_core], fs2 \n"
+                    "2: \n"
+                    : [ max_core ] "+&f"(max_core)
+                    :
+                    :"ft0", "ft1", "ft2");
+    }
 
 
     // // End of the SSR region. 
-    // snrt_ssr_disable();
+    snrt_ssr_disable();
     // INFO: after disabling the SSRs we can free the registers
     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2)); // INFO: this line also do not break the RTL simulation
 
-    // max[compute_id] = max_core;
-    // // printf("max[%u] = %f\n", compute_id, max[compute_id]);
+    max[compute_id] = max_core;
+    // printf("max[%u] = %f\n", compute_id, max[compute_id]);
 
-    // snrt_cluster_hw_barrier();
+    snrt_cluster_hw_barrier();
 
-    // double max_global = max[0];
+    double max_global = max[0];
 
-    // // Reduction on single core
-    // if(compute_id == 0){
-    //     for(uint32_t core = 0; core < compute_num; core++){
-    //         if(max[core] > max_global){
-    //             max_global = max[core];
-    //         }
-    //     }
+    // Reduction on single core
+    if(compute_id == 0){
+        for(uint32_t core = 0; core < compute_num; core++){
+            if(max[core] > max_global){
+                max_global = max[core];
+            }
+        }
 
-    //     // FIXME: actually OUT_CH should be multiplied by number of compute cores
-    //     // TODO: add core multiplicand instad of manually multiplying by correct number
-    //     for(uint32_t out = 0; out < OUT_CH*5; out++){
-    //         if(activations[out]){
-    //             // activations[out] = exp(activations[out] - max_global);
-    //             activations[out] = my_exp(activations[out] - max_global);
-    //             sum += activations[out];
-    //         } else {
-    //             activations[out] = 0.0;
-    //         }
-    //     }
+        // FIXME: actually OUT_CH should be multiplied by number of compute cores
+        // TODO: add core multiplicand instad of manually multiplying by correct number
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            if(activations[out]){
+                // activations[out] = exp(activations[out] - max_global);
+                activations[out] = my_exp(activations[out] - max_global);
+                sum += activations[out];
+            } else {
+                activations[out] = 0.0;
+            }
+        }
 
 
-    //     // for(uint32_t out = 0; out < OUT_CH*5; out++){
-    //     //     activations[out] /= sum;
-    //     //     printf("new SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
-    //     // }
-    // }
+        for(uint32_t out = 0; out < OUT_CH*5; out++){
+            activations[out] /= sum;
+            // printf("new SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+        }
+    }
 
     snrt_cluster_hw_barrier();
 }
 
 //// Gradient Update
 void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
+                float *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
                 uint32_t ldB, double *image, uint32_t *target, uint32_t ldI, 
                 uint32_t compute_id, double *loss, uint32_t compute_num, uint32_t setup_SSR){
 
@@ -584,7 +593,7 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 //// Training Step
 void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
+                float *weights, float *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images, uint32_t setup_SSR){
     
