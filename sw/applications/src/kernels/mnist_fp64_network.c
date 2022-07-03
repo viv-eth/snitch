@@ -93,7 +93,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
+        // printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
     }
 
     snrt_cluster_hw_barrier();
@@ -158,7 +158,7 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             activations[out] /= sum;
-            printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -249,7 +249,7 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     float lr = 0.5;
     // double b_checksum = 0.0;
-    // float W_checksum = 0.0;
+    // double W_checksum = 0.0;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
@@ -288,7 +288,7 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
     // printf("TRAINING STEP FP64 Baseline: W_checksum = %f\n", W_checksum);
-} // RTL PASS
+} // RTL TODO
 
 // INFO: start of FP64 network implementation using SSRs
 //// Feedforward Step
@@ -594,7 +594,7 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     snrt_cluster_hw_barrier();
 
-} // RTL TODO
+} // RTL PASS
 
 //// Training Step
 void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -705,4 +705,5 @@ void training_step_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     printf("new TRAINING STEP FP64 with SSRs: b_checksum = %f\n", b_checksum);
     printf("new TRAINING STEP FP64 with SSRs: W_checksum = %f\n", W_checksum);
-}
+} // RTL TODO
+// GIM: cannot store weight gradients AND weights in double precision on the same cluster
