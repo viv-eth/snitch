@@ -65,7 +65,7 @@ typedef struct network_fp64_t_ {
     uint32_t OUT_CH;
 
     double *b;
-    float *W;
+    double *W;
     double *b_grad;
     double *W_grad;
 
