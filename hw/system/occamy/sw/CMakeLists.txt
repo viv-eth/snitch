@@ -13,7 +13,8 @@ set(SNITCH_SIMULATOR ${CMAKE_CURRENT_SOURCE_DIR}/../bin/snitch_cluster.vlt CACHE
 project(snitch_cluster LANGUAGES C ASM)
 include(SnitchUtilities)
 
-add_compile_options(-O3 -g -ffunction-sections)
+# -w options to suppress warnings
+add_compile_options(-O3 -g -ffunction-sections -w)
 
 enable_testing()
 add_subdirectory(${SNITCH_SOFTWARE_DIR}/snRuntime snRuntime)
