@@ -37,12 +37,12 @@ void feedforward_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
+        // printf("FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
     snrt_cluster_hw_barrier();
 
-}
+} // RTL TODO
 
 //// Activation Step
 void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -88,11 +88,11 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
     snrt_cluster_hw_barrier();
-}
+} // RTL TODO
 
 void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
@@ -160,7 +160,7 @@ void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
-}
+} // RTL TODO
 
 void training_step_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, float *weight_grads, uint32_t ldW, float *biases, float *bias_grads,
@@ -200,7 +200,7 @@ void training_step_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     printf("new TRAINING STEP FP32 Baseline: b_checksum = %f\n", b_checksum);
     printf("new TRAINING STEP FP32 Baseline: W_checksum = %f\n", W_checksum);
-}
+} // RTL TODO
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
 //// Feedforward Step
@@ -290,7 +290,7 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
     snrt_cluster_hw_barrier();
 
-}
+} // RTL TODO
 
 //// Gradient Update
 void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -461,7 +461,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     printf("GRADIENT UPDATE FP32 SIMD with SSRs: W_checksum[%u] = %f\n", 1 + compute_id, W_checksum);
 
     snrt_cluster_hw_barrier();
-}
+} // RTL TODO
 
 //// Training Step
 // FIXME: not giving correct weight checksum compared to baseline 
@@ -595,4 +595,4 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     printf("FP32 with SSRs and SIMD: b_checksum = %f\n", b_checksum);
     printf("FP32 with SSRs and SIMD: W_checksum = %f\n", W_checksum);
 
-}
+} // RTL TODO

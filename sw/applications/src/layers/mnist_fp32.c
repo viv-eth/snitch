@@ -230,9 +230,9 @@ void mnist_fp32(const network_fp32_t *n){
 
             if(RUN_FEEDFORWARD){
                 
-                if(!compute_id){
-                    printf("[MNIST] FF start\n");
-                }
+                // if(!compute_id){
+                //     printf("[MNIST] FF start\n");
+                // }
 
                 // TODO: remove core_sync
                 if(BASELINE){
@@ -257,9 +257,9 @@ void mnist_fp32(const network_fp32_t *n){
                     benchmark_get_cycle();
                 }
 
-                if(!compute_id){
-                    printf("[MNIST] FF end\n");
-                }
+                // if(!compute_id){
+                //     printf("[MNIST] FF end\n");
+                // }
 
             }
         } else if (!snrt_is_compute_core() && cluster_id == 0){
@@ -277,9 +277,9 @@ void mnist_fp32(const network_fp32_t *n){
                     snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 }
             } else {
-                if(!cluster_id){
-                    printf("[MNIST] FF not run. \n");
-                }
+                // if(!cluster_id){
+                //     printf("[MNIST] FF not run. \n");
+                // }
             }
         }
 
@@ -338,9 +338,9 @@ void mnist_fp32(const network_fp32_t *n){
             float *img_ptr = ((uint32_t)images) - cluster_offset;
 
             if(RUN_GRADIENT_UPDATE){
-                if(!compute_id){
-                    printf("[MNIST] GU start\n");
-                }
+                // if(!compute_id){
+                //     printf("[MNIST] GU start\n");
+                // }
                 if(BASELINE){
                     // INFO: baseline
                     benchmark_get_cycle();
@@ -360,13 +360,13 @@ void mnist_fp32(const network_fp32_t *n){
                                             loss, compute_num, setup_SSR);
                     benchmark_get_cycle();
                 }
-                if(!compute_id){
-                    printf("[MNIST] GU end\n");
-                }
+                // if(!compute_id){
+                //     printf("[MNIST] GU end\n");
+                // }
             } else {
-                if(!compute_id){
-                    printf("[MNIST] GU not run. \n");
-                }
+                // if(!compute_id){
+                //     printf("[MNIST] GU not run. \n");
+                // }
             } // end of gradient update
         } else if (!snrt_is_compute_core() && cluster_id == 1){
             if(RUN_GRADIENT_UPDATE){
@@ -380,9 +380,9 @@ void mnist_fp32(const network_fp32_t *n){
                     // snrt_cluster_hw_barrier(); // additional barrier due to SSRs
                 }
             } else {
-                if(!cluster_id){
-                    printf("[MNIST] GU not run. \n");
-                }
+                // if(!cluster_id){
+                //     printf("[MNIST] GU not run. \n");
+                // }
             }
         }
     }
@@ -452,9 +452,9 @@ void mnist_fp32(const network_fp32_t *n){
 
         if(RUN_TRAINING_STEP){
 
-            if(!compute_id){
-                    printf("[MNIST] Training step start\n");
-            }
+            // if(!compute_id){
+            //         printf("[MNIST] Training step start\n");
+            // }
 
             if(BASELINE){
                 // INFO: baseline
@@ -474,9 +474,9 @@ void mnist_fp32(const network_fp32_t *n){
                 benchmark_get_cycle();
             }
 
-            if(!compute_id){
-                    printf("[MNIST] Training step done\n");
-            }
+            // if(!compute_id){
+            //         printf("[MNIST] Training step done\n");
+            // }
         }
 
     } else if(!snrt_is_compute_core() && cluster_id == 0){
@@ -484,12 +484,12 @@ void mnist_fp32(const network_fp32_t *n){
             if(RUN_TRAINING_STEP){
                 // no HW barriers required for Baseline
             } else {
-                printf("[MNIST] INFO: Training Step not run\n");
+                // printf("[MNIST] INFO: Training Step not run\n");
             }
         } else {
             if(RUN_TRAINING_STEP){
             } else {
-                printf("[MNIST] INFO: Training Step not run\n");
+                // printf("[MNIST] INFO: Training Step not run\n");
             }
         }
     }
