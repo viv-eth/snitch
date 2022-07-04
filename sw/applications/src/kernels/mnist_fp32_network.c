@@ -119,7 +119,7 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
     }
     snrt_cluster_hw_barrier();
-} // RTL TODO
+} // RTL PASS
 
 void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
@@ -237,9 +237,12 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 uint32_t setup_SSR){
     
     register float acc = 0.0;
+    // we need to add a dummy register to fully consume the SSRs
+    register float dummy = 0.0;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
+    volatile uint32_t idx_eff;
 
     // SSR strides and bounds only have to be configured
     // once in the beginning
@@ -248,32 +251,31 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     if (setup_SSR) {
 
         // setup of DATA MOVER input data (MNIST image)
-        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
                         IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldI);
+                        sizeof(double));
         
         // setup of DATA MOVER for weights
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH, 
+                        IN_CH / 2, 
                         OUT_CH, 
                         sizeof(double), 
                         sizeof(double) * ldW);
     }
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
+        idx_eff = compute_id + ldB * out;
         // we need to read the image for every new iteration
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         // Start of SSR region
-        snrt_ssr_enable();
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+        snrt_ssr_enable();
         register v2f32 reduce_reg;
         register v2f32 sum;
         const register float zero = 0;
-        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+        if(!(idx_eff > OUT_CH * 5 - 1)){
             acc = biases[ldB * out];
             // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM --> Issue was missing ft2 clobber (reserved for SSR)
             asm volatile(
@@ -288,6 +290,13 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 : "ft0", "ft1", "ft2");
         } else {
             acc = 0.0;
+            // GIM: which instructions has least overhead?
+            asm volatile(
+                "frep.o        %[n_frep], 1, 0, 0 \n"
+                "vfadd.s       %[dummy], ft0, ft1 \n"
+            : [ dummy ] "+f"(dummy)
+            : [ n_frep ] "r"(IN_CH / 2 - 1)
+            : "ft0", "ft1");
         }
 
         asm volatile(
