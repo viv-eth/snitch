@@ -19,6 +19,32 @@ union fp16_v4f16_u {
 };
 typedef char v8f8 __attribute__((vector_size(8)));
 
+float my_fabs(float x) {
+    if(x < 0) {
+        return -x;
+    } else {
+        return x;
+    }
+}
+
+float my_exp(float x) 
+{ 
+    const float epsilon = 1e-7; 
+    float sum = 0.0; 
+    int n = 0; 
+    float factorial = 1; 
+    float power=1.0; 
+    float term; 
+    do { 
+        term = power/factorial; 
+        sum += term; 
+        n += 1; 
+        power *= x; 
+        factorial *=n; 
+    } while (my_fabs(term)>=epsilon); 
+    return sum; 
+} 
+
 // INFO: start of FP32 baseline network implementation
 void feedforward_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, uint32_t ldW, float *biases, float *activations,
@@ -42,7 +68,7 @@ void feedforward_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     snrt_cluster_hw_barrier();
 
-} // RTL TODO
+} // RTL PASS
 
 //// Activation Step
 void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -78,7 +104,8 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             if(activations[out]){
-                activations[out] = exp(activations[out] - max_global);
+                // activations[out] = exp(activations[out] - max_global);
+                activations[out] = my_exp(activations[out] - max_global);
                 sum += activations[out];
             } else {
                 activations[out] = 0.0;
@@ -88,7 +115,7 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            // printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+            printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
     snrt_cluster_hw_barrier();

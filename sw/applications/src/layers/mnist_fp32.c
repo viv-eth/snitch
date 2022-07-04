@@ -151,9 +151,7 @@ void mnist_fp32(const network_fp32_t *n){
     uint32_t setup_SSR;
     if(BASELINE){
         // baseline does *not* use SSRs
-        // setup_SSR = 0;
-        // For the RTL we have to use also the DMA transfer ...
-        setup_SSR = 1;
+        setup_SSR = 0;
     } else {
         // define whether SSRs should be used or not
         setup_SSR = 1;
@@ -376,8 +374,6 @@ void mnist_fp32(const network_fp32_t *n){
                 } else {
                     // INFO: FP32 with SSRs
                     snrt_cluster_hw_barrier();
-                    // snrt_cluster_hw_barrier(); // additional barrier due to SSRs
-                    // snrt_cluster_hw_barrier(); // additional barrier due to SSRs
                 }
             } else {
                 // if(!cluster_id){
@@ -391,7 +387,6 @@ void mnist_fp32(const network_fp32_t *n){
     // INFO: replacing global barrier with custom barrier for RTL sims
     snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
-    // TODO: implement correct DMA transfer & check with GIM correctness of data movement
     if(setup_SSR && RUN_TRAINING_STEP){
         // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
         if(snrt_is_dm_core() && cluster_id==0) {
@@ -401,7 +396,7 @@ void mnist_fp32(const network_fp32_t *n){
             float *weight_grad_ptr = ((uint32_t)weight_grads_cl0) + cluster_offset;
             float *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
             snrt_dma_txid_t txid_WG = 
-                snrt_dma_start_2d(weight_grads_cl0,                // destination
+                snrt_dma_start_2d(weight_grads_cl0,       // destination
                                 weight_grad_ptr,          // source
                                 n->dtype * IN_CH,         // size
                                 n->dtype * IN_CH ,        // destination stride
@@ -409,7 +404,7 @@ void mnist_fp32(const network_fp32_t *n){
                                 n->OUT_CH);               // repetitions
 
             snrt_dma_txid_t txid_BG = 
-                snrt_dma_start_1d(activations_cl0,            // destination
+                snrt_dma_start_1d(activations_cl0,        // destination
                                 bias_grad_ptr,            // source
                                 n->dtype * n->OUT_CH);    // size
 
