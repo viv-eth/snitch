@@ -54,7 +54,7 @@ void mnist_fp32(const network_fp32_t *n){
     // size of a single MNIST image (28x28 = 784 pixels)
     uint32_t image_size = IN_CH * n->dtype;
     // size for storing the maximum on each core of a cluster (only used on cluster 0)
-    uint32_t max_size = n->dtype;//compute_num * n->dtype;
+    uint32_t max_size = compute_num * n->dtype; // or n->dtype?
     // size of the target for image classification (0...9)
     uint32_t target_size = sizeof(uint32_t);
     // result of the cross entropy loss calculation
@@ -249,7 +249,7 @@ void mnist_fp32(const network_fp32_t *n){
                     feedforward_fp32_ssr_simd_frep(n->IN_CH1, n->IN_CH2, div, 
                                         &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                         ldB, &images[curr_img], ldI, compute_id, setup_SSR);
-                    softmax_activation_fp32(n->IN_CH1, n->IN_CH2, div, 
+                    softmax_activation_fp32n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                                 &images[curr_img], ldI, compute_id, compute_num, max);
                     benchmark_get_cycle();

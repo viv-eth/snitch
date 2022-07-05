@@ -32,6 +32,11 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id,
                 uint32_t setup_SSR);
 
+void softmax_activation_fp32_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                float *weights, uint32_t ldW, float *activations, uint32_t ldB,
+                float *image, uint32_t ldI, uint32_t compute_id, 
+                uint32_t compute_num, float *max, uint32_t setup_SSR);
+
 void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
                 uint32_t ldB, float *image, uint32_t *target, uint32_t ldI, 

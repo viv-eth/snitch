@@ -76,22 +76,33 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 float *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, float *max){
 
-    float max_core;
+    float max_core = 0.0;
     float sum = 0.0;
+    float max_global;
+
+    volatile uint32_t idx_eff;
+
+    // snrt_ssr_enable();
 
     max_core = activations[0];
 
     for(uint32_t out = 0; out < OUT_CH; out++){
-        if(activations[ldB * out] > max_core) {
-            max_core = activations[ldB * out];
-        }
+        idx_eff = compute_id + ldB * out;
+        if(!(idx_eff > OUT_CH * 5 - 1)){
+            if(activations[ldB * out] > max_core) {
+                max_core = activations[ldB * out];
+            }
+        } 
+
     }
 
-    max[compute_id] = max_core;
+    max[compute_id] = max_core; // GIM: Why is this failing in the RTL with SSRs???
+
+    // printf("FEEDFORWARD FP32 Baseline: max[%u] = %f\n", compute_id, max[compute_id]);
     
     snrt_cluster_hw_barrier();
 
-    float max_global = max[0];
+    max_global = max[0];
 
     // Reduction on single core
     if(compute_id == 0){
@@ -100,12 +111,12 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 max_global = max[core];
             }
         }
-
+        
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             if(activations[out]){
-                // activations[out] = exp(activations[out] - max_global);
-                activations[out] = my_exp(activations[out] - max_global);
+                activations[out] = exp(activations[out] - max_global);
+                // activations[out] = my_exp(activations[out] - max_global);
                 sum += activations[out];
             } else {
                 activations[out] = 0.0;
@@ -115,11 +126,12 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
+
     snrt_cluster_hw_barrier();
-} // RTL PASS
+} // RTL PASS / RTL TODO: not working yet with SIMD implementation
 
 void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weight_grads, uint32_t ldW, float *bias_grads, float *activations, 
@@ -235,10 +247,12 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 float *weights, uint32_t ldW, float *biases, float *activations,
                 uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id,
                 uint32_t setup_SSR){
+
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
-    register float acc = 0.0;
-    // we need to add a dummy register to fully consume the SSRs
-    register float dummy = 0.0;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -252,7 +266,7 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
         // setup of DATA MOVER input data (MNIST image)
         snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-                        IN_CH, 
+                        IN_CH / 2, 
                         sizeof(double));
         
         // setup of DATA MOVER for weights
@@ -260,7 +274,7 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                         IN_CH / 2, 
                         OUT_CH, 
                         sizeof(double), 
-                        sizeof(double) * ldW);
+                        sizeof(double) * ldW / 2);
     }
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
@@ -269,9 +283,12 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         // of a core, because otherwise it will evaluate to
         // all zeros due to the stream semantics
         // Start of SSR region
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
         snrt_ssr_enable();
+        register float acc = 0.0;
+        // we need to add a dummy register to fully consume the SSRs
+        register float dummy = 0.0;
         register v2f32 reduce_reg;
         register v2f32 sum;
         const register float zero = 0;
@@ -279,54 +296,45 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             acc = biases[ldB * out];
             // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM --> Issue was missing ft2 clobber (reserved for SSR)
             asm volatile(
-                "vfcpka.s.s     %[reduce_reg], %[acc], %[zero] \n"
-                "frep.o         %[n_frep], 1, 0, 0 \n"
-                "vfmac.s        %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
-                // "vfcpka.s.s        %[sum], %[zero], %[zero] \n"
-                // "vfsum.s           %[sum], %[reduce_reg] \n"
-                // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
-                : [ reduce_reg ] "+f"(reduce_reg), [ acc ] "+f"(acc), [ sum ] "=&f"(sum)
+                "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
+                "frep.o            %[n_frep], 1, 0, 0 \n"
+                "vfmac.s           %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
+                "vfcpka.s.s        %[sum], %[zero], %[zero] \n"
+                "vfsum.s           %[sum], %[reduce_reg] \n"
+                "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
+                : [ reduce_reg ] "+&f"(reduce_reg), [ acc ] "+&f"(acc), [ sum ] "+&f"(sum)
                 : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2 - 1)
                 : "ft0", "ft1", "ft2");
+
         } else {
             acc = 0.0;
-            // GIM: which instructions has least overhead?
+            // GIM: which instructions have least overhead?
             asm volatile(
                 "frep.o        %[n_frep], 1, 0, 0 \n"
                 "vfadd.s       %[dummy], ft0, ft1 \n"
             : [ dummy ] "+f"(dummy)
             : [ n_frep ] "r"(IN_CH / 2 - 1)
-            : "ft0", "ft1");
+            : "ft0", "ft1", "ft2");
         }
-
-        asm volatile(
-                "vfcpka.s.s        %[sum], %[zero], %[zero] \n"
-                "vfsum.s           %[sum], %[reduce_reg] \n"
-                "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
-                : [ acc ] "+f"(acc), [ sum ] "=&f"(sum)
-                : [ zero ] "f"(zero),  [ reduce_reg ] "f"(reduce_reg)
-                :"ft0", "ft1", "ft2");
 
         activations[ldB * out] = acc;
         acc = 0.0;
 
         // End of SSR region.
+        snrt_fpu_fence();
         snrt_ssr_disable();
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
     }
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        // cleanup of leftover columns
-        // if(compute_id + out * ldB > OUT_CH * 5 - 1){
-        //     activations[ldB * out] = 0;
-        // }
-
-        printf("FEEDFORWARD FP32 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FEEDFORWARD FP32 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
 
     snrt_cluster_hw_barrier();
 
-} // RTL TODO
+} // RTL PASS
+
 
 //// Gradient Update
 void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -344,6 +352,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     float b_grad_update = 0.0;
     float W_grad_update = 0.0;
     float b_checksum = 0.0;
+    float loss_val = 0.0;
     register float W_checksum = 0.0;
     volatile uint32_t idx_eff;
     volatile uint32_t idx_eff_W;
@@ -352,13 +361,8 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     uint32_t target_n = *target;
     
     // compute the loss
-    float loss_val = 0.0 - log(activations[target_n -compute_id]);
-
-    // save the value into the loss pointer
     if(!compute_id){
-        loss[0] += loss_val;
-    } else {
-        loss[0] += 0;
+        loss_val = 0.0 - log(activations[target_n - compute_id]);
     }
 
     // get the total number of input features
@@ -370,25 +374,23 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     if (setup_SSR) {
 
         // SSR read setup of input data (MNIST image)
-        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
                         IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldI);
+                        sizeof(double));
         
         // SSR read setup of weight gradients 
         snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH, 
+                        IN_CH / 2, 
                         OUT_CH, 
                         sizeof(double), 
-                        sizeof(double) * ldW);
+                        sizeof(double) * ldW / 2);
 
         // SSR write setup of weight gradients
         snrt_ssr_loop_2d(SNRT_SSR_DM2, 
-                        IN_CH, 
+                        IN_CH / 2, 
                         OUT_CH, 
                         sizeof(double), 
-                        sizeof(double) * ldW);
+                        sizeof(double) * ldW / 2);
 
 
 
@@ -398,33 +400,28 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         b_grad_update = 0.0;
-        // SSR start address need to be configured each time
         idx_eff = compute_id + ldB * out;
-        // printf("idx_eff[%u] = %u\n", compute_id, idx_eff);
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         // INFO: we need to add this, since after DMA transfer out of bound activations
         //       evaluate to -INF
         if(idx_eff  > OUT_CH * 5 - 1){
-            // b_grad_update = 0.0;
-            // printf("idx_eff[%u] = %u\n", compute_id, idx_eff);
+            b_grad_update = 0.0;
         } else {
             b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
-            // GIM: this printf magically fixes everything, it shall not be removed
-            // printf("magic\n");
         }
 
-        // printf("b_grad_update[%u] = %f\n", compute_id, b_grad_update);
-
         b_checksum += b_grad_update;
-        // snrt_cluster_hw_barrier(); // Discuss with GIM
+        // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+        // TODO: add 3rd stream with write
         // GIM: the SSR write fails
         snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
-        // TODO: add 3rd stream with write
         snrt_ssr_enable();  
         register v2f32 reduce_reg;
         register float sum = 0.0;
+        // dummy register in order to fully consume the SSRs
+        register float dummy = 0.0;
         register const float zero = 0;
         register v2f32 zero_reg;
         // zero initialze the reduce register for each loop
@@ -442,7 +439,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             idx_eff_W = compute_id*IN_CH + out * ldW + in;
             // add plus one to the effective index, since we are writing two values at once
             // GIM: discuss how to incorporate if statement into frep loop
-            if(!(idx_eff_W - 1 > IN_CH * OUT_CH * 5 - 1)){
+            if(!(idx_eff_W > IN_CH * OUT_CH * 5 - 1)){
                 // TODO: the second vfadd is actually not needed, but added in order to be able
                 // to compute the checksum of the weights ---> remove it for benchmarking
                 asm volatile(
@@ -473,25 +470,28 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 // W_checksum += sum;
                 snrt_ssr_enable();
                 
+            } else {
+                asm volatile(
+                    "vfadd.s       %[dummy], ft0, ft1 \n"
+                    "vfadd.s       ft2, %[zero_reg], %[zero_reg] \n"
+                    : [dummy] "+&f"(dummy), [zero_reg] "+&f"(zero_reg)
+                    :
+                    : "ft0", "ft1", "ft2"
+                );
             }
 
             in += 2;
         }
 
         bias_grads[ldB * out] = b_grad_update;
-        // TODO: FPU Fence is broken, check Noah's new implementation
-        // and update it in the snRuntime --> not necessary here though
-        // snrt_fpu_fence();
+        // NOTE: potentially remove FPU fence
+        snrt_fpu_fence();
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
     }
 
-
-    // for(uint32_t out = 0; out < OUT_CH; out++){
-    //     printf("GRADIENT UPDATE FP32 SIMD with SSRs: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
-    // }
 
     printf("GRADIENT UPDATE FP32 SIMD with SSRs: b_checksum[%u] = %f\n", 1 + compute_id, b_checksum);
     printf("GRADIENT UPDATE FP32 SIMD with SSRs: W_checksum[%u] = %f\n", 1 + compute_id, W_checksum);
