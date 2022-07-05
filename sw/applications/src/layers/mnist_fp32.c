@@ -20,8 +20,8 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
-#define RUN_TRAINING_STEP 0
+#define RUN_GRADIENT_UPDATE 1
+#define RUN_TRAINING_STEP 1
 
 void mnist_fp32(const network_fp32_t *n){
 
@@ -344,7 +344,7 @@ void mnist_fp32(const network_fp32_t *n){
                     benchmark_get_cycle();
                     gradient_update_fp32n(n->IN_CH1, n->IN_CH2, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
-                                        &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
+                                        &bias_grads_cl1[b_offset], &act_ptr[b_offset], 
                                         ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
                                         loss, compute_num);
                     benchmark_get_cycle();
@@ -455,8 +455,8 @@ void mnist_fp32(const network_fp32_t *n){
                 // INFO: baseline
                 benchmark_get_cycle();
                 training_step_fp32n(n->IN_CH1, n->IN_CH2, div, 
-                                            &weights_cl0[W_offset], &weight_grads_cl0[W_offset], ldW, 
-                                            &biases_cl0[b_offset], &activations_cl0[b_offset], ldB, 
+                                            &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                            &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
                                             compute_id, compute_num, number_of_images);
                 benchmark_get_cycle();
             } else {
