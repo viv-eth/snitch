@@ -288,7 +288,7 @@ void training_step_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
     // printf("TRAINING STEP FP64 Baseline: W_checksum = %f\n", W_checksum);
-} // RTL TODO
+} // RTL PASS
 
 // INFO: start of FP64 network implementation using SSRs
 //// Feedforward Step
