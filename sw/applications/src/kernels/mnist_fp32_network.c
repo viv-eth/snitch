@@ -480,19 +480,20 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     
     float lr = 0.5;
 
-    float b_checksum = 0.0;
-    float W_checksum = 0.0;
+    // float b_checksum = 0.0;
+    // float W_checksum = 0.0;
 
     // convert number of images to float for vectorized computation
     float nimg = ((float)number_of_images);
     register v2f32 lr_vec;
     register v2f32 nimg_vec;
+    register v2f32 one_vec;
     // pack the learning rate and number of images into a vector for vectorized computation
     asm volatile(
         "vfcpka.s.s          %[lr_vec], %[lr], %[lr] \n"
-        "vfcpka.s.s          %[nimg_vec], %[nimg], %[nimg] \n"
-        : [lr_vec] "+&f"(lr_vec), [nimg_vec] "+&f"(nimg_vec)
-        : [lr] "f"(-lr), [nimg] "f"(nimg)
+        // "vfcpka.s.s          %[nimg_vec], %[nimg], %[nimg] \n"
+        : [lr_vec] "+&f"(lr_vec), [nimg_vec] "+&f"(nimg_vec), [one_vec] "+&f"(one_vec)
+        : [lr] "f"(-lr), [nimg] "f"(nimg), [one] "f"(1.0f)
         : "ft0", "ft1", "ft2"
     );
 
@@ -544,14 +545,14 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
             snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]); // weight gradients stored in ft0
             // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]); // weights stored in ft1
 
-            snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);        
+            // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);        
 
             biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
         } else {
             biases[ldB * out] = 0;
         }
 
-        b_checksum += biases[ldB * out];
+        // b_checksum += biases[ldB * out];
         
 
         snrt_ssr_enable();
@@ -574,23 +575,22 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
             idx_eff_W = compute_id*IN_CH + out * ldW + in;
             
+            // discuss with GIM: can I FREP this somehow?
             if(!(idx_eff_W  > IN_CH * OUT_CH * 5 - 1)){
-    //             // snrt_ssr_disable();
-    //             // printf("DEBUG: weight_grads[%u] = %f\n", idx_eff_W, weight_grads[out * ldW + in]);
-    //             // printf("DEBUG: weight_grads[%u] = %f\n", idx_eff_W, weight_grads[out * ldW + in + 1]);
-    //             // snrt_ssr_enable();
                 asm volatile(
                     "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
-                    "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
-                    "vfadd.s              ft2, %[reduce_reg], %[zero_reg] \n"               // write the value into the weights
-                : [reduce_reg] "+&f"(reduce_reg), [zero_reg] "+&f"(zero_reg)
-                : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec), [zero] "f"(zero)
+                    // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divide by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
+                    // "vfadd.s              ft2, %[reduce_reg], %[zero_reg] \n"               // write the value into the weights
+                : [reduce_reg] "+&f"(reduce_reg), [zero_reg] "+&f"(zero_reg) 
+                : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec), [zero] "f"(zero), [one_vec] "f"(one_vec)
                 : "ft0", "ft1", "ft2"
                 ); 
 
-                // discuss with GIM: can I FREP this somehow?
-                snrt_ssr_disable(); // Discuss with GIM: why do we need to disable SSRs?
-                W_checksum += reduce_reg[0] + reduce_reg[1];
+                snrt_ssr_disable();
+                // W_checksum += reduce_reg[0] + reduce_reg[1];
+                // GIM: why does vfdiv fail in the RTL?
+                weights[out*ldW] = reduce_reg[0] / nimg;
+                weights[out*ldW + 1] = reduce_reg[1] / nimg;
                 snrt_ssr_enable();
             } 
 
@@ -604,7 +604,7 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
     }
 
-    printf("FP32 with SSRs and SIMD: b_checksum = %f\n", b_checksum);
-    printf("FP32 with SSRs and SIMD: W_checksum = %f\n", W_checksum);
+    // printf("FP32 with SSRs and SIMD: b_checksum = %f\n", b_checksum);
+    // printf("FP32 with SSRs and SIMD: W_checksum = %f\n", W_checksum);
 
-} // RTL TODO
+} // RTL PASS
