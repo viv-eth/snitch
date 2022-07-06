@@ -59,8 +59,6 @@ void mnist_fp32(const network_fp32_t *n){
     uint32_t target_size = sizeof(uint32_t);
     // result of the cross entropy loss calculation
     uint32_t loss_size = n->dtype;
-    // synchronization flags for the compute cores on among clusters
-    uint32_t core_sync_flag_size = compute_num*sizeof(uint32_t);
     // learning rate of the network
     uint32_t lr_size = sizeof(float);
 
@@ -116,26 +114,6 @@ void mnist_fp32(const network_fp32_t *n){
         targets = ptr;
         ptr += target_size * number_of_images;
     }
-    // void *ptr = (float *)snrt_cluster_memory().start;
-    // // void *ptr_start = ptr;
-    // float *max= ptr; // zero initialized
-    // ptr += max_size;
-    // float *loss = ptr; // zero initialized
-    // ptr += loss_size;
-    // float *images = ptr;
-    // ptr += number_of_images*image_size;
-    // float *biases = ptr; // bias GRADIENTS zero initialized
-    // ptr += bias_mat_size;
-    // float *activations = ptr;
-    // ptr += act_mat_size;
-    // float *weights = ptr; // weight GRADIENTS zero initialized
-    // ptr += weight_mat_size;
-    // // NOTE: core sync flag used to indictae whether computation is done or not
-    // // WARN: fails in the RTL
-    // uint32_t *core_sync = ptr; // zero initialized
-    // ptr += core_sync_flag_size;
-    // uint32_t *targets = ptr;
-    // ptr += number_of_images*target_size;
     // NOTE: following lines for debugging purposes only
     // void *ptr_end = (double *)snrt_cluster_memory().end;
     // if(compute_id == 0){   

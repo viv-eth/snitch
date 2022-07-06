@@ -231,7 +231,7 @@ void training_step_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // printf("new TRAINING STEP FP32 Baseline: b_checksum = %f\n", b_checksum);
     // printf("new TRAINING STEP FP32 Baseline: W_checksum = %f\n", W_checksum);
-} // RTL TODO
+} // RTL PASS
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
 //// Feedforward Step
@@ -254,30 +254,9 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     // once in the beginning
     // WARN In the RTL SSR strides MUST BE of size DOUBLE
 
-    if (setup_SSR) {
-
-        // setup of DATA MOVER input data (MNIST image)
-        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-                        IN_CH / 2, 
-                        sizeof(double));
-        
-        // setup of DATA MOVER for weights
-        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH / 2, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW / 2);
-    }
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
         idx_eff = compute_id + ldB * out;
-        // we need to read the image for every new iteration
-        // of a core, because otherwise it will evaluate to
-        // all zeros due to the stream semantics
-        // Start of SSR region
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
-        snrt_ssr_enable();
         register float acc = 0.0;
         // we need to add a dummy register to fully consume the SSRs
         register float dummy = 0.0;
@@ -285,6 +264,27 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         register v2f32 sum;
         const register float zero = 0;
         if(!(idx_eff > OUT_CH * 5 - 1)){
+            if (setup_SSR) {
+
+                // setup of DATA MOVER input data (MNIST image)
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                IN_CH / 2, 
+                                sizeof(double));
+                
+                // setup of DATA MOVER for weights
+                snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                                IN_CH / 2, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW / 2);
+            }
+            // we need to read the image for every new iteration
+            // of a core, because otherwise it will evaluate to
+            // all zeros due to the stream semantics
+            // Start of SSR region
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+            snrt_ssr_enable();
             acc = biases[ldB * out];
             // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM --> Issue was missing ft2 clobber (reserved for SSR)
             asm volatile(
@@ -298,24 +298,15 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2 - 1)
                 : "ft0", "ft1", "ft2");
 
-        } else {
-            acc = 0.0;
-            // GIM: which instructions have least overhead?
-            asm volatile(
-                "frep.o        %[n_frep], 1, 0, 0 \n"
-                "vfadd.s       %[dummy], ft0, ft1 \n"
-            : [ dummy ] "+f"(dummy)
-            : [ n_frep ] "r"(IN_CH / 2 - 1)
-            : "ft0", "ft1", "ft2");
-        }
+            // End of SSR region.
+            snrt_fpu_fence();
+            snrt_ssr_disable();
+            asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+        } 
 
         activations[ldB * out] = acc;
         acc = 0.0;
 
-        // End of SSR region.
-        snrt_fpu_fence();
-        snrt_ssr_disable();
-        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
     }
 
@@ -361,32 +352,6 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
 
-    // SSR strides and bounds only have to be configured
-    // once in the beginning
-    if (setup_SSR) {
-
-        // SSR read setup of input data (MNIST image)
-        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-                        IN_CH / 2, 
-                        sizeof(double));
-        
-        // SSR read setup of weight gradients 
-        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH / 2, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW / 2);
-
-        // SSR write setup of weight gradients
-        snrt_ssr_loop_2d(SNRT_SSR_DM2, 
-                        IN_CH / 2, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW / 2);
-
-
-
-    }
 
 
     for(uint32_t out = 0; out < OUT_CH; out++){
@@ -399,16 +364,43 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         if(idx_eff  > OUT_CH * 5 - 1){
             b_grad_update = 0.0;
         } else {
+            
             b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+            
+            // SSR strides and bounds only have to be configured
+            // once in the beginning
+            if (setup_SSR) {
+
+                // SSR read setup of input data (MNIST image)
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                IN_CH / 2, 
+                                sizeof(double));
+                
+                // SSR read setup of weight gradients 
+                snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                                IN_CH / 2, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW / 2);
+
+                // SSR write setup of weight gradients
+                snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+                                IN_CH / 2, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW / 2);
+
+
+                // SSR start address need to be configured each time
+                snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+                snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+                // TODO: check WRITE stream
+                snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
+
+            }
         }
 
         // b_checksum += b_grad_update;
-        // SSR start address need to be configured each time
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
-        // TODO: add 3rd stream with write
-        // GIM: the SSR write fails
-        snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
         snrt_ssr_enable();  
         register v2f32 reduce_reg;
         register float sum = 0.0;
@@ -452,16 +444,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 // W_checksum += reduce_reg[0] + reduce_reg[1]; // this works
                 // snrt_ssr_enable();
                 
-            } else {
-                asm volatile(
-                    "vfadd.s       %[dummy], ft0, ft1 \n"
-                    "vfadd.s       %[dummy], ft2, %[zero_reg] \n"
-                    // "vfadd.s       ft2, %[zero_reg], %[zero_reg]\n" // GIM: why does this screw up the checksum?
-                    : [reduce_reg] "+&f"(reduce_reg), [dummy] "+&f"(dummy), [zero_reg] "+&f"(zero_reg)
-                    : [zero] "f"(zero)
-                    : "ft0", "ft1", "ft2"
-                );
-            }
+            } 
 
             in += 2;
         }
@@ -483,7 +466,6 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 } // RTL PASS
 
 //// Training Step
-// FIXME: not giving correct weight checksum compared to baseline 
 void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 float *weights, float *weight_grads, uint32_t ldW, float *biases, float *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
@@ -498,8 +480,8 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     
     float lr = 0.5;
 
-    // float b_checksum = 0.0;
-    // float W_checksum = 0.0;
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
 
     // convert number of images to float for vectorized computation
     float nimg = ((float)number_of_images);
@@ -517,53 +499,60 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
+    uint32_t volatile idx_eff;
     uint32_t volatile idx_eff_W;
 
     // SSR strides and bounds only have to be configured
     // once in the beginning
     // WARN In the RTL SSR strides MUST BE of size DOUBLE
 
-    // SSR strides and bounds only have to be configured
-    // once in the beginning
-    if (setup_SSR) {
-        
-        // SSR read setup of weight gradients
-        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
-                        IN_CH / 2, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW / 2);
-
-        // // SSR read setup of weights
-        // snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-        //                 IN_CH / 2, 
-        //                 OUT_CH, 
-        //                 sizeof(double), 
-        //                 sizeof(double) * ldW / 2);
-
-        // SSR write setup of weights
-        snrt_ssr_loop_2d(SNRT_SSR_DM2, 
-                        IN_CH / 2, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW / 2);
-    }
 
 
     for(uint32_t out = 0; out < OUT_CH; out++){
+
+        idx_eff = compute_id + out * ldB;
         // NOTE: we don't use SSRs for biases, as we don't have enough data movers
-        if(!(compute_id + out * ldB > OUT_CH * 5 - 1)){
+        if(!(idx_eff > OUT_CH * 5 - 1)){
+            // SSR strides and bounds only have to be configured
+            // once in the beginning
+            // TODO: only setup SSRs  if we are in bound
+            if (setup_SSR) {
+                
+                // SSR read setup of weight gradients
+                snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+                                IN_CH / 2, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW / 2);
+
+                // // SSR read setup of weights
+                // snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                //                 IN_CH / 2, 
+                //                 OUT_CH, 
+                //                 sizeof(double), 
+                //                 sizeof(double) * ldW / 2);
+
+                // SSR write setup of weights
+                snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+                                IN_CH / 2, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW / 2);
+            }
+        
+            // SSR start addresses need to be configured each time
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]); // weight gradients stored in ft0
+            // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]); // weights stored in ft1
+
+            snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);        
+
             biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
         } else {
             biases[ldB * out] = 0;
         }
 
-        // b_checksum += biases[ldB * out];
+        b_checksum += biases[ldB * out];
         
-        // SSR start addresses need to be configured each time
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]); // weight gradients stored in ft0
-        // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]); // weights stored in ft1
-        snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);
 
         snrt_ssr_enable();
         register v2f32 reduce_reg;
@@ -572,39 +561,38 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
         // dummy register to consume SSRs 
         register float dummy = 0.0;
         // snrt_cluster_hw_barrier();
+        // zero initialze the reduce register for each loop
+        asm volatile(
+                "vfcpka.s.s      %[reduce_reg], %[zero], %[zero] \n"
+                "vfcpka.s.s      %[zero_reg], %[zero], %[zero] \n"
+                : [ reduce_reg ] "+&f"(reduce_reg), [ zero_reg ] "+&f"(zero_reg)
+                : [ zero ] "f"(zero)
+                : "ft0", "ft1", "ft2"
+        );
+
         for(uint32_t in = 0; in < IN_CH;){
 
             idx_eff_W = compute_id*IN_CH + out * ldW + in;
             
-            if(!(idx_eff_W  > IN_CH * OUT_CH * 5)){
-                // snrt_ssr_disable();
-                // printf("DEBUG: weight_grads[%u] = %f\n", idx_eff_W, weight_grads[out * ldW + in]);
-                // printf("DEBUG: weight_grads[%u] = %f\n", idx_eff_W, weight_grads[out * ldW + in + 1]);
-                // snrt_ssr_enable();
+            if(!(idx_eff_W  > IN_CH * OUT_CH * 5 - 1)){
+    //             // snrt_ssr_disable();
+    //             // printf("DEBUG: weight_grads[%u] = %f\n", idx_eff_W, weight_grads[out * ldW + in]);
+    //             // printf("DEBUG: weight_grads[%u] = %f\n", idx_eff_W, weight_grads[out * ldW + in + 1]);
+    //             // snrt_ssr_enable();
                 asm volatile(
                     "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
                     "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
-                    "vfadd.s              ft2, %[reduce_reg], %[zero] \n"                   // write the value into the weights
+                    "vfadd.s              ft2, %[reduce_reg], %[zero_reg] \n"               // write the value into the weights
                 : [reduce_reg] "+&f"(reduce_reg), [zero_reg] "+&f"(zero_reg)
                 : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec), [zero] "f"(zero)
                 : "ft0", "ft1", "ft2"
                 ); 
 
                 // discuss with GIM: can I FREP this somehow?
-                // snrt_ssr_disable(); // Discuss with GIM: why do we need to disable SSRs?
-                // weights[out*ldW + in] -= reduce_reg[0];
-                // weights[out*ldW + in + 1] -= reduce_reg[1];
-                // W_checksum += reduce_reg[0] + reduce_reg[1];
-                // snrt_ssr_enable();
-            } else {
-                // TODO: add dummy instruction to consume SSRs
-                asm volatile(
-                    "vfadd.s              %[dummy], ft0, ft2 \n"
-                : [dummy] "+&f"(dummy)
-                :
-                : "ft0", "ft1", "ft2"
-                );
-            }
+                snrt_ssr_disable(); // Discuss with GIM: why do we need to disable SSRs?
+                W_checksum += reduce_reg[0] + reduce_reg[1];
+                snrt_ssr_enable();
+            } 
 
             in += 2;
 
@@ -616,7 +604,7 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
     }
 
-    // printf("FP32 with SSRs and SIMD: b_checksum = %f\n", b_checksum);
-    // printf("FP32 with SSRs and SIMD: W_checksum = %f\n", W_checksum);
+    printf("FP32 with SSRs and SIMD: b_checksum = %f\n", b_checksum);
+    printf("FP32 with SSRs and SIMD: W_checksum = %f\n", W_checksum);
 
 } // RTL TODO
