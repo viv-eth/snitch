@@ -84,7 +84,7 @@ void mnist_fp16(const network_fp16_t *n){
     // @brief Cluster Memory Structure for each cluster to ensure
     // we can access the data of both by using the constant
     // cluster base offset
-    void *ptr = (double *)snrt_cluster_memory().start;
+    void *ptr = (__fp16 *)snrt_cluster_memory().start;
     // void *ptr_start = ptr;
     if(cluster_id == 0){
         weights_cl0 = ptr;
@@ -255,11 +255,12 @@ void mnist_fp16(const network_fp16_t *n){
                     // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                     // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 }
-            } else {
-                if(!cluster_id){
-                    printf("[MNIST] FF not run. \n");
-                }
-            }
+            } 
+            // else {
+            //     if(!cluster_id){
+            //         printf("[MNIST] FF not run. \n");
+            //     }
+            // }
         }
 
         // wait until clusters are synchronized to not
@@ -273,8 +274,8 @@ void mnist_fp16(const network_fp16_t *n){
             if(snrt_is_dm_core() && cluster_id==1) {
                 snrt_dma_start_tracking();
                 // WARN: make sure that pointer types are according to network precision
-                double *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
-                double *img_ptr = ((uint32_t)images) - cluster_offset;
+                __fp16 *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
+                __fp16 *img_ptr = ((uint32_t)images) - cluster_offset;
 
                 // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
                 snrt_dma_txid_t txid_activations = 
@@ -313,8 +314,8 @@ void mnist_fp16(const network_fp16_t *n){
             volatile uint32_t ldB = compute_num;
             volatile uint32_t ldI = IN_CH;
 
-            double *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
-            double *img_ptr = ((uint32_t)images) - cluster_offset;
+            __fp16 *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
+            __fp16 *img_ptr = ((uint32_t)images) - cluster_offset;
 
             if(RUN_GRADIENT_UPDATE){
                 if(!compute_id){
@@ -342,11 +343,12 @@ void mnist_fp16(const network_fp16_t *n){
                 if(!compute_id){
                     printf("[MNIST] GU end\n");
                 }
-            } else {
-                if(!compute_id){
-                    printf("[MNIST] GU not run. \n");
-                }
-            } // end of gradient update
+            } 
+            // else {
+            //     if(!compute_id){
+            //         printf("[MNIST] GU not run. \n");
+            //     }
+            // } // end of gradient update
         } else if (!snrt_is_compute_core() && cluster_id == 1){
             if(RUN_GRADIENT_UPDATE){
                 if(BASELINE){
@@ -356,11 +358,12 @@ void mnist_fp16(const network_fp16_t *n){
                     // INFO: FP64 with SSRs
                     snrt_cluster_hw_barrier();
                 }
-            } else {
-                if(!cluster_id){
-                    printf("[MNIST] GU not run. \n");
-                }
-            }
+            } 
+            // else {
+            //     if(!cluster_id){
+            //         printf("[MNIST] GU not run. \n");
+            //     }
+            // }
         }
     }
 
@@ -375,8 +378,8 @@ void mnist_fp16(const network_fp16_t *n){
             // Discuss with GIM how to do DMA benchmarking
             snrt_dma_start_tracking();
             // WARN: make sure that pointer types are according to network precision
-            double *weight_grad_ptr = ((uint32_t)weight_grads_cl0) + cluster_offset;
-            double *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
+            __fp16 *weight_grad_ptr = ((uint32_t)weight_grads_cl0) + cluster_offset;
+            __fp16 *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
             // snrt_dma_txid_t txid_WG = 
             //     snrt_dma_start_2d(weights,                // destination
             //                     weight_grad_ptr,          // source
@@ -421,8 +424,8 @@ void mnist_fp16(const network_fp16_t *n){
         volatile uint32_t ldB = compute_num;
         volatile uint32_t ldI = IN_CH;
 
-        double *weight_grad_ptr = ((uint32_t)weight_grads_cl0) + cluster_offset;
-        double *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
+        __fp16 *weight_grad_ptr = ((uint32_t)weight_grads_cl0) + cluster_offset;
+        __fp16 *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
 
         //TODO: load the LR from the network struct or via DRAM perloading
         //*learning_rate = 0.5;
@@ -460,14 +463,16 @@ void mnist_fp16(const network_fp16_t *n){
         if(BASELINE){
             if(RUN_TRAINING_STEP){
                 // no HW barriers required
-            } else {
-                printf("[MNIST] INFO: Training Step not run\n");
-            }
+            } 
+            // else {
+            //     printf("[MNIST] INFO: Training Step not run\n");
+            // }
         } else {
             if(RUN_TRAINING_STEP){
-            } else {
-                printf("[MNIST] INFO: Training Step not run\n");
-            }
+            } 
+            // else {
+            //     printf("[MNIST] INFO: Training Step not run\n");
+            // }
         }
     }
 

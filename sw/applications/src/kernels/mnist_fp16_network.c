@@ -231,6 +231,14 @@ void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     register volatile double ft1 asm("ft1");
     register volatile double ft2 asm("ft2");
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+
+    float acc_1 = 0.0;
+    float acc_2 = 0.0;
+    float acc_3 = 0.0;
+    float acc_4 = 0.0;
+
+    float img_checksum = 0.0;
+    float weight_checksum = 0.0;
     
     
     // INFO: for simplicity image is converted to dtype __fp16 --> discuss with GIM 
@@ -242,29 +250,9 @@ void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
 
-    // SSR strides and bounds only have to be configured
-    // once in the beginning
-    // WARN In the RTL SSR strides MUST BE of size DOUBLE
-
-    if (setup_SSR) {
-
-        // setup of DATA MOVER input data (MNIST image)
-        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-                        IN_CH / 4, 
-                        sizeof(double));
-        
-        // setup of DATA MOVER for weights
-        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH / 4, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW / 4);
-    }
 
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
         register v2f32 reduce_reg;
         register float sum;
         register v2f32 test;
@@ -276,16 +264,40 @@ void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
         idx_eff = compute_id + ldB * out;
 
-        // Start of SSR region
-        snrt_ssr_enable();
         if(!(idx_eff > OUT_CH * 5 - 1)){
             
+            // SSR strides and bounds only have to be configured
+            // once in the beginning
+            // WARN In the RTL SSR strides MUST BE of size DOUBLE
+
+            if (setup_SSR) {
+
+                // setup of DATA MOVER input data (MNIST image)
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                IN_CH / 4, 
+                                sizeof(double));
+                
+                // setup of DATA MOVER for weights
+                snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                                IN_CH / 4, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW / 4);
+            }
+
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+            
+            // Start of SSR region
+            snrt_ssr_enable();
+
             acc = biases[ldB * out];
             
             asm volatile(
                 "vfcpka.s.s    %[tacc], %[zero], %[zero]\n" // zero initialize accumulator
                 "vfcpka.h.s    %[zero_reg], %[zero], %[zero] \n"
-                : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg)
+                "vfcpka.h.s    %[sum], %[zero], %[zero] \n"
+                : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg), [sum] "+&f"(sum)
                 : [zero] "f"(zero)
             );
             
@@ -293,51 +305,36 @@ void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     //         // calculate the dot product of the image and the weights (increment by four columns in each iteration)
             asm volatile(
                 "frep.o           %[n_frep], 4, 0, 0\n"
-                "vfcpka.s.s       %[dotp], %[zero], %[zero]\n" // initialize the dot product with zeros
-                "vfcpka.s.s       %[sum], %[zero], %[zero] \n" // initialize the sum with zeros
-                "vfdotpex.s.h     %[dotp], ft1, ft0 \n"
-                "vfsum.s          %[sum], %[dotp] \n"
-    //             "fadd.s           %[tacc], %[tacc], %[sum] \n"
-            : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc)
+                "vfadd.s          %[reduce_reg], %[zero_reg], %[zero_reg] \n"
+                "vfadd.s          %[sum], %[zero_reg], %[zero_reg] \n"
+                "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
+                "vfsum.s          %[sum], %[reduce_reg]\n"
+                "fadd.s           %[tacc], %[tacc], %[sum] \n"
+                //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped?
+            : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg)
             : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
             : "ft0", "ft1", "ft2"
             );
-            
-    //         // snrt_ssr_disable();
-    //         // printf("DEBUG: tacc[%u] = %f\n", compute_id + out + 1, tacc);
-    //         // printf("DEBUG: acc[%u] = %f\n", compute_id + out + 1, acc);
-    //         // printf("DEBUG: tacc[%u] + acc[%u] = %f\n", compute_id + out + 1, compute_id + out + 1, tacc + acc);
-    //         snrt_ssr_enable();
-    //         acc += tacc;
-    //         printf("DEBUG: acc_up[%u] = %f\n", compute_id + out + 1, acc);
-    //         snrt_ssr_disable();
-    //         // snrt_ssr_enable();
 
-        } else {
-            asm volatile(
-                "frep.o           %[n_frep], 1, 0, 0\n"
-                "vfadd.s          %[dummy], ft1, ft0 \n"
-                : [dummy] "+f"(dummy)
-                : [n_frep] "r"(IN_CH / 4 - 1)
-                : "ft0", "ft1", "ft2"
-            );
+            // End of SSR region.
+            snrt_fpu_fence();
+            snrt_ssr_disable();
+            asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+            acc += tacc;
+
         }
 
         activations[ldB * out] = acc;
         acc = 0.0;
 
-        // End of SSR region.
-        snrt_fpu_fence();
-        snrt_ssr_disable();
-        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
 
     }
 
 
-    for (uint32_t out = 0; out < OUT_CH; out++) {
-        printf("FP16 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    }
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("FP16 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
 
     snrt_cluster_hw_barrier();
 
