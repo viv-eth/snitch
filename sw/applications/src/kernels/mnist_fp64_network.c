@@ -313,34 +313,34 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     volatile uint32_t idx_eff;
     volatile uint32_t W_idx_eff;
 
-    // SSR strides and bounds only have to be configured
-    // once in the beginning
-    if (setup_SSR) {
-
-        // setup of input data (MNIST image)
-        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-                        IN_CH, 
-                        sizeof(double));
-        
-        // setup of weights
-        snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                        IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW);
-    }
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
 
         idx_eff = compute_id + ldB * out;
-        // we need to read the image for every new iteration
-        // of a core, because otherwise it will evaluate to
-        // all zeros due to the stream semantics
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
-        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
-        // Start of SSR region
-        snrt_ssr_enable();
         if(!(idx_eff > OUT_CH * 5 - 1)){
+            // SSR strides and bounds only have to be configured
+            // once in the beginning
+            if (setup_SSR) {
+
+                // setup of input data (MNIST image)
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                IN_CH, 
+                                sizeof(double));
+                
+                // setup of weights
+                snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                                IN_CH, 
+                                OUT_CH - 1, 
+                                sizeof(double), 
+                                sizeof(double) * ldW);
+            }
+            // we need to read the image for every new iteration
+            // of a core, because otherwise it will evaluate to
+            // all zeros due to the stream semantics
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+            // Start of SSR region
+            snrt_ssr_enable();
             acc = biases[ldB * out];
             asm volatile(
                 "frep.o      %[n_frep], 1, 0, 0 \n"
@@ -348,14 +348,7 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             : [ acc ] "+f"(acc)
             : [ n_frep ] "r"(IN_CH - 1)
             :"ft0", "ft1", "ft2");
-        } else {
-            asm volatile(
-                "frep.o     %[n_frep], 1, 0, 0 \n"
-                "fadd.d     %[dummy], ft0, ft1 \n"
-            : [ dummy ] "+f"(dummy) 
-            : [ n_frep ] "r"(IN_CH - 1)
-            :"ft0", "ft1", "ft2");
-        }
+        } 
 
         activations[ldB * out] = acc;
         acc = 0.0;
@@ -392,28 +385,26 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
 
     uint32_t idx_eff;
 
-    if (setup_SSR) {
-
-        const uint32_t ssr0_b = OUT_CH;
-        const uint32_t ssr0_i = sizeof(double);
-
-        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-                        ssr0_b, 
-                        ssr0_i);
-
-    } 
-
-    snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
-    
-    max_core = activations[0]; 
-
-    // // Start of SSR region
-
-
-    snrt_ssr_enable();
     for(uint32_t out = 0; out < OUT_CH; out++){
         idx_eff = compute_id + ldB * out;
         if(!(idx_eff > OUT_CH * 5 - 1)){
+            if (setup_SSR) {
+
+                const uint32_t ssr0_b = OUT_CH;
+                const uint32_t ssr0_i = sizeof(double);
+
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                ssr0_b, 
+                                ssr0_i);
+
+            } 
+
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, activations);
+            
+            max_core = activations[0]; 
+
+            // Start of SSR region
+            snrt_ssr_enable();
             asm volatile(
                         "fmv.d      fs2, ft0 \n"                // move the first value of the activations into fs2
                         "flt.d      t0, %[max_core], fs2\n"     // compare which value greater
@@ -425,12 +416,12 @@ void softmax_activation_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_
                         : [ max_core ] "+&f"(max_core)
                         :
                         :"ft0", "ft1", "ft2");
+
+            // End of the SSR region. 
+            snrt_ssr_disable();
         } 
     }
 
-
-    // // // End of the SSR region. 
-    snrt_ssr_disable();
     // // INFO: after disabling the SSRs we can free the registers
     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2)); // INFO: this line also do not break the RTL simulation
 
@@ -522,12 +513,12 @@ void gradient_update_fp64_ssr(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double));
     }
 
-    // SSR start address need to be configured each time
 
     // the effective index is the iteration index of the biases variable
     // across all entries
     for(uint32_t out = 0; out < OUT_CH; out++){
 
+        // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, image); // image stored in ft0
         snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_1D, &activations[ldB * out]); // stored in ft2
         // printf("bias grads[%u] = %f\n", compute_id + ldB * out, bias_grads[ldB * out]);
