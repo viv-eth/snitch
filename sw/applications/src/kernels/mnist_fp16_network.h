@@ -38,7 +38,7 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 uint32_t compute_id, __fp16 *loss, uint32_t compute_num, uint32_t setup_SSR);
 
 void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
-                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads,
+                __fp16 *weights, volatile __fp16 *weight_grads, uint32_t ldW, volatile __fp16 *biases, __fp16 *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images, uint32_t setup_SSR);
 
