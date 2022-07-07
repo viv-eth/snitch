@@ -21,7 +21,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 1
+#define RUN_TRAINING_STEP 0
 
 void mnist_fp32(const network_fp32_t *n){
 

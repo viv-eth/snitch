@@ -404,8 +404,6 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         snrt_ssr_enable();  
         register v2f32 reduce_reg;
         register float sum = 0.0;
-        // dummy register in order to fully consume the SSRs
-        register float dummy = 0.0;
         register const float zero = 0;
         register v2f32 zero_reg;
         // zero initialze the reduce register for each loop
@@ -424,7 +422,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             // add plus one to the effective index, since we are writing two values at once
             // GIM: discuss how to incorporate if statement into frep loop
             if(!(idx_eff_W > IN_CH * OUT_CH * 5 - 1)){
-                // TODO: the second vfadd is actually not needed, but added in order to be able
+                // TODO: the first vfadd is actually not needed, but added in order to be able
                 // to compute the checksum of the weights ---> remove it for benchmarking
                 asm volatile(
                     //"frep.o             %[n_frep], 3, 0, 0 \n"
@@ -589,8 +587,8 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                 snrt_ssr_disable();
                 // W_checksum += reduce_reg[0] + reduce_reg[1];
                 // GIM: why does vfdiv fail in the RTL?
-                weights[out*ldW] = reduce_reg[0] / nimg;
-                weights[out*ldW + 1] = reduce_reg[1] / nimg;
+                weights[out*ldW] += reduce_reg[0] / nimg;
+                weights[out*ldW + 1] += reduce_reg[1] / nimg;
                 snrt_ssr_enable();
             } 
 
