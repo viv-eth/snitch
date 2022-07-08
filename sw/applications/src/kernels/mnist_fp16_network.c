@@ -357,7 +357,9 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
     
-    register float b_grad_update = 0.0f;
+    float b_grad_update = 0.0f;
+    // for the bias upgrade we need to cast the updates to fp16
+    __fp16 *b_grad_update_ptr = &b_grad_update;
     // __fp16 b_checksum = 0.0f;
     __fp16 W_grad_update = 0.0f;
     // __fp16 W_checksum = 0.0f;
@@ -389,7 +391,8 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
         if(!(idx_eff > OUT_CH * 5 - 1)){
             
-            b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+            // b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+            b_grad_update_ptr = (idx_eff == target_n) ? &activations[ldB * out] : &activations[ldB * out];
 
             if (setup_SSR) {
 
@@ -398,32 +401,42 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                                 IN_CH / 4, 
                                 sizeof(double));
                 
-                // SSR setup of weight grads
+                // SSR READ setup of weight grads
                 snrt_ssr_loop_2d(SNRT_SSR_DM1, 
                                 IN_CH / 4, 
                                 OUT_CH - 1, 
                                 sizeof(double), 
                                 sizeof(double) * ldW / 4);
 
+                // // SSR WRITE setup of weight grads
+                // snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+                //                 IN_CH / 4, 
+                //                 OUT_CH - 1, 
+                //                 sizeof(double), 
+                //                 sizeof(double) * ldW / 4);
+
             }
             
-            bias_grads[ldB * out] = b_grad_update;
+            bias_grads[ldB * out] = *b_grad_update_ptr;
             
-            // SSR start address need to be configured each time
+            b_grad_update = *b_grad_update_ptr;
+
+            // // SSR start address need to be configured each time
             snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
             snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+            // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
             // b_checksum += b_grad_update;
         
             register float sum;
             register float acc = 0.0;
             register v4f16 reduce_reg;
             register v4f16 dotp;
+
             asm volatile (
                 "vfcpka.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
                 "vfcpkb.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
-                "fadd.s           %[acc], %[zero], %[zero]\n"
-            : [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp), [acc] "+&f"(acc)
-            : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0f)
+            : [reduce_reg] "+&f"(reduce_reg)
+            : [b_grad_update] "f"(b_grad_update)
             : "ft0", "ft1", "ft2"
             );
 
@@ -436,19 +449,19 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                         "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
                         "vfmul.h          %[dotp], %[reduce_reg], ft0\n"
                         "vfadd.h          %[dotp], %[dotp], ft1\n"
+                        // "vfadd.h          ft2, %[dotp], ft2\n" // Why does this fail in the RTL?
                     : [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp), [sum] "+&f"(sum)
                     : [zero] "f"(0.0f)
                     : "ft0", "ft1", "ft2"
                     );
 
-            //             //printf("DEBUG: index = %u\n", compute_id * IN_CH + out * ldW + in + 4);
-                        snrt_ssr_disable(); // Discuss with GIM why we have to disable SSR here
-                        weight_grads[out*ldW + in + 0] += dotp[0];
-                        weight_grads[out*ldW + in + 1] += dotp[1];
-                        weight_grads[out*ldW + in + 2] += dotp[2];
-                        weight_grads[out*ldW + in + 3] += dotp[3];
-                        // W_checksum += dotp[0] + dotp[1] + dotp[2] + dotp[3];
-                        snrt_ssr_enable();
+                    snrt_ssr_disable(); 
+                    weight_grads[out*ldW + in + 0] += dotp[0];
+                    weight_grads[out*ldW + in + 1] += dotp[1];
+                    weight_grads[out*ldW + in + 2] += dotp[2];
+                    weight_grads[out*ldW + in + 3] += dotp[3];
+                    // W_checksum += dotp[0] + dotp[1] + dotp[2] + dotp[3];
+                    snrt_ssr_enable();
                 }
 
                 in += 4;
@@ -465,7 +478,7 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
     snrt_cluster_hw_barrier();
 
-} // RTL TODO
+} // RTL PASS
 
 //// Training Step
 void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
