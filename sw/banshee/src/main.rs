@@ -25,7 +25,7 @@ use std::{
     str::FromStr,
     collections::HashMap,
     fs,
-    io::Write,
+    io::{Write, Seek, Read, BufReader, ErrorKind, SeekFrom},
     io::prelude::*,
     num::ParseIntError
 };
@@ -40,10 +40,16 @@ mod softfloat;
 pub mod tran;
 pub mod util;
 pub mod readmem;
+pub mod dram_preload;
 
 use crate::configuration::*;
 use crate::engine::*;
 use crate::readmem::{readmem, ContentType};
+use crate::dram_preload::*;
+
+use bytebuffer::ByteBuffer;
+use to_binary::{BinaryString,BinaryError};
+use byteorder::{BigEndian, ReadBytesExt, LittleEndian};
 
 fn main() -> Result<()> {
     // Parse the command line arguments.
@@ -166,6 +172,18 @@ fn main() -> Result<()> {
                 .takes_value(true)
                 .help("Path to the labels of the data for training."),
         )
+        .arg(
+            Arg::with_name("train-bin-file-path")
+                .long("train-bin-file-path")
+                .takes_value(true)
+                .help("Path to the binary file of the data for training."),
+        )
+        .arg(
+            Arg::with_name("train-mem-offset")
+                .long("train-mem-offset")
+                .takes_value(true)
+                .help("Define the offset at which the train data should be written into DRAM."),
+        )
         .get_matches();
 
     // Configure the logger.
@@ -237,6 +255,7 @@ fn main() -> Result<()> {
     // INFO: VIVI edit 
     let has_train_data = matches.is_present("train-data-file-path");
     let has_train_labels = matches.is_present("train-labels-file-path");
+    let has_train_bin = matches.is_present("train-bin-file-path");
 
     matches
         .value_of("num-cores")
@@ -299,15 +318,15 @@ fn main() -> Result<()> {
     */
     // First we check whether a file containing the training data (without labels)
     // has been provided.
-    /*if has_train_data {
+    if has_train_data {
         trace!("Entering DRAM preloading");
         let train_data_path = matches.value_of("train-data-file-path").unwrap();
         // we save the contents of the file or throw an error if something went wrong
         // TODO: find more efficient alternative to read string
         let train_data_contents = fs::read_to_string(train_data_path)
             .expect("Something went wrong reading the file");
-        // now we read in the contents into a HashMap<u64, u32> as <address, value> pair
-        let train_data = readmem::<u32>(&train_data_contents, ContentType::Hex).unwrap();
+        // // now we read in the contents into a HashMap<u64, u32> as <address, value> pair
+        let train_data = readmem::<u32>(&train_data_contents, ContentType::Float).unwrap();
         // get memory handle, mutex thread lock, unwrap checks if element found, otherwise panics
         // memory is defined as HashMap --> memory: Mutex<HashMap<u64, u32>>
         // where the first value corresponds to the address 
@@ -315,18 +334,17 @@ fn main() -> Result<()> {
         // we will extend the DRAM by the values we just read in
         trace!("Starting to write the training data to DRAM");
         mem.extend(train_data);
-        for (k, v) in mem.iter(){
-        
-            let float = unsafe { std::mem::transmute::<u32, f32>(*v) };
-        
-            trace!("address = 0x{:x}, HEX value = 0x{:x}, float value = {}", k, v, float);
+        for i in 0x80040000..0x80104000 {
+            let val = mem.get(&(i)).copied().unwrap_or(0);
+            let float = unsafe { std::mem::transmute::<u32, f32>(val) };
+            trace!("address = 0x{:x}, original value = {:b}, float value = {}", i, val, float);
         }
-    }*/
+    }
 
     // First we check whether a file containing the training data (without labels)
     // has been provided.
-    /*if has_train_labels {
-        
+    if has_train_labels {
+        trace!("Loading labels");
         let train_labels_path = matches.value_of("train-labels-file-path").unwrap();
         // we save the contents of the file or throw an error if something went wrong
         let train_labels_contents = fs::read_to_string(train_labels_path)
@@ -340,10 +358,45 @@ fn main() -> Result<()> {
         // we will extend the DRAM by the values we just read in
         trace!("Starting to write the training labels to DRAM");
         mem.extend(train_labels);
-        for (k, v) in mem.iter(){
-            trace!("address = 0x{:x}, HEX value = 0x{:x}, value = {}", k, v, v);
+        // for (k, v) in mem.iter(){
+        //     trace!("address = 0x{:x}, HEX value = 0x{:x}, value = {}", k, v, v);
+        // }
+        for i in 0x80108000..0x80108400 {
+            let val:u32 = mem.get(&(i)).copied().unwrap_or(0);
+            // let float = unsafe { std::mem::transmute::<u32, f32>(val) };
+            trace!("address = 0x{:x}, HEX value = 0x{:x}, label value = {}", i, val, val);
         }
-    }*/
+    }
+
+    if has_train_bin {
+
+        trace!("Loading binary train data");
+
+        let bin_path = matches.value_of("train-bin-file-path").unwrap();
+
+        // FIXME: actually retrieve this from config file
+        let mut mem_offset: u64 = 0x80109000;
+        
+        // matches
+        // .value_of("train-mem-offset")
+        // .map(|x| mem_offset = x.parse().unwrap());
+
+        trace!("mem_offset = 0x{:x}", mem_offset);
+
+        let train_data = dram_preload::bin_read(bin_path, mem_offset).unwrap();
+            
+        let train_data_length = train_data.len() as u64;
+
+        let mut mem = engine.memory.lock().unwrap();
+        
+        mem.extend(train_data);
+
+        for addr in mem_offset .. mem_offset + train_data_length {
+            let val:u32 = mem.get(&(addr)).copied().unwrap_or(0);
+            trace!("address = 0x{:x}, binary value = {:#034b}", addr, val);
+        }
+
+    }
 
     // Write the module to disk if requested.
     if let Some(path) = matches.value_of("emit-llvm") {

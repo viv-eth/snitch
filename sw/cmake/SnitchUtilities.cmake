@@ -5,7 +5,7 @@
 # Locate the banshee simulator for test execution.
 set(SNITCH_BANSHEE "${CMAKE_CURRENT_SOURCE_DIR}/../banshee/target/debug/banshee" CACHE PATH "Path to the banshee simulator for testing")
 set(BANSHEE_TIMEOUT "360" CACHE STRING "Timeout when running tests on banshee")
-set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=2" "--base-hartid=1" "--train-data-file-path=/home/msc22f11/PlayGround/all_mnist_images.txt" "--train-labels-file-path=/home/msc22f11/PlayGround/all_mnist_labels.txt" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
+set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=2" "--base-hartid=1" "--train-data-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/data/dram_preload_mnist_images_epoch_nohex.txt" "--train-labels-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/data/dram_preload_mnist_labels_epoch.txt" "--train-bin-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/src/all_images_fp64_bin" "--train-mem-offset=0x80109000" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
 set(SNITCH_RUNTIME "snRuntime-banshee" CACHE STRING "Target name of the snRuntime flavor to link against")
 set(SNITCH_SIMULATOR "" CACHE PATH "Command to run a binary in an RTL simulation")
 set(SIMULATOR_TIMEOUT "1800" CACHE STRING "Timeout when running tests on RTL simulation")

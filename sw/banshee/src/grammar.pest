@@ -3,13 +3,22 @@
 
 hex_digit = @{ '0'..'9' | 'a'..'f' | 'A'..'F' | ^"z" | ^"x" }
 bin_digit = @{ "0" | "1" | ^"x" | ^"z" }
+// silent rule for digits
+digit = _{ '0'..'9' }
+int = @{ digit ~ (digit)*}
+// we will ignore cases such as exponent etc.
+// just parsing for number in format of I.F where I is the integer part and F is the fractional part
+float_digit = @{ int ~ "." ~ int? }
 
 hex = @{ (hex_digit | "_")+ }
 bin = @{ (bin_digit | "_")+ }
+float = @{ (float_digit | "_")+ }
+// float = @{ (float_digit)+ }
 addr = ${ "@" ~ hex_digit+ }
 
 readmemh = _{ SOI ~ (addr | hex)+ ~ EOI }
 readmemb = _{ SOI ~ (addr | bin)+ ~ EOI }
+readmemf = _{ SOI ~ (addr | float)+ ~ EOI }
 
 WHITESPACE = _{ " " | "\t" | "\n" | "\r" }
 

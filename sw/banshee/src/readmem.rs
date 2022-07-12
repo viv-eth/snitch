@@ -5,7 +5,8 @@ use std::{
     fs,
     io::Write,
     io::prelude::*,
-    num::ParseIntError
+    num::ParseIntError,
+    num::ParseFloatError,
 };
 
 use pest::{iterators::Pair, Parser};
@@ -20,6 +21,8 @@ pub enum Error {
     ParseFailure,
     #[error("numeric format error")]
     NumericFormatError(#[from] std::num::ParseIntError),
+    #[error("float format error")]
+    FloatFormatError(#[from] std::num::ParseFloatError),
 }
 
 /// The type of content contained in a file to be read.
@@ -28,6 +31,8 @@ pub enum ContentType {
     Hex,
     /// The file is compatible with $readmemb and contains binary values
     Binary,
+    /// Add floating point because floating point to hex conversion just sucks
+    Float,
 }
 
 
@@ -47,6 +52,7 @@ enum Item<I> {
 #[doc(hidden)]
 pub trait Integral: Sized {
     fn from_str_radix(src: &str, radix: u32) -> Result<Self, std::num::ParseIntError>;
+    fn from_str_float(src: &str) -> Result<Self, std::num::ParseFloatError>;
     fn zero() -> Self;
 }
 
@@ -58,6 +64,15 @@ macro_rules! integrate {
             }
             fn zero() -> Self {
                 0
+            }
+            fn from_str_float(src: &str) -> Result<Self, std::num::ParseFloatError> {
+                let str_float: f32 = src.parse().unwrap();
+                // trace!("Before transmute: {}", str_float);
+                let tx_float = unsafe { std::mem::transmute::<f32, u32>(str_float) };
+                // trace!("After transmute: {}", tx_float);
+                let float = unsafe { std::mem::transmute::<u32, f32>(tx_float) };
+                // trace!("After after transmute retransmute: {}", float);
+                Ok(tx_float)
             }
         }
     };
@@ -89,6 +104,12 @@ where
             let without_zx = without_underscore.replace(is_zx, "0");
             Item::Number(Integral::from_str_radix(&without_zx, 2)?)
         }
+        Rule::float => {
+            // trace!("Parsing float: {}", pair.as_str());
+            let without_underscore = pair.as_str().replace("_", "");
+            let without_zx = without_underscore.replace(is_zx, "0");
+            Item::Number(Integral::from_str_float(&without_zx)?)
+        }
         r => unreachable!(
             "should not hit this rule {:?}, all our other rules are silent",
             r
@@ -115,13 +136,17 @@ where
 
 pub fn readmem<I>(content: &str, content_type: ContentType) -> Result<HashMap<u64, I>, Error>
 where
-    I: Integral + FromStr + Clone + std::fmt::LowerHex + Copy, //INFO: VIVI EDIT
+    I: Integral + FromStr + Clone + std::fmt::LowerHex + Copy + std::fmt::Display, //INFO: VIVI EDIT
+    // I: Integral,
 {
 
     let rule = match content_type {
         ContentType::Hex => Rule::readmemh,
         ContentType::Binary => Rule::readmemb,
+        ContentType::Float => Rule::readmemf,
     };
+    // trace!("Start parsing with rule: {:?}", rule);
+    // trace!("Parsing content: {}", content);
     let content = ReadmemParser::parse(rule, content)?;
     let mut result = HashMap::<u64, I>::new();
     // initial position is at zero
