@@ -173,16 +173,28 @@ fn main() -> Result<()> {
                 .help("Path to the labels of the data for training."),
         )
         .arg(
-            Arg::with_name("train-bin-file-path")
-                .long("train-bin-file-path")
+            Arg::with_name("train-data-bin-file-path")
+                .long("train-data-bin-file-path")
                 .takes_value(true)
                 .help("Path to the binary file of the data for training."),
         )
         .arg(
-            Arg::with_name("train-mem-offset")
-                .long("train-mem-offset")
+            Arg::with_name("train-data-mem-offset")
+                .long("train-data-mem-offset")
                 .takes_value(true)
                 .help("Define the offset at which the train data should be written into DRAM."),
+        )
+        .arg(
+            Arg::with_name("train-labels-bin-file-path")
+                .long("train-labels-bin-file-path")
+                .takes_value(true)
+                .help("Path to the binary file of the labels for training."),
+        )
+        .arg(
+            Arg::with_name("train-labels-mem-offset")
+                .long("train-labels-mem-offset")
+                .takes_value(true)
+                .help("Define the offset at which the train labels should be written into DRAM."),
         )
         .get_matches();
 
@@ -253,9 +265,10 @@ fn main() -> Result<()> {
     let has_num_clusters = matches.is_present("num-clusters");
     let has_base_hartid = matches.is_present("base-hartid");
     // INFO: VIVI edit 
-    let has_train_data = matches.is_present("train-data-file-path");
-    let has_train_labels = matches.is_present("train-labels-file-path");
-    let has_train_bin = matches.is_present("train-bin-file-path");
+    // let has_train_data = matches.is_present("train-data-file-path");
+    // let has_train_labels = matches.is_present("train-labels-file-path");
+    let has_train_bin = matches.is_present("train-data-bin-file-path");
+    let has_train_labels_bin = matches.is_present("train-labels-bin-file-path");
 
     matches
         .value_of("num-cores")
@@ -318,7 +331,7 @@ fn main() -> Result<()> {
     */
     // First we check whether a file containing the training data (without labels)
     // has been provided.
-    if has_train_data {
+    /*if has_train_data {
         trace!("Entering DRAM preloading");
         let train_data_path = matches.value_of("train-data-file-path").unwrap();
         // we save the contents of the file or throw an error if something went wrong
@@ -339,11 +352,11 @@ fn main() -> Result<()> {
             let float = unsafe { std::mem::transmute::<u32, f32>(val) };
             trace!("address = 0x{:x}, original value = {:b}, float value = {}", i, val, float);
         }
-    }
+    }*/
 
     // First we check whether a file containing the training data (without labels)
     // has been provided.
-    if has_train_labels {
+    /*if has_train_labels {
         trace!("Loading labels");
         let train_labels_path = matches.value_of("train-labels-file-path").unwrap();
         // we save the contents of the file or throw an error if something went wrong
@@ -366,22 +379,21 @@ fn main() -> Result<()> {
             // let float = unsafe { std::mem::transmute::<u32, f32>(val) };
             trace!("address = 0x{:x}, HEX value = 0x{:x}, label value = {}", i, val, val);
         }
-    }
+    }*/
 
     if has_train_bin {
 
-        trace!("Loading binary train data");
-
-        let bin_path = matches.value_of("train-bin-file-path").unwrap();
-
-        // FIXME: actually retrieve this from config file
-        let mut mem_offset: u64 = 0x80109000;
         
-        // matches
-        // .value_of("train-mem-offset")
-        // .map(|x| mem_offset = x.parse().unwrap());
+        let bin_path = matches.value_of("train-data-bin-file-path").unwrap();
+        
+        trace!("Loading train data from binary file: {}", bin_path);
 
-        trace!("mem_offset = 0x{:x}", mem_offset);
+        // get memory offset from argument
+        let mut memory_offset = matches.value_of("train-data-mem-offset").unwrap().trim_start_matches("0x");
+        // turn the string into a u64
+        let mut mem_offset = u64::from_str_radix(memory_offset, 16).unwrap();
+
+        trace!("Train data starts at address: 0x{:x}", mem_offset);
 
         let train_data = dram_preload::bin_read(bin_path, mem_offset).unwrap();
             
@@ -396,6 +408,25 @@ fn main() -> Result<()> {
             trace!("address = 0x{:x}, binary value = {:#034b}", addr, val);
         }
 
+    }
+
+    if has_train_labels_bin {
+        let bin_path = matches.value_of("train-labels-bin-file-path").unwrap();
+        trace!("Loading train labels from binary file: {}", bin_path);
+        // get memory offset from argument
+        let mut memory_offset = matches.value_of("train-labels-mem-offset").unwrap().trim_start_matches("0x");
+        // turn the string into a u64
+        let mut mem_offset = u64::from_str_radix(memory_offset, 16).unwrap();
+        trace!("Train labels starts at address: 0x{:x}", mem_offset);
+        let dtype = "U32";
+        let train_labels = dram_preload::bin_u32_read(bin_path, mem_offset).unwrap();
+        let train_labels_length = train_labels.len() as u64;
+        let mut mem = engine.memory.lock().unwrap();
+        mem.extend(train_labels);
+        for addr in mem_offset .. mem_offset + train_labels_length {
+            let val:u32 = mem.get(&(addr)).copied().unwrap_or(0);
+            trace!("address = 0x{:x}, binary value = {:#034b}", addr, val);
+        }
     }
 
     // Write the module to disk if requested.
