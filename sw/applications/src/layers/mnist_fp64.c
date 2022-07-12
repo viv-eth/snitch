@@ -16,12 +16,15 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 0
 #define RUN_TRAINING_STEP 0
+#define GET_ACCURACY 1
+#define GET_LOSS 0
+#define RUN_RTL 0
 
 void mnist_fp64(const network_fp64_t *n){
 
@@ -41,7 +44,7 @@ void mnist_fp64(const network_fp64_t *n){
 
     // number of total images that we load
     // NOTE: partial load for simulation purposes only
-    uint32_t number_of_images = 1;
+    uint32_t number_of_images = 256;
 
     // size of the weight matrix, same for weight gradients
     // on cluster 0 we store the weights, on cluster 1 the
@@ -75,7 +78,7 @@ void mnist_fp64(const network_fp64_t *n){
     double *weights_cl0;
     double *weight_grads_cl0;
     double *biases_cl0;
-    double *images;
+    float *images;
     double *activations_cl0;
     double *max;
 
@@ -85,7 +88,10 @@ void mnist_fp64(const network_fp64_t *n){
     double *bias_grads_cl1;
     double *activations_cl1;
     double *loss;
-    double *targets;
+    uint32_t *targets;
+
+    // test variable for checking binary dram preloading
+    double *test_dram;
 
     void *ptr = (double *)snrt_cluster_memory().start;
     // void *ptr_start = ptr;
@@ -97,12 +103,16 @@ void mnist_fp64(const network_fp64_t *n){
         biases_cl0 = ptr;
         ptr += bias_mat_size;
         images = ptr;
-        ptr += image_size * number_of_images;
+        ptr += image_size; // * capacity; // TODO: for every FP type determine how many images we can load
         // INFO: the activations are also used for the bias gradients
         activations_cl0 = ptr;
         ptr += act_mat_size;
         max = ptr;
         ptr += max_size;
+        test_dram = ptr;
+        ptr += image_size;
+        targets = ptr;
+        ptr += target_size;
     } else if (cluster_id == 1){
         // weights_cl1 = ptr;
         // ptr += weight_mat_size;
@@ -111,13 +121,13 @@ void mnist_fp64(const network_fp64_t *n){
         bias_grads_cl1 = ptr;
         ptr += bias_mat_size;
         images = ptr;
-        ptr += image_size * number_of_images;
+        ptr += image_size; // * capacity; // TODO: for every FP type determine how many images we can load
         activations_cl1 = ptr;
         ptr += act_mat_size;
+        targets = ptr;
+        ptr += target_size; // * capacity; // TODO: for every FP type determine how many images we can load
         loss = ptr;
         ptr += loss_size;
-        targets = ptr;
-        ptr += target_size * number_of_images;
     } 
     // double *max= ptr; // zero initialized
     // ptr += max_size;
@@ -154,6 +164,14 @@ void mnist_fp64(const network_fp64_t *n){
         setup_SSR = 1;
     }
 
+    // DRAM dataset memory start address
+    // NOTE: this is only needed when preloading the DRAM in banshee
+    uint32_t *images_dram = (void *)0x80040000;
+    uint32_t *targets_dram = (void *)0x80108000;
+
+    // binary DRAM dataset memory start address
+    uint32_t *binary_dram = (void *)0x80109000;
+
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
     // TODO: add the epochs
@@ -176,26 +194,18 @@ void mnist_fp64(const network_fp64_t *n){
                                     n->OUT_CH);                    // repetitions
 
                 snrt_dma_txid_t txid_IMG = 
-                    snrt_dma_start_1d(images,                                   // destination
-                                    n->images,                                  // source
-                                    n->dtype * number_of_images * IN_CH);       // size
+                    snrt_dma_start_1d(test_dram,                                   // destination
+                                    &binary_dram[0],                                  // source
+                                    n->dtype * IN_CH);                         // size
 
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
+
+                for(int i = 0; i < IN_CH; i++){
+                    printf("image[%u] = %f\n", i, test_dram[i]);
+                }
         snrt_dma_stop_tracking();
 
-    }
-
-    if (snrt_is_dm_core() && cluster_id == 1) {
-        snrt_dma_start_tracking();
-        // On cluster 1 we load the labels which are needed for BP
-                snrt_dma_txid_t txid_targets = 
-                    snrt_dma_start_1d(targets,                                   // destination
-                                    n->targets,                                  // source
-                                    sizeof(uint32_t) * number_of_images);        // size
-                
-                snrt_dma_wait_all();
-        snrt_dma_stop_tracking();
     }
 
     snrt_cluster_hw_barrier();
@@ -203,9 +213,54 @@ void mnist_fp64(const network_fp64_t *n){
     // We now loop through the images
     for(uint32_t image = 0; image < number_of_images; image++){
         // we calculate the pointer postion of the current image
-        uint32_t curr_img = image * IN_CH;
+        uint32_t volatile curr_img = image * IN_CH;
+        uint32_t volatile curr_target = image;
+
+        // load a new image into the cluster 0 memory 
+        if (snrt_is_dm_core() && cluster_id == 0) {
+            snrt_dma_start_tracking();
+            snrt_dma_txid_t txid_IMG = 
+                    snrt_dma_start_1d(images,                                   // destination
+                                    &images_dram[curr_img],                     // source
+                                    n->dtype * IN_CH);                          // size
+            snrt_dma_wait_all();
+            snrt_dma_stop_tracking();
+        }
+
+        snrt_cluster_hw_barrier();
+
+        // load the respective target into cluster 1 memory
+        if (snrt_is_dm_core() && cluster_id == 1) {
+            snrt_dma_start_tracking();
+            // On cluster 1 we load the labels which are needed for BP
+                    snrt_dma_txid_t txid_targets = 
+                        snrt_dma_start_1d(targets,                                   // destination
+                                        &targets_dram[curr_target],                  // source
+                                        sizeof(uint32_t));                           // size
+                    
+                    snrt_dma_wait_all();
+            snrt_dma_stop_tracking();
+        } 
+
+        if (snrt_is_dm_core() && cluster_id == 0) {
+            snrt_dma_start_tracking();
+            // On cluster 1 we load the labels which are needed for BP
+                    snrt_dma_txid_t txid_targets = 
+                        snrt_dma_start_1d(targets,                                   // destination
+                                        &targets_dram[curr_target],                  // source
+                                        sizeof(uint32_t));                           // size
+                    
+                    snrt_dma_wait_all();
+            snrt_dma_stop_tracking();
+        } 
+
+        snrt_cluster_hw_barrier();
+
         // we perform the forward pass on cluster 0
         if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
+            
+            // printf("target = %u\n", targets[0]);
+            uint32_t target = targets[0];
             
             // determine the row offset at which current compute cluster is
             volatile uint32_t W_offset = compute_id * IN_CH;
@@ -235,20 +290,47 @@ void mnist_fp64(const network_fp64_t *n){
                     benchmark_get_cycle();
                     feedforward_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                    ldB, &images[curr_img], ldI, compute_id);
+                                    ldB, images, ldI, compute_id);
                     benchmark_get_cycle();
                     softmax_activation_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                &images[curr_img], ldI, compute_id, compute_num, max);
+                                &images[0], ldI, compute_id, compute_num, max);
+                    // snrt_cluster_hw_barrier();
+                    // if(GET_ACCURACY) {
+                    //     // uint32_t target = targets[0];
+
+                    //     if(!compute_id){
+                    //         uint32_t correct;
+                    //         if(image == 0){
+                    //             correct = 0;
+                    //         }
+                    //         double max_activation = activations_cl0[0];
+                    //         uint32_t max_activation_id = 0;
+                    //         for (int preds = 0; preds < n->OUT_CH; preds++) {
+                    //             if(activations_cl0[preds] > max_activation){
+                    //                 max_activation = activations_cl0[preds];
+                    //                 max_activation_id = preds;
+                    //             }
+                    //         }
+                    //         printf("DEBUG CL0: target = %u\n", target);
+                    //         printf("DEBUG CL0: pred = %u\n", max_activation_id);
+                    //         // printf("DEBUG: max = %f\n", max_activation);
+                    //         if(max_activation_id == target){
+                    //             correct++;
+                    //         }
+
+                    //         printf("accuracy[%u] = %f %%\n", image, ((double)correct / (double)number_of_images) * 100);
+                    //     }
+                    // }
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
                     feedforward_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                    ldB, &images[curr_img], ldI, compute_id, setup_SSR);
+                                    ldB, &images, ldI, compute_id, setup_SSR);
                     softmax_activation_fp64_ssr(n->IN_CH1, n->IN_CH2, div,
                                     &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                    &images[curr_img], ldI, compute_id, compute_num, max, setup_SSR);
+                                    &images, ldI, compute_id, compute_num, max, setup_SSR);
                     benchmark_get_cycle();
                 }
 
@@ -283,10 +365,10 @@ void mnist_fp64(const network_fp64_t *n){
         // computed
         snrt_global_barrier();
         // INFO: replacing global barrier with custom barrier for RTL sims
-        // snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
+        // snrt_generic_cluster_barrier(cluster_num*cluster_core_num);      
 
-        // if(setup_SSR && RUN_GRADIENT_UPDATE){
-        if(RUN_GRADIENT_UPDATE){
+        if(setup_SSR && RUN_GRADIENT_UPDATE){
+        // if(RUN_GRADIENT_UPDATE){
             if(snrt_is_dm_core() && cluster_id==1) {
                 snrt_dma_start_tracking();
                 // WARN: make sure that pointer types are according to network precision
@@ -302,7 +384,7 @@ void mnist_fp64(const network_fp64_t *n){
                 snrt_dma_txid_t txid_IMG = 
                     snrt_dma_start_1d(images,                                    // destination
                                     img_ptr,                                     // source
-                                    n->dtype * number_of_images * IN_CH);        // size
+                                    n->dtype * IN_CH);        // size
                 
                 snrt_dma_wait_all();
 
@@ -332,6 +414,34 @@ void mnist_fp64(const network_fp64_t *n){
 
             double *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
             double *img_ptr = ((uint32_t)images) - cluster_offset;
+            
+
+            if(GET_ACCURACY) {
+                uint32_t target = targets[0];
+
+                if(!compute_id){
+                    uint32_t correct;
+                    if(image == 0){
+                        correct = 0;
+                    }
+                    double max_activation = act_ptr[0];
+                    uint32_t max_activation_id = 0;
+                    for (int preds = 0; preds < n->OUT_CH; preds++) {
+                        if(act_ptr[preds] > max_activation){
+                            max_activation = act_ptr[preds];
+                            max_activation_id = preds;
+                        }
+                    }
+                    printf("DEBUG CL1: target = %u\n", target);
+                    printf("DEBUG CL1: pred = %u\n", max_activation_id);
+                    // printf("DEBUG: max = %f\n", max_activation);
+                    if(max_activation_id == target){
+                        correct++;
+                    }
+
+                    printf("accuracy[%u] = %f %%\n", image, ((double)correct / (double)number_of_images) * 100);
+                }
+            }
 
             if(RUN_GRADIENT_UPDATE){
                 // if(!compute_id){
@@ -343,7 +453,7 @@ void mnist_fp64(const network_fp64_t *n){
                     gradient_update_fp64(n->IN_CH1, n->IN_CH2, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
                                         &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                                        ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                        ldB, &img_ptr, &targets, ldI, compute_id, 
                                         loss, compute_num);
                     benchmark_get_cycle();
                 } else {
@@ -352,7 +462,7 @@ void mnist_fp64(const network_fp64_t *n){
                     gradient_update_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
                                         &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                                        ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
+                                        ldB, &images, &targets, ldI, compute_id, 
                                         loss, compute_num, setup_SSR);
                     benchmark_get_cycle();
                 }

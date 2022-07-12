@@ -66,10 +66,11 @@ double my_log(double x, double n)
 
 // INFO: start of FP64 baseline network implementation
 
+
 // The output of the feedforward is accumulated in the activations variable
 void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *biases, double *activations,
-                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id){
+                uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id){
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
@@ -102,11 +103,14 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *activations, uint32_t ldB,
-                double *image, uint32_t ldI, uint32_t compute_id, 
+                float *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max){
 
     double max_core;
     double sum = 0.0;
+    double reference = 0.0;
+    int err_cnt = 0;
+    double temp_err;
 
     // double euler_constant = 2.7182818284590452353602874713527;
 
@@ -144,9 +148,13 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             if(activations[out]){
-                // activations[out] = exp(activations[out] - max_global); //INFO: changing this to not use EXP, since exponential seem to fail in the RTL
+                reference = exp(activations[out] - max_global); //INFO: changing this to not use EXP, since exponential seem to fail in the RTL
                 // activations[out] = activations[out] - max_global; // this works in the RTL
                 activations[out] = my_exp(activations[out] - max_global); 
+                // if(activations[out]>1e-20){
+                //     err_cnt++;
+                //     temp_err += fabs(reference/activations[out]-1);
+                // }
                 sum += activations[out];
             } else {
                 activations[out] = 0.0;
@@ -159,6 +167,7 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             activations[out] /= sum;
             // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("Mean relative error = %f %%\n", 100*(temp_err/err_cnt));
         }
     }
 
@@ -167,7 +176,7 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 void gradient_update_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
-                uint32_t ldB, double *image, uint32_t *target, uint32_t ldI, 
+                uint32_t ldB, float *image, uint32_t *target, uint32_t ldI, 
                 uint32_t compute_id, double *loss, uint32_t compute_num){
 
     
