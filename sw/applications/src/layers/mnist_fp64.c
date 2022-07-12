@@ -78,7 +78,7 @@ void mnist_fp64(const network_fp64_t *n){
     double *weights_cl0;
     double *weight_grads_cl0;
     double *biases_cl0;
-    float *images;
+    double *images;
     double *activations_cl0;
     double *max;
 
@@ -170,7 +170,7 @@ void mnist_fp64(const network_fp64_t *n){
     uint32_t *targets_dram = (void *)0x80108000;
 
     // binary DRAM dataset memory start address
-    uint32_t *binary_dram = (void *)0x80109000;
+    // uint32_t *binary_dram = (void *)0x80109000;
 
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
@@ -193,17 +193,17 @@ void mnist_fp64(const network_fp64_t *n){
                                     sizeof(double) * IN_CH ,        // source stride
                                     n->OUT_CH);                    // repetitions
 
-                snrt_dma_txid_t txid_IMG = 
-                    snrt_dma_start_1d(test_dram,                                   // destination
-                                    &binary_dram[0],                                  // source
-                                    n->dtype * IN_CH);                         // size
+                // snrt_dma_txid_t txid_IMG = 
+                //     snrt_dma_start_1d(test_dram,                                   // destination
+                //                     &images_dram[0],                                  // source
+                //                     n->dtype * IN_CH);                         // size
 
                 // wait until each DMA transfer done
                 snrt_dma_wait_all();
 
-                for(int i = 0; i < IN_CH; i++){
-                    printf("image[%u] = %f\n", i, test_dram[i]);
-                }
+                // for(int i = 0; i < IN_CH; i++){
+                //     printf("image[%u] = %f\n", i, test_dram[i]);
+                // }
         snrt_dma_stop_tracking();
 
     }
@@ -242,17 +242,17 @@ void mnist_fp64(const network_fp64_t *n){
             snrt_dma_stop_tracking();
         } 
 
-        if (snrt_is_dm_core() && cluster_id == 0) {
-            snrt_dma_start_tracking();
-            // On cluster 1 we load the labels which are needed for BP
-                    snrt_dma_txid_t txid_targets = 
-                        snrt_dma_start_1d(targets,                                   // destination
-                                        &targets_dram[curr_target],                  // source
-                                        sizeof(uint32_t));                           // size
+        // if (snrt_is_dm_core() && cluster_id == 0) {
+        //     snrt_dma_start_tracking();
+        //     // On cluster 1 we load the labels which are needed for BP
+        //             snrt_dma_txid_t txid_targets = 
+        //                 snrt_dma_start_1d(targets,                                   // destination
+        //                                 &targets_dram[curr_target],                  // source
+        //                                 sizeof(uint32_t));                           // size
                     
-                    snrt_dma_wait_all();
-            snrt_dma_stop_tracking();
-        } 
+        //             snrt_dma_wait_all();
+        //     snrt_dma_stop_tracking();
+        // } 
 
         snrt_cluster_hw_barrier();
 
@@ -294,7 +294,7 @@ void mnist_fp64(const network_fp64_t *n){
                     benchmark_get_cycle();
                     softmax_activation_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                &images[0], ldI, compute_id, compute_num, max);
+                                images, ldI, compute_id, compute_num, max);
                     // snrt_cluster_hw_barrier();
                     // if(GET_ACCURACY) {
                     //     // uint32_t target = targets[0];

@@ -70,7 +70,7 @@ double my_log(double x, double n)
 // The output of the feedforward is accumulated in the activations variable
 void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *biases, double *activations,
-                uint32_t ldB, float *image, uint32_t ldI, uint32_t compute_id){
+                uint32_t ldB, double *image, uint32_t ldI, uint32_t compute_id){
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
@@ -83,6 +83,9 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         register double acc = biases[ldB * out];
         idx_eff = compute_id + ldB * out;
         for(uint32_t in = 0; in < IN_CH; in++){
+            // if(!compute_id){
+            //     printf("image[%u] = %f\n", in, image[in]);
+            // }
             // acc += image[in] * weights[out * ldW + in];
             // INFO: If this is not set harts start reading outside the mem map
             // FIXME: Next harts should start computation of the subsequent image
@@ -103,7 +106,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *activations, uint32_t ldB,
-                float *image, uint32_t ldI, uint32_t compute_id, 
+                double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max){
 
     double max_core;
