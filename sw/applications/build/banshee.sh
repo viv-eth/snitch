@@ -1,17 +1,17 @@
 while getopts :c:r:t:d:f:h opt; do
   case "${opt}" in
     h)
-      echo "[BANSHEE] Usage: sim_build.sh [-h]"
+      echo "[BANSHEE] Usage: banshee.sh [-h]"
       echo "[BANSHEE]   -h: Display this help message"
-      echo "[BANSHEE] Usage: sim_build.sh [-c]"
+      echo "[BANSHEE] Usage: banshee.sh [-c]"
       echo "[BANSHEE]   -c: Select which cmake version to use for run. Default is 3.18.1"
-      echo "[BANSHEE] Usage: sim_build.sh [-r]"
+      echo "[BANSHEE] Usage: banshee.sh [-r]"
       echo "[BANSHEE]   -r: Select the snRuntime (banshee or cluster). Default is banshee"
-      echo "[BANSHEE] Usage: sim_build.sh [-t]"
+      echo "[BANSHEE] Usage: banshee.sh [-t]"
       echo "[BANSHEE]   -t: Select the toolchain. Default is llvm"
-      echo "[BANSHEE] Usage: sim_build.sh [-d]"
+      echo "[BANSHEE] Usage: banshee.sh [-d]"
       echo "[BANSHEE]   -d: Set to one to remove all existing files in the build folder."
-      echo "[BANSHEE] Usage: sim_build.sh [-f]"
+      echo "[BANSHEE] Usage: banshee.sh [-f]"
       echo "[BANSHEE]   -f: Select if only a specific binary should be built. If not set all binaries will be built."
       exit 1
       ;;
@@ -79,7 +79,7 @@ if [ -z $binary ]
     make -j
 else
 echo "[BANSHEE] Building binary $binary"
-make -w $binary
+make run-banshee-$binary
 fi
 
 elapsed=$(( SECONDS - start_time ))
