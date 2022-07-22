@@ -21,7 +21,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0
+#define RUN_TRAINING_STEP 1
 
 void mnist_fp32(const network_fp32_t *n){
 
@@ -227,10 +227,10 @@ void mnist_fp32(const network_fp32_t *n){
                     feedforward_fp32_ssr_simd_frep(n->IN_CH1, n->IN_CH2, div, 
                                         &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                         ldB, &images[curr_img], ldI, compute_id, setup_SSR);
+                    benchmark_get_cycle();
                     softmax_activation_fp32n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                                 &images[curr_img], ldI, compute_id, compute_num, max);
-                    benchmark_get_cycle();
                 }
 
                 // if(!compute_id){
@@ -262,9 +262,9 @@ void mnist_fp32(const network_fp32_t *n){
         // wait until clusters are synchronized to not
         // start gradient update until all activations are 
         // computed
-        // snrt_global_barrier();
+        snrt_global_barrier();
         // INFO: replacing global barrier with custom barrier for RTL sims
-        snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
+        // snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
         if(setup_SSR && RUN_GRADIENT_UPDATE){
             if(snrt_is_dm_core() && cluster_id==1) {
@@ -361,9 +361,9 @@ void mnist_fp32(const network_fp32_t *n){
         }
     }
 
-    // snrt_global_barrier();
+    snrt_global_barrier();
     // INFO: replacing global barrier with custom barrier for RTL sims
-    snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
+    // snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
 
     if(setup_SSR && RUN_TRAINING_STEP){
         // for SSRs we need to DMA transfer the cluster 1 data to cluster 0
