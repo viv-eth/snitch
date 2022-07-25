@@ -8,10 +8,10 @@
 #include "snrt.h"
 
 typedef float v2f32 __attribute__((vector_size(8)));
-union fp32_v2f32_u { 
+typedef union fp32_v2f32_u { 
         v2f32 v2; 
         float v[2]; 
-};
+} fp32_v2f32_u;
 typedef __fp16 v4f16 __attribute__((vector_size(8)));
 union fp16_v4f16_u { 
         v4f16 v4; 
@@ -46,6 +46,16 @@ float my_exp(float x)
 } 
 
 static float loadFromF16(const __fp16 *pointer) { return *(const __fp16 *)pointer; } 
+
+// bit returned at location
+int bit_return(int a, int loc)   
+{
+    int buf = a & 1<<loc;
+
+    if (buf == 0) return 0;
+    else return 1; 
+}
+
 
 // INFO: start of FP16 baseline network implementation
 //// Feedforward Step
@@ -387,6 +397,7 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     register volatile double ft0 asm("ft0");
     register volatile double ft1 asm("ft1");
     register volatile double ft2 asm("ft2");
+    // register volatile __fp16 ft5 asm("ft5");
     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
     register v4f16 zero_reg;
@@ -397,12 +408,14 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     register float b_grad_update_rg = 0.0;
     register float test_type = 0.0;
     register double test_zero = 0.0;
-    float dummy = 0.0;
+    register float dummy = 0.0;
+    register v2f32 vdummy;
     
     
     // for the bias upgrade we need to cast the updates to fp16
     __fp16 test = 0.0;
     __fp16 one_fp16 = 1.0;
+    register v4f16 fp16_one_reg = {one_fp16, one_fp16, one_fp16, one_fp16};
     __fp16 zero_fp16 = 0.0;
     // __fp16 b_checksum = 0.0f;
     __fp16 W_grad_update = 0.0;
@@ -435,12 +448,46 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
         if(!(idx_eff > OUT_CH * 5 - 1)){
 
-            float tt = loadFromF16(&activations[0]);
+            // INFO: this is for bare assembly implementation
+            // __fp16 act_fp16 = activations[0];
+            // // short *act_short;
+            // int *act_short;
+            // act_short = &act_fp16;
+            // printf("short: ");
+            // for(int i = 15; i >= 0; i--){
+            //     printf("%d", bit_return(*act_short, i));
+            // }
+            // printf("\n");
+            // printf("long: ");
+            // for(int i = 31; i >= 0; i--){
+            //     printf("%d", bit_return(*act_short, i));
+            // }
+            // printf("\n");
+            // INFO: end of tests for bare assembly implementation
+
+            // float tt = loadFromF16(&activations[0]);
+            __fp16 *b_grad_update_ptr = &activations[0]; // RTL PASS
+            register v4f16 test_b_grad_update = {*b_grad_update_ptr, *b_grad_update_ptr, *b_grad_update_ptr, *b_grad_update_ptr};
+            // printf("before test_b_grad_update[0] = %f\n", test_b_grad_update[0]);
+            // write b grad update values into test_b_grad_update vector
+            // __fp16 b_grad_update_ptr_val  = (*b_grad_update_ptr);
+            // write b_grad_update_ptr_val into ft5 assembly register
+            // asm volatile("lh ft5 [] " ::"X"(ft5), "X"(b_grad_update_ptr_val));
+            // register volatile float b_grad_update_ptr_val asm("ft5") = (*b_grad_update_ptr);
+            b_grad_update = (*b_grad_update_ptr + zero_fp16); // RTL PASS
             // printf("tt = %f\n", tt);
+
+            asm volatile(
+                    "fmv.s %[test_type], %[b_grad_update]\n"
+                    : [b_grad_update] "+&f"(b_grad_update), [test_type] "+&f"(test_type)
+                    : 
+                    : "ft0", "ft1", "ft2"
+            ); // RTL PASS
+
+            // printf("test_type = %f\n", test_type);
             
             // b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
             // b_grad_update_ptr = (idx_eff == *target) ? &activations[ldB * out] - 1 : &activations[ldB * out];
-            __fp16 *b_grad_update_ptr = &activations[0];
             // printf("BEFORE b_grad_update_ptr = %f\n", *b_grad_update_ptr);
             
             // register v4f16 c; 
@@ -454,43 +501,81 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             // ); // RTL FAIL
 
             if(idx_eff == target_n){
-                b_grad_update = tt; // - one_fp16; 
+                // asm volatile (
+                //     "vfsub.h %[test_b_grad_update], %[test_b_grad_update], %[fp16_one_reg] \n"
+                //     : [ test_b_grad_update ] "+&f"(test_b_grad_update)
+                //     : [ fp16_one_reg ] "f"(fp16_one_reg)
+                //     : "ft0", "ft1", "ft2"
+                // ); // RTL FAIL
 
-                asm volatile(
-                    "fmv.s.x ft4, %0\n"
-                    : "+r"(b_grad_update)
-                    : 
-                    : "ft0", "ft1", "ft2"
-                );
-                // b_grad_update = activations[ldB * out] - 1; // RTL PASS
-                asm volatile(
-                    // "fsub.s          %[test_type],  ft4,  ft8 \n"
-                    "fsub.s          %[test_type],  ft4,  %[one] \n"
-                    // "fcvt.s.h        %[test_type], ft7 \n"
-                    : [b_grad_update_reg] "+&f"(b_grad_update_reg), [b_grad_update_rg] "+&f"(b_grad_update), [test_type] "+&f"(test_type)
-                    : [b_grad_update] "r"(b_grad_update), [zero] "f"(zero), [one] "f"(one)
-                    : "ft0", "ft1", "ft2"
-                );
+                // printf("after test_b_grad_update[0] = %f\n", test_b_grad_update[0]);
+                // test_type -= 1.0;
+                // b_grad_update = tt; // - one_fp16; 
+                // // b_grad_update = activations[ldB * out] - 1; // RTL PASS
+                // asm volatile(
+                //     // "fsub.s          %[test_type],  ft4,  ft8 \n"
+                //     "fcvt.h.s        ft7, %[one] \n"
+                //     "fcvt.s.h        ft6, ft7 \n"
+                //     "fcvt.h.s        ft8, %[b_grad_update] \n"
+                //     "fcvt.s.h        ft4, ft8 \n"
+                //     "fsub.h          %[test_type],  ft8,  ft7 \n"
+                //     // "fsub.s          %[test_type],  %[b_grad_update],  %[one] \n"
+                //     "fsub.s          %[test_type],  ft4, ft6 \n"
+                //     // "fcvt.s.h        %[test_type], ft7 \n"
+                //     : [test_type] "+&f"(test_type)
+                //     : [zero] "f"(zero), [one] "f"(one), [b_grad_update] "f"(b_grad_update)
+                //     : "ft0", "ft1", "ft2", "ft7"
+                // ); // RTL FAIL
+                // asm volatile(
+                //     // "fsub.s          %[test_type],  ft4,  ft8 \n"
+                //     "fcvt.h.s        ft7, %[one] \n"
+                //     // "fmv.h.x           ft6, ft5 \n"
+                //     // "fcvt.s.h        ft6, ft7 \n"
+                //     // "fcvt.h.s        ft8, %[b_grad_update] \n"
+                //     // "fcvt.s.h        ft4, ft8 \n"
+                //     "fsub.h          %[test_type],  %[b_grad_update_ptr_val],  ft7 \n"
+                //     // "fsub.s          %[test_type],  %[b_grad_update],  %[one] \n"
+                //     // "fsub.s          %[test_type],  ft4, ft6 \n"
+                //     // "fcvt.s.h        %[test_type], ft7 \n"
+                //     : [test_type] "+&f"(test_type), [b_grad_update_ptr_val] "+X"(b_grad_update_ptr_val)
+                //     : [zero] "f"(zero), [one] "f"(one)
+                //     : "ft0", "ft1", "ft2", "ft7"
+                // ); // RTL FAIL
+
+                // printf("test_type = %f\n", test_type);
+                // asm volatile(
+                //     // "fsub.s          %[test_type],  ft4,  ft8 \n"
+                //     "fmv.s.x         ft4, %[test_type]\n"
+                //     "vfcpka.s.s      %[vdummy], ft4, %[zero]\n"
+                //     // "vfcpka.s.h      %[vdummy], ft4, %[zero_fp16]\n"
+                //     "fsub.s          %[dummy],  %[vdummy],  %[one] \n"
+                //     // "fsub.s          %[dummy],  ft4,  %[one] \n"
+                //     // "fcvt.s.h        %[test_type], ft7 \n"
+                //     : [test_type] "+r"(test_type), [dummy] "+&f"(dummy), [vdummy] "+&f"(vdummy)
+                //     : [zero] "f"(zero), [one] "f"(one), [zero_fp16] "r"(zero_fp16)
+                //     : "ft0", "ft1", "ft2"
+                // ); // RTL FAIL
+
+                // printf("dummy = %f\n", dummy);
             }
             else{
                 // b_grad_update = activations[ldB * out] - 0;
-                b_grad_update = tt - zero_fp16;
-                asm volatile(
-                    "fmv.s.x ft4, %0\n"
-                    : "+r"(b_grad_update)
-                        
-                );
-                // b_grad_update = activations[ldB * out] - 1; // RTL PASS
-                // b_grad_update = tt - 1; 
-                asm volatile(
-                    // "fsub.s          ft7,  ft4,  ft8 \n"
-                    "fsub.s          %[test_type],  ft4,  ft8 \n"
-                    // "fcvt.s.h        %[test_type], ft7 \n"
-                    : [b_grad_update_reg] "+&f"(b_grad_update_reg), [b_grad_update_rg] "+&f"(b_grad_update), [test_type] "+&f"(test_type)
-                    : [b_grad_update] "r"(b_grad_update), [zero] "f"(zero), [one] "f"(one)
-                    : "ft0", "ft1", "ft2"
-                );
+                // b_grad_update = tt - zero_fp16;
+                // // b_grad_update = activations[ldB * out] - 1; // RTL PASS
+                // // b_grad_update = tt - 1; 
+                // asm volatile(
+                //     // "fsub.s          ft7,  ft4,  ft8 \n"
+                //     "fsub.s          %[test_type],  ft4,  %[zero] \n"
+                //     // "fcvt.s.h        %[test_type], ft7 \n"
+                //     : [b_grad_update_reg] "+&f"(b_grad_update_reg), [b_grad_update_rg] "+&f"(b_grad_update), [test_type] "+&f"(test_type)
+                //     : [b_grad_update] "r"(b_grad_update), [zero] "f"(zero), [one] "f"(one)
+                //     : "ft0", "ft1", "ft2"
+                // );
             }
+
+            // printf("after test_b_grad_update[0] = %f\n", test_b_grad_update[0]);
+
+            // b_grad_update = test_type; // RTL FAIL
 
 
             // b_grad_update_ptr[ldB * out] = b_grad_update; // RTL FAIL
@@ -501,9 +586,9 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
             // bias_grads[ldB * out] = b_grad_update_ptr[0];
 
-            printf("test_type = %f\n", test_type);
+            // printf("test_type = %f\n", test_type);
 
-            printf("b_grad_update[%u] = %f\n", ldB * out + compute_id, b_grad_update);
+            // printf("b_grad_update[%u] = %f\n", ldB * out + compute_id, b_grad_update);
             // printf("AFTER b_grad_update_ptr = %f\n", *b_grad_update_ptr);
             // printf("bias_grads[%u] = %f\n", ldB * out + compute_id, bias_grads[ldB * out]);
 
@@ -533,6 +618,22 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             
             // Start of SSR region
             snrt_ssr_enable();
+
+            // asm volatile(
+            //     "vfcpka.h.d      %[b_grad_update_reg], %[test_type], %[test_type] \n"
+            //     "vfcpkb.h.d      %[b_grad_update_reg], %[test_type], %[test_type] \n"
+            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
+            //     : [test_type] "f"(test_type), [zero] "f"(zero)
+            //     : "ft0", "ft1", "ft2"
+            // ); // RTL FAIL
+
+            // asm volatile(
+            //     "vfcpka.h.s      %[b_grad_update_reg], %[test_type], %[zero] \n"
+            //     "vfcpkb.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
+            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
+            //     : [test_type] "f"(test_type), [zero] "f"(zero)
+            //     : "ft0", "ft1", "ft2"
+            // ); // RTL FAIL
 
 
             // asm volatile(
@@ -597,10 +698,10 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         //     // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
         //     // b_checksum += b_grad_update;
         
-        //     register float sum;
+            register float sum;
         //     register float acc = 0.0;
-        //     register v4f16 reduce_reg;
-        //     register v4f16 one_reg;
+            register v4f16 reduce_reg;
+            register v4f16 one_reg;
         //     const uint16_t unroll = 4;
         //     register v4f16 reduce_reg_0;
         //     register v4f16 reduce_reg_1;
@@ -612,14 +713,18 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         //     register v4f16 dotp_2;
         //     register v4f16 dotp_3;
 
-        //     asm volatile (
-        //         "vfcpka.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
-        //         "vfcpkb.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
-        //         // "vfsum.s          %[sum], %[reduce_reg]\n"
-        //     : [reduce_reg] "+&f"(reduce_reg), [sum] "=&f"(sum), [one_reg] "+&f"(one_reg)
-        //     : [b_grad_update] "f"(b_grad_update), [one] "f"(1.0f)
-        //     : "ft0", "ft1", "ft2"
-        //     );
+            // snrt_ssr_disable();
+            // printf("test_type = %f\n", test_type);
+            // snrt_ssr_enable();
+
+            // asm volatile (
+            //     "vfcpka.h.s       %[reduce_reg], %[test_type], %[test_type]\n"
+            //     "vfcpkb.h.s       %[reduce_reg], %[test_type], %[test_type]\n"
+            //     // "vfsum.s          %[sum], %[reduce_reg]\n"
+            // : [reduce_reg] "+&f"(reduce_reg), [sum] "=&f"(sum)
+            // : [test_type] "f"(test_type), [one] "f"(1.0f)
+            // : "ft0", "ft1", "ft2"
+            // );
 
         //     // asm volatile (
         //     //     "vfcpka.h.s       %[reduce_reg_0], %[b_grad_update], %[b_grad_update]\n"
