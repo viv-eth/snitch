@@ -259,7 +259,7 @@ void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
     
-    // INFO: for simplicity image is converted to dtype __fp16 --> discuss with GIM 
+    // INFO: for simplicity image is converted to dtype __fp16 
     const register float zero = 0.0f;
 
     __fp16 acc = 0.0f;
@@ -414,6 +414,8 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     // for the bias upgrade we need to cast the updates to fp16
     volatile __fp16 act = 0.0;
     volatile __fp16* act_ptr; 
+    volatile __fp16 bias_grad = 0.0;
+    volatile __fp16* bias_grad_ptr; 
     __fp16 one_fp16 = 1.0;
     __fp16 zero_fp16 = 0.0;
 
@@ -421,11 +423,9 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     __fp16 W_grad_update = 0.0;
     __fp16 W_checksum = 0.0;
     uint16_t idx_eff;
-    volatile uint16_t* idx_eff_u16;
     volatile uint32_t idx_eff_W;
 
     uint32_t zero_u32 = 0;
-    //uint16_t* zero_u16_ptr = &zero_u16;
 
     // get the value saved at target address
     uint16_t target_n = target[0];
@@ -464,39 +464,6 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 check_target_ptr = &target;
             }
 
-            // INFO: this is for bare assembly implementation
-            // __fp16 act_fp16 = activations[0];
-            // // short *act_short;
-            // int *act_short;
-            // act_short = &act_fp16;
-            // printf("short: ");
-            // for(int i = 15; i >= 0; i--){
-            //     printf("%d", bit_return(*act_short, i));
-            // }
-            // printf("\n");
-            // printf("long: ");
-            // for(int i = 31; i >= 0; i--){
-            //     printf("%d", bit_return(*act_short, i));
-            // }
-            // printf("\n");
-            // INFO: end of tests for bare assembly implementation
-
-            // float tt = loadFromF16(&activations[0]);
-            // __fp16 volatile *b_grad_update_ptr = &activations[ldB * out]; // RTL PASS
-
-            // printf("b_grad_update_ptr: %p\n", b_grad_update_ptr);
-            
-            // b_grad_update = (*b_grad_update_ptr + zero_fp16); // RTL PASS
-            
-            // GIM: after adding volatile to b_grad_update to avoid compiler optimization, 
-            // the following code is not working anymore in the RTL !!
-            // b_grad_update = (idx_eff == *target) ? (float)(activations[ldB * out] - one_fp16) : (float)(activations[ldB * out] + zero_fp16); // RTL FAIL
-            // Below code also fails in the RTL
-            // test = (idx_eff == *target) ? (activations[ldB * out] - one_fp16) : (activations[ldB * out] + zero_fp16);
-
-            // printf("test: %f\n", test);
-            // printf("test_ptr: %f\n", *test_ptr);
-
             // GIM: we have to assign pointer here otherwise out of memory accesses
             // CODE BELOW DEFINITELY PASSES IN THE RTL!!!!
             // asm volatile(
@@ -510,7 +477,7 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             // ); // RTL PASS 
 
             asm volatile(
-                "flh            ft3, 0(%[test])\n"
+                "flh            ft3, 0(%[act])\n"
                 "fcvt.s.h       %[b_grad_update], ft3\n"
                 "beq            %[target_n], %[check_target_ptr], 1f\n"
                 "bne            %[target_n], %[check_target_ptr], 2f\n"
@@ -518,25 +485,21 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
                 "2:            \n"
                 : [b_grad_update] "+&f"(b_grad_update)
-                : [test] "r"(test_ptr), [target_n] "r"(target_ptr), [check_target_ptr] "r"(check_target_ptr),
+                : [act] "r"(act_ptr), [target_n] "r"(target_ptr), [check_target_ptr] "r"(check_target_ptr),
                   [one] "f"(one)
                 : "ft0", "ft1", "ft2", "ft3"
             );
 
-            //printf("After Update: b_grad_update = %f\n", b_grad_update);
+            // printf("After Update: b_grad_update = %f\n", b_grad_update);
 
-            // if(idx_eff == target_n){
-                // GIM: the code above passes in the RTL, but when we place it in the if 
-                // condition, it fails in the RTL
-                // asm volatile(
-                //     "flh            ft3, 0(%[test])\n"
-                //     "fcvt.s.h       %[b_grad_update], ft3\n"
-                //     "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
-                //     : [b_grad_update] "+&f"(b_grad_update)
-                //     : [test] "r"(test_ptr), [one] "f"(one)
-                //     : "ft0", "ft1", "ft2", "ft3"
-                // );
-            // }
+            // bias_grads[ldB * out] = b_grad_update; //GIM: why does this not work
+
+            bias_grad = b_grad_update;
+            bias_grads[ldB * out] = bias_grad;
+
+            // printf("bias_grad = %f\n", bias_grads[ldB * out]);
+            // printf("bias_grad = %f\n", bias_grad);
+
 
 
             if (setup_SSR) {
@@ -559,9 +522,6 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 //                 sizeof(double));
 
             }
-
-            // snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-            // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
             
             // Start of SSR region
             snrt_ssr_enable();
@@ -572,193 +532,127 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
             //     : [b_grad_update] "f"(b_grad_update), [zero] "f"(zero)
             //     : "ft0", "ft1", "ft2"
-            // ); // RTL FAIL
-
-            // asm volatile(
-            //     "vfcpka.h.s      %[b_grad_update_reg], %[test_type], %[zero] \n"
-            //     "vfcpkb.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
-            //     : [test_type] "f"(test_type), [zero] "f"(zero)
-            //     : "ft0", "ft1", "ft2"
-            // ); // RTL FAIL
-
-
-            // asm volatile(
-            //     "vfcpka.h.s    %[zero_reg], %[zero], %[zero] \n"
-            //     "vfcpkb.h.s    %[zero_reg], %[zero], %[zero] \n"
-            //     : [zero_reg] "+&f"(zero_reg)
-            //     : [zero] "f"(zero)
-            //     : "ft0", "ft1", "ft2"
             // ); // RTL PASS
-
-            // asm volatile(
-            //     "vfcpka.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     "vfcpkb.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
-            //     : [zero] "f"(zero)
-            //     : "ft0", "ft1", "ft2"
-            // ); // RTL PASS
-
-            // asm volatile(
-            //     "fmv.h.x         %[b_grad_update_rg],  %[b_grad_update] \n"
-            //     "vfcpka.h.s      %[b_grad_update_reg], %[b_grad_update_rg], %[zero] \n"
-            //     "vfcpkb.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg), [b_grad_update_rg] "+&f"(b_grad_update)
-            //     : [b_grad_update] "r"(b_grad_update), [zero] "f"(zero)
-            //     : "ft0", "ft1", "ft2"
-            // ); // RTL FAIL
-
-            // snrt_ssr_disable();
-            // printf("b_grad_update_rg = %f\n", b_grad_update_rg);
-            // snrt_ssr_enable();
-
-
-            // asm volatile(
-            //     "fcvt.s.h      %[test_type], %[b_grad_update]\n"
-            //     : [test_type] "+&f"(test_type)
-            //     : [zero] "f"(zero), [b_grad_update] "f"(b_grad_update)
-            //     : "ft0", "ft1", "ft2"
-            // ); // RTL FAIL
-
-            // asm volatile(
-            //     "vfcpka.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     "vfcpkb.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
-            //     : [zero] "f"(zero), [b_grad_update] "f"(b_grad_update)
-            //     : "ft0", "ft1", "ft2"
-            // ); // RTL FAIL
-
-            // asm volatile(
-            //     "vfcpka.h.s      %[b_grad_update_reg], %[b_grad_update], %[zero] \n"
-            //     "vfcpkb.h.s      %[b_grad_update_reg], %[zero], %[zero] \n"
-            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg)
-            //     : [b_grad_update] "f"((float)b_grad_update), [zero] "f"(zero) // (float)
-            //     : "ft0", "ft1", "ft2"
-            // ); // RTL FAIL, gives misaligned data accesses
             
-        //     // bias_grads[ldB * out] = b_grad_update; //GIM: why does this not work
+            // bias_grads[ldB * out] = b_grad_update; //GIM: why does this not work
 
 
-        //     // // SSR start address need to be configured each time
-        //     snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-        //     snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
-        //     // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
-        //     // b_checksum += b_grad_update;
+            // SSR start address need to be configured each time
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+            // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
+            // b_checksum += b_grad_update;
         
-            // register float sum;
-        //     register float acc = 0.0;
-            // register v4f16 reduce_reg;
-            // register v4f16 one_reg;
+            register float sum;
+            register float acc = 0.0;
+            register v4f16 reduce_reg;
+            register v4f16 one_reg;
         //     const uint16_t unroll = 4;
         //     register v4f16 reduce_reg_0;
         //     register v4f16 reduce_reg_1;
         //     register v4f16 reduce_reg_2;
         //     register v4f16 reduce_reg_3;
-        //     register v4f16 dotp;
+            register v4f16 dotp;
         //     register v4f16 dotp_0;
         //     register v4f16 dotp_1;
         //     register v4f16 dotp_2;
         //     register v4f16 dotp_3;
 
-            // snrt_ssr_disable();
-            // printf("test_type = %f\n", test_type);
-            // snrt_ssr_enable();
+            asm volatile (
+                "vfcpka.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
+                "vfcpkb.h.s       %[reduce_reg], %[b_grad_update], %[b_grad_update]\n"
+                // "vfsum.s          %[sum], %[reduce_reg]\n"
+            : [reduce_reg] "+&f"(reduce_reg), [sum] "=&f"(sum)
+            : [b_grad_update] "f"(b_grad_update), [one] "f"(1.0f)
+            : "ft0", "ft1", "ft2"
+            );
 
             // asm volatile (
-            //     "vfcpka.h.s       %[reduce_reg], %[test_type], %[test_type]\n"
-            //     "vfcpkb.h.s       %[reduce_reg], %[test_type], %[test_type]\n"
-            //     // "vfsum.s          %[sum], %[reduce_reg]\n"
-            // : [reduce_reg] "+&f"(reduce_reg), [sum] "=&f"(sum)
-            // : [test_type] "f"(test_type), [one] "f"(1.0f)
+            //     "vfcpka.h.s       %[reduce_reg_0], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpkb.h.s       %[reduce_reg_0], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpka.h.s       %[reduce_reg_1], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpkb.h.s       %[reduce_reg_1], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpka.h.s       %[reduce_reg_2], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpkb.h.s       %[reduce_reg_2], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpka.h.s       %[reduce_reg_3], %[b_grad_update], %[b_grad_update]\n"
+            //     "vfcpkb.h.s       %[reduce_reg_3], %[b_grad_update], %[b_grad_update]\n"
+            // : [reduce_reg_0] "+&f"(reduce_reg_0), [reduce_reg_1] "+&f"(reduce_reg_1), 
+            //   [reduce_reg_2] "+&f"(reduce_reg_2), [reduce_reg_3] "+&f"(reduce_reg_3)
+            // : [b_grad_update] "f"(b_grad_update)
             // : "ft0", "ft1", "ft2"
             // );
 
-        //     // asm volatile (
-        //     //     "vfcpka.h.s       %[reduce_reg_0], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpkb.h.s       %[reduce_reg_0], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpka.h.s       %[reduce_reg_1], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpkb.h.s       %[reduce_reg_1], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpka.h.s       %[reduce_reg_2], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpkb.h.s       %[reduce_reg_2], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpka.h.s       %[reduce_reg_3], %[b_grad_update], %[b_grad_update]\n"
-        //     //     "vfcpkb.h.s       %[reduce_reg_3], %[b_grad_update], %[b_grad_update]\n"
-        //     // : [reduce_reg_0] "+&f"(reduce_reg_0), [reduce_reg_1] "+&f"(reduce_reg_1), 
-        //     //   [reduce_reg_2] "+&f"(reduce_reg_2), [reduce_reg_3] "+&f"(reduce_reg_3)
-        //     // : [b_grad_update] "f"(b_grad_update)
-        //     // : "ft0", "ft1", "ft2"
-        //     // );
+            snrt_ssr_enable();
+            for(uint32_t in = 0; in < IN_CH;){
+                idx_eff_W = compute_id * IN_CH + out * ldW + in;
+                if(!(idx_eff_W + 3 > IN_CH * OUT_CH * 5 - 1)){
+                    asm volatile(
+                        "vfcpka.s.s       %[dotp], %[zero], %[zero]\n"
+                        "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
+                        "vfmul.h          %[dotp], %[reduce_reg], ft0\n"
+                        // "vfmul.h          %[dotp], %[one_reg], ft0\n"
+                        "vfadd.h          %[dotp], %[dotp], ft1\n"
+                        "vfsum.h          %[sum], %[dotp]\n"
+                        // "vfadd.h          ft2, %[dotp], ft2\n" // Why does this fail in the RTL?
+                    : [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp), [sum] "+&f"(sum), [one_reg] "+&f"(one_reg)
+                    : [zero] "f"(0.0f), [one] "f"(1.0f)
+                    : "ft0", "ft1", "ft2"
+                    );
 
-        //     snrt_ssr_enable();
-        //     for(uint32_t in = 0; in < IN_CH;){
-        //         idx_eff_W = compute_id * IN_CH + out * ldW + in;
-        //         if(!(idx_eff_W + 3 > IN_CH * OUT_CH * 5 - 1)){
-        //             asm volatile(
-        //                 "vfcpka.s.s       %[dotp], %[zero], %[zero]\n"
-        //                 "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
-        //                 "vfmul.h          %[dotp], %[reduce_reg], ft0\n"
-        //                 // "vfmul.h          %[dotp], %[one_reg], ft0\n"
-        //                 "vfadd.h          %[dotp], %[dotp], ft1\n"
-        //                 "vfsum.h          %[sum], %[dotp]\n"
-        //                 // "vfadd.h          ft2, %[dotp], ft2\n" // Why does this fail in the RTL?
-        //             : [reduce_reg] "+&f"(reduce_reg), [dotp] "+&f"(dotp), [sum] "+&f"(sum), [one_reg] "+&f"(one_reg)
-        //             : [zero] "f"(0.0f), [one] "f"(1.0f)
-        //             : "ft0", "ft1", "ft2"
-        //             );
+                    // asm volatile(
+                    //     "vfcpka.s.s       %[dotp_0], %[zero], %[zero]\n"
+                    //     "vfcpka.s.s       %[dotp_1], %[zero], %[zero]\n"
+                    //     "vfcpka.s.s       %[dotp_2], %[zero], %[zero]\n"
+                    //     "vfcpka.s.s       %[dotp_3], %[zero], %[zero]\n"
+                    //     "vfmul.h          %[dotp_0], %[reduce_reg_0], ft0\n"
+                    //     "vfmul.h          %[dotp_1], %[reduce_reg_1], ft0\n"
+                    //     "vfmul.h          %[dotp_2], %[reduce_reg_2], ft0\n"
+                    //     "vfmul.h          %[dotp_3], %[reduce_reg_3], ft0\n"
+                    //     "vfadd.h          %[dotp_0], %[dotp_0], ft1\n"
+                    //     "vfadd.h          %[dotp_1], %[dotp_1], ft1\n"
+                    //     "vfadd.h          %[dotp_2], %[dotp_2], ft1\n"
+                    //     "vfadd.h          %[dotp_3], %[dotp_3], ft1\n"
+                    //     // "vfadd.h          ft2, %[dotp], ft2\n" // Why does this fail in the RTL?
+                    // : [reduce_reg_0] "+&f"(reduce_reg_0), [dotp_0] "+&f"(dotp_0), 
+                    //   [reduce_reg_1] "+&f"(reduce_reg_1), [dotp_1] "+&f"(dotp_1), 
+                    //   [reduce_reg_2] "+&f"(reduce_reg_2), [dotp_2] "+&f"(dotp_2),
+                    //   [reduce_reg_3] "+&f"(reduce_reg_3), [dotp_3] "+&f"(dotp_3)
+                    // : [zero] "f"(0.0f)
+                    // : "ft0", "ft1", "ft2"
+                    // );
 
-        //             // asm volatile(
-        //             //     "vfcpka.s.s       %[dotp_0], %[zero], %[zero]\n"
-        //             //     "vfcpka.s.s       %[dotp_1], %[zero], %[zero]\n"
-        //             //     "vfcpka.s.s       %[dotp_2], %[zero], %[zero]\n"
-        //             //     "vfcpka.s.s       %[dotp_3], %[zero], %[zero]\n"
-        //             //     "vfmul.h          %[dotp_0], %[reduce_reg_0], ft0\n"
-        //             //     "vfmul.h          %[dotp_1], %[reduce_reg_1], ft0\n"
-        //             //     "vfmul.h          %[dotp_2], %[reduce_reg_2], ft0\n"
-        //             //     "vfmul.h          %[dotp_3], %[reduce_reg_3], ft0\n"
-        //             //     "vfadd.h          %[dotp_0], %[dotp_0], ft1\n"
-        //             //     "vfadd.h          %[dotp_1], %[dotp_1], ft1\n"
-        //             //     "vfadd.h          %[dotp_2], %[dotp_2], ft1\n"
-        //             //     "vfadd.h          %[dotp_3], %[dotp_3], ft1\n"
-        //             //     // "vfadd.h          ft2, %[dotp], ft2\n" // Why does this fail in the RTL?
-        //             // : [reduce_reg_0] "+&f"(reduce_reg_0), [dotp_0] "+&f"(dotp_0), 
-        //             //   [reduce_reg_1] "+&f"(reduce_reg_1), [dotp_1] "+&f"(dotp_1), 
-        //             //   [reduce_reg_2] "+&f"(reduce_reg_2), [dotp_2] "+&f"(dotp_2),
-        //             //   [reduce_reg_3] "+&f"(reduce_reg_3), [dotp_3] "+&f"(dotp_3)
-        //             // : [zero] "f"(0.0f)
-        //             // : "ft0", "ft1", "ft2"
-        //             // );
+                    snrt_ssr_disable(); 
+                    weight_grads[out*ldW + in + 0] += dotp[0];
+                    weight_grads[out*ldW + in + 1] += dotp[1];
+                    weight_grads[out*ldW + in + 2] += dotp[2];
+                    weight_grads[out*ldW + in + 3] += dotp[3];
+                    // W_checksum += dotp[0] + dotp[1] + dotp[2] + dotp[3];
+                    // weight_grads[out*ldW + in + 0] += dotp_0[0];
+                    // weight_grads[out*ldW + in + 1] += dotp_0[1];
+                    // weight_grads[out*ldW + in + 2] += dotp_0[2];
+                    // weight_grads[out*ldW + in + 3] += dotp_0[3];
+                    // weight_grads[out*ldW + in + 4] += dotp_1[0];
+                    // weight_grads[out*ldW + in + 5] += dotp_1[1];
+                    // weight_grads[out*ldW + in + 6] += dotp_1[2];
+                    // weight_grads[out*ldW + in + 7] += dotp_1[3];
+                    // weight_grads[out*ldW + in + 8] += dotp_2[0];
+                    // weight_grads[out*ldW + in + 9] += dotp_2[1];
+                    // weight_grads[out*ldW + in + 10] += dotp_2[2];
+                    // weight_grads[out*ldW + in + 11] += dotp_2[3];
+                    // weight_grads[out*ldW + in + 12] += dotp_3[0];
+                    // weight_grads[out*ldW + in + 13] += dotp_3[1];
+                    // weight_grads[out*ldW + in + 14] += dotp_3[2];
+                    // weight_grads[out*ldW + in + 15] += dotp_3[3];
+                    // W_checksum += dotp_0[0] + dotp_0[1] + dotp_0[2] + dotp_0[3] 
+                    //             + dotp_1[0] + dotp_1[1] + dotp_1[2] + dotp_1[3] 
+                    //             + dotp_2[0] + dotp_2[1] + dotp_2[2] + dotp_2[3] 
+                    //             + dotp_3[0] + dotp_3[1] + dotp_3[2] + dotp_3[3];
+                    snrt_ssr_enable();
+                }
 
-        //             snrt_ssr_disable(); 
-        //             weight_grads[out*ldW + in + 0] += dotp[0];
-        //             weight_grads[out*ldW + in + 1] += dotp[1];
-        //             weight_grads[out*ldW + in + 2] += dotp[2];
-        //             weight_grads[out*ldW + in + 3] += dotp[3];
-        //             // W_checksum += dotp[0] + dotp[1] + dotp[2] + dotp[3];
-        //             // weight_grads[out*ldW + in + 0] += dotp_0[0];
-        //             // weight_grads[out*ldW + in + 1] += dotp_0[1];
-        //             // weight_grads[out*ldW + in + 2] += dotp_0[2];
-        //             // weight_grads[out*ldW + in + 3] += dotp_0[3];
-        //             // weight_grads[out*ldW + in + 4] += dotp_1[0];
-        //             // weight_grads[out*ldW + in + 5] += dotp_1[1];
-        //             // weight_grads[out*ldW + in + 6] += dotp_1[2];
-        //             // weight_grads[out*ldW + in + 7] += dotp_1[3];
-        //             // weight_grads[out*ldW + in + 8] += dotp_2[0];
-        //             // weight_grads[out*ldW + in + 9] += dotp_2[1];
-        //             // weight_grads[out*ldW + in + 10] += dotp_2[2];
-        //             // weight_grads[out*ldW + in + 11] += dotp_2[3];
-        //             // weight_grads[out*ldW + in + 12] += dotp_3[0];
-        //             // weight_grads[out*ldW + in + 13] += dotp_3[1];
-        //             // weight_grads[out*ldW + in + 14] += dotp_3[2];
-        //             // weight_grads[out*ldW + in + 15] += dotp_3[3];
-        //             // W_checksum += dotp_0[0] + dotp_0[1] + dotp_0[2] + dotp_0[3] 
-        //             //             + dotp_1[0] + dotp_1[1] + dotp_1[2] + dotp_1[3] 
-        //             //             + dotp_2[0] + dotp_2[1] + dotp_2[2] + dotp_2[3] 
-        //             //             + dotp_3[0] + dotp_3[1] + dotp_3[2] + dotp_3[3];
-        //             snrt_ssr_enable();
-        //         }
-
-        //         in += 4;
-        //         // in += 4 * unroll;
-        //     }
+                in += 4;
+                // in += 4 * unroll;
+            }
 
             snrt_ssr_disable();
             snrt_fpu_fence();
@@ -767,12 +661,12 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
     }
 
-    // printf("GRADIENT UPDATE FP16 SIMD with SSRs: W_checksum = %f\n", W_checksum);
+    // printf("GRADIENT UPDATE FP16 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
     // printf("GRADIENT UPDATE FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
 
     snrt_cluster_hw_barrier();
 
-} // RTL FAIL
+} // RTL PASS
 
 //// Training Step
 void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -796,8 +690,8 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     register v4f16 lr_vec;
     register v4f16 nimg_vec;
 
-    __fp16 b_checksum = 0.0f;
-    __fp16 W_checksum = 0.0f;
+    // __fp16 b_checksum = 0.0f;
+    // __fp16 W_checksum = 0.0f;
 
     uint32_t volatile idx_eff = 0;
     uint32_t volatile idx_eff_W = 0;
@@ -826,7 +720,7 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
             biases[ldB * out] -= lr * bias_grads[ldB * out] / ((__fp16) number_of_images);
 
-	        b_checksum += biases[ldB * out];
+	        // b_checksum += biases[ldB * out];
         } 
         
         register v4f16 reduce_reg;
@@ -864,7 +758,7 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                 weights[out*ldW + in + 1] += reduce_reg[1] / nimg;
                 weights[out*ldW + in + 2] += reduce_reg[2] / nimg;
                 weights[out*ldW + in + 3] += reduce_reg[3] / nimg;
-                W_checksum += reduce_reg[0] + reduce_reg[1] + reduce_reg[2] + reduce_reg[3];
+                // W_checksum += reduce_reg[0] + reduce_reg[1] + reduce_reg[2] + reduce_reg[3];
                 snrt_ssr_enable();
             } 
 
@@ -877,8 +771,8 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
     }
 
-    printf("TRAINING STEP FP16 SIMD with SSRs: W_checksum = %f\n", W_checksum);
-    printf("TRAINING STEP FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
+    // printf("TRAINING STEP FP16 SIMD with SSRs: W_checksum = %f\n", W_checksum);
+    // printf("TRAINING STEP FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
 
 
-} // RTL PASS
+} // RTL TODO
