@@ -21,7 +21,7 @@
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0
+#define RUN_TRAINING_STEP 1
 
 void mnist_fp8(const network_fp8_t *n){
 
@@ -432,7 +432,7 @@ void mnist_fp8(const network_fp8_t *n){
         // Calculate number of rows for each compute
         // core. If multiples of each other we have to 
         // forcefully set it to 1
-        volatile uint32_t div = n->OUT_CH % compute_num;
+        volatile uint32_t div = 10 % compute_num;
         if(div == 0){
             div = 1;
         }
@@ -466,10 +466,10 @@ void mnist_fp8(const network_fp8_t *n){
             } else {
                 // INFO: FP64 with SSRs
                 benchmark_get_cycle();
-                // training_step_fp16_ssr_simdn(n->IN_CH1, n->IN_CH2, div, 
-                //                     &weights_cl0[W_offset], &weight_grads_cl0[W_offset], ldW, 
-                //                     &biases_cl0[b_offset], &activations_cl0[b_offset], ldB, 
-                //                     compute_id, compute_num, number_of_images, setup_SSR);
+                training_step_fp8_opt(n->IN_CH1, n->IN_CH2, div, 
+                                    &weights_cl0[W_offset], &weight_grads_cl0[W_offset], ldW, 
+                                    &biases_cl0[b_offset], &activations_cl0[b_offset], ldB, 
+                                    compute_id, compute_num, number_of_images, setup_SSR);
                 benchmark_get_cycle();
             }
 

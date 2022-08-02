@@ -117,6 +117,14 @@ void print_byte(char value){
 
 }
 
+uint32_t get_log2(uint32_t value) {
+    uint32_t log2 = 0;
+    while(value >>= 1) {
+        log2++;
+    }
+    return log2;
+}
+
 // INFO: start of FP8 baseline network implementation
 //// Feedforward Step
 void feedforward_fp8n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
@@ -370,7 +378,7 @@ void training_step_fp8n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images){
 
-    char lr = 0.5;
+    float lr = 0.5;
     char b_checksum = 0.0;
     char W_checksum = 0.0;
 
@@ -532,7 +540,7 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     snrt_cluster_hw_barrier();
 }
 
-gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                         char *weight_grads, uint32_t ldW, char *bias_grads,
                         float *activations_fp32, uint32_t ldB, char *image, 
                         uint32_t *target, uint32_t ldI, uint32_t compute_id, 
@@ -579,6 +587,8 @@ gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
                 : "ft0", "ft1", "ft2"
             );
+
+            bias_grads[ldB * out] = b_grad_update_reg[0];
 
             if (setup_SSR) {
 
@@ -651,6 +661,120 @@ gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     printf("GRADIENT UPDATE FP8 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
 
     snrt_cluster_hw_barrier();
+
+}
+
+//// Training Step
+void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                char *weights, char *weight_grads, uint32_t ldW, char *biases, char *bias_grads,
+                uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
+                uint32_t number_of_images, uint32_t setup_SSR){
+
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+
+    uint32_t lr_inv = 2;
+    float lr = 0.5;
+
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
+
+    // get log2 of number of images
+    uint32_t log2_num_images = get_log2(number_of_images);
+    // get log2 of lr_inv
+    uint32_t log2_lr_inv = get_log2(lr_inv);
+
+    const uint32_t IN_CH = IN_CH1 * IN_CH2;
+
+    uint32_t idx_eff;
+    uint32_t idx_eff_W;
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        idx_eff = compute_id + out * ldB;
+
+        if(!(idx_eff > OUT_CH * 5 - 1)){
+            // printf("TRAINING STEP: bias_grads[%u] = ", idx_eff);
+            // print_byte(bias_grads[ldB * out]);
+            // printf(" = %d = %f\n", bias_grads[ldB * out], get_float_from_byte(bias_grads[ldB * out]));
+            // shift bias grads to right by log2_lr_inv (i.e. divide by the inverse of the learning rate)
+            // and divide the number by the number of images
+            biases[ldB * out] -= (bias_grads[ldB * out] >> log2_lr_inv) >> log2_num_images;
+            b_checksum += get_float_from_byte(biases[ldB * out]);
+
+            if (setup_SSR) {
+                
+            // SSR read setup of weight gradients
+            snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                            IN_CH / 8,  
+                            sizeof(double));
+            
+        }
+            
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
+            // printf("LR * BIAS_GRADS[%u] = ", idx_eff);
+            // print_byte(bias_grads[ldB * out]);
+            // printf(" = %d = %f\n", (bias_grads[ldB * out] >> log2_lr_inv), get_float_from_byte(bias_grads[ldB * out]));
+            // printf("TRAINING STEP: biases[%u] = ", idx_eff);
+            // print_byte(biases[ldB * out]);
+            // printf(" = %d = %f\n", biases[ldB * out], get_float_from_byte(biases[ldB * out]));
+        } else {
+            biases[ldB * out] = 0b00000000;
+        }
+
+
+        snrt_ssr_enable();
+        for(uint32_t in = 0; in < IN_CH;){
+
+            idx_eff_W = compute_id*IN_CH + out * ldW + in; 
+
+            if(!(idx_eff_W  + 7 > IN_CH * OUT_CH * 5 - 1)){
+
+                register v8f8 reduce_reg;
+                register v4f16 sum_reduce_reg_v4;
+                register v2f32 sum_reduce_reg_v2;
+                register float sum = 0.0;
+                asm volatile(
+                    "vfcpka.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                    "vfcpkb.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                    "vfcpkc.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                    "vfcpkd.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                    "vfmul.b          %[reduce_reg], %[reduce_reg], ft0"
+                    : [reduce_reg] "+&f"(reduce_reg)
+                    : [lr] "f"(lr), [zero] "f"(0.0)
+                    : "ft0", "ft1", "ft2"
+                );
+
+                snrt_ssr_disable(); 
+                weight_grads[out*ldW + in + 0] += reduce_reg[0];
+                weight_grads[out*ldW + in + 1] += reduce_reg[1];
+                weight_grads[out*ldW + in + 2] += reduce_reg[2];
+                weight_grads[out*ldW + in + 3] += reduce_reg[3];
+                weight_grads[out*ldW + in + 4] += reduce_reg[4];
+                weight_grads[out*ldW + in + 5] += reduce_reg[5];
+                weight_grads[out*ldW + in + 6] += reduce_reg[6];
+                weight_grads[out*ldW + in + 7] += reduce_reg[7];
+                W_checksum += get_float_from_byte(reduce_reg[0]) + get_float_from_byte(reduce_reg[1]) 
+                            + get_float_from_byte(reduce_reg[2]) + get_float_from_byte(reduce_reg[3]) 
+                            + get_float_from_byte(reduce_reg[4]) + get_float_from_byte(reduce_reg[5]) 
+                            + get_float_from_byte(reduce_reg[6]) + get_float_from_byte(reduce_reg[7]);
+                snrt_ssr_enable();
+
+
+            }
+
+            in += 8;
+
+        } 
+        snrt_ssr_disable();  
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2)); 
+
+    }
+
+    printf("TRAINING STEP FP16 SIMD with SSRs: W_checksum = %f\n", W_checksum);
+    printf("TRAINING STEP FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
 
 }
 
