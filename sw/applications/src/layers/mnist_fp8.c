@@ -20,7 +20,7 @@
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
+#define RUN_GRADIENT_UPDATE 1
 #define RUN_TRAINING_STEP 0
 
 void mnist_fp8(const network_fp8_t *n){
@@ -66,6 +66,8 @@ void mnist_fp8(const network_fp8_t *n){
     uint32_t core_sync_flag_size = compute_num*sizeof(uint32_t);
     // learning rate of the network
     uint32_t lr_size = sizeof(float);
+    // size of activation FP32 master copy
+    uint32_t act_fp32_mat_size = n->OUT_CH * sizeof(float);
 
     // cluster 0 variabels:
     char *weights_cl0;
@@ -73,13 +75,16 @@ void mnist_fp8(const network_fp8_t *n){
     char *biases_cl0;
     char *images;
     char *activations_cl0;
+    // keep FP32 master copy of activations for SoftMax
     float *max;
+    float *activations_cl0_fp32;
 
     // cluster 1 variabels:
     char *weights_cl1; // dummy variable to match offsets with cluster 0
     char *weight_grads_cl1;
     char *bias_grads_cl1;
     char *activations_cl1;
+    float *activations_cl1_fp32;
     char *loss;
     uint32_t *targets;
 
@@ -101,6 +106,8 @@ void mnist_fp8(const network_fp8_t *n){
         // INFO: the activations are also used for the bias gradients
         activations_cl0 = ptr;
         ptr += act_mat_size;
+        activations_cl0_fp32 = ptr;
+        ptr += act_fp32_mat_size;
         max = ptr;
         ptr += max_size;
     } else if (cluster_id == 1){
@@ -114,6 +121,8 @@ void mnist_fp8(const network_fp8_t *n){
         ptr += image_size * number_of_images;
         activations_cl1 = ptr;
         ptr += act_mat_size;
+        activations_cl1_fp32 = ptr;
+        ptr += act_fp32_mat_size;
         loss = ptr;
         ptr += loss_size;
         targets = ptr;
@@ -207,6 +216,8 @@ void mnist_fp8(const network_fp8_t *n){
                 div = 1;
             }
 
+            // printf("div: %u\n", div);
+
             // determine the row stride of each matrix    
             volatile uint32_t ldW = compute_num * IN_CH;
             volatile uint32_t ldB = compute_num;
@@ -224,20 +235,23 @@ void mnist_fp8(const network_fp8_t *n){
                     benchmark_get_cycle();
                     feedforward_fp8n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                    ldB, &images[curr_img], ldI, compute_id);
-                    // softmax_activation_fp8n(n->IN_CH1, n->IN_CH2, div, 
-                    //             &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                    //             &images[curr_img], ldI, compute_id, compute_num, max);
+                                    ldB, &images[curr_img], ldI, compute_id, &activations_cl0_fp32[b_offset]);
+                    softmax_activation_fp32_ex(n->IN_CH1, n->IN_CH2, div,
+                                            &activations_cl0_fp32[b_offset], &activations_cl0[b_offset], ldB, compute_id, 
+                                            compute_num, max);
                     // softmax_activation_fp8_ex(n->IN_CH1, n->IN_CH2, div, 
                     //             &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                     //             &images[curr_img], ldI, compute_id, compute_num, max);          
                     benchmark_get_cycle();
                 } else {
-                    // INFO: FP64 with SSRs
+                    // INFO: FP8 with SSRs
                     benchmark_get_cycle();
                     feedforward_fp8n_opt(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                    ldB, &images[curr_img], ldI, compute_id, setup_SSR);
+                                    ldB, &images[curr_img], ldI, compute_id, setup_SSR, &activations_cl0_fp32[b_offset]);
+                    softmax_activation_fp32_ex(n->IN_CH1, n->IN_CH2, div,
+                                            &activations_cl0_fp32[b_offset], &activations_cl0[b_offset], ldB, compute_id, 
+                                            compute_num, max);
                     benchmark_get_cycle();
                 }
 
@@ -252,13 +266,13 @@ void mnist_fp8(const network_fp8_t *n){
                 if(BASELINE){
                     // INFO: baseline
                     snrt_cluster_hw_barrier();
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 } else {
                     // INFO: FP8 with SSRs
                     snrt_cluster_hw_barrier();
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 }
             } 
             // else {
@@ -279,14 +293,14 @@ void mnist_fp8(const network_fp8_t *n){
             if(snrt_is_dm_core() && cluster_id==1) {
                 snrt_dma_start_tracking();
                 // WARN: make sure that pointer types are according to network precision
-                char *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
+                float *act_ptr = ((uint32_t)activations_cl1_fp32) - cluster_offset;
                 char *img_ptr = ((uint32_t)images) - cluster_offset;
 
                 // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
                 snrt_dma_txid_t txid_activations = 
-                    snrt_dma_start_1d(activations_cl1,                                 // destination
+                    snrt_dma_start_1d(activations_cl1_fp32,                                 // destination
                                     act_ptr,                                       // source
-                                    n->dtype * n->OUT_CH);                         // size
+                                    sizeof(float) * n->OUT_CH);                         // size
 
                 snrt_dma_txid_t txid_IMG = 
                     snrt_dma_start_1d(images,                                    // destination
@@ -310,7 +324,7 @@ void mnist_fp8(const network_fp8_t *n){
             // Calculate number of rows for each compute
             // core. If multiples of each other we have to 
             // forcefully set it to 1
-            volatile uint32_t div = n->OUT_CH % compute_num;
+            volatile uint32_t div = 10 % compute_num;
             if(div == 0){
                 div = 1;
             }
@@ -319,7 +333,7 @@ void mnist_fp8(const network_fp8_t *n){
             volatile uint32_t ldB = compute_num;
             volatile uint32_t ldI = IN_CH;
 
-            char *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
+            float *act_ptr = ((uint32_t)activations_cl1_fp32) - cluster_offset;
             char *img_ptr = ((uint32_t)images) - cluster_offset;
 
             if(RUN_GRADIENT_UPDATE){
@@ -336,13 +350,13 @@ void mnist_fp8(const network_fp8_t *n){
                                         loss, compute_num);
                     benchmark_get_cycle();
                 } else {
-                    // INFO: FP64 with SSRs
+                    // INFO: FP8 with SSRs
                     benchmark_get_cycle();
-                    // gradient_update_fp16_ssr_simdn(n->IN_CH1, n->IN_CH2, div, 
-                    //                     &weight_grads_cl1[W_offset], ldW, 
-                    //                     &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                    //                     ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
-                    //                     loss, compute_num, setup_SSR);
+                    gradient_update_fp8n_opt(n->IN_CH1, n->IN_CH2, div, 
+                                        &weight_grads_cl1[W_offset], ldW, 
+                                        &bias_grads_cl1[b_offset], &act_ptr[b_offset], 
+                                        ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                        loss, compute_num, setup_SSR);
                     benchmark_get_cycle();
                 }
                 // if(!compute_id){
