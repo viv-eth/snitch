@@ -309,15 +309,15 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     register volatile double ft2 asm("ft2");
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
 
-    // register double acc = 0.0;
+    register double acc = 0.0;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
     volatile uint32_t W_idx_eff;
 
-    const uint32_t unroll = 4;
-    register double acc_tot[unroll];
+    // const uint32_t unroll = 4;
+    // register double acc_tot[unroll];
 
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
@@ -345,39 +345,39 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
             // Start of SSR region
             snrt_ssr_enable();
-            // acc = biases[ldB * out];
-            // asm volatile(
-            //     "frep.o      %[n_frep], 1, 0, 0 \n"
-            //     "fmadd.d     %[acc], ft0, ft1, %[acc] \n"
-            // : [ acc ] "+f"(acc)
-            // : [ n_frep ] "r"(IN_CH - 1)
-            // :"ft0", "ft1", "ft2");
-
-            acc_tot[0] = biases[ldB * out];
-            acc_tot[1] = 0;
-            acc_tot[2] = 0;
-            acc_tot[3] = 0;
+            acc = biases[ldB * out];
             asm volatile(
-                "frep.o      %[n_frep], 4, 0, 0 \n"
-                "fmadd.d     %[acc_0], ft0, ft1, %[acc_0] \n"
-                "fmadd.d     %[acc_1], ft0, ft1, %[acc_1] \n"
-                "fmadd.d     %[acc_2], ft0, ft1, %[acc_2] \n"
-                "fmadd.d     %[acc_3], ft0, ft1, %[acc_3] \n"
-            : [ acc_0 ] "+f"(acc_tot[0]), [ acc_1 ] "+f"(acc_tot[1]), [ acc_2 ] "+f"(acc_tot[2]), [ acc_3 ] "+f"(acc_tot[3])
-            : [ n_frep ] "r"(IN_CH / 4  - 1)
+                "frep.o      %[n_frep], 1, 0, 0 \n"
+                "fmadd.d     %[acc], ft0, ft1, %[acc] \n"
+            : [ acc ] "+f"(acc)
+            : [ n_frep ] "r"(IN_CH - 1)
             :"ft0", "ft1", "ft2");
+
+            // acc_tot[0] = biases[ldB * out];
+            // acc_tot[1] = 0;
+            // acc_tot[2] = 0;
+            // acc_tot[3] = 0;
+            // asm volatile(
+            //     "frep.o      %[n_frep], 4, 0, 0 \n"
+            //     "fmadd.d     %[acc_0], ft0, ft1, %[acc_0] \n"
+            //     "fmadd.d     %[acc_1], ft0, ft1, %[acc_1] \n"
+            //     "fmadd.d     %[acc_2], ft0, ft1, %[acc_2] \n"
+            //     "fmadd.d     %[acc_3], ft0, ft1, %[acc_3] \n"
+            // : [ acc_0 ] "+f"(acc_tot[0]), [ acc_1 ] "+f"(acc_tot[1]), [ acc_2 ] "+f"(acc_tot[2]), [ acc_3 ] "+f"(acc_tot[3])
+            // : [ n_frep ] "r"(IN_CH / 4  - 1)
+            // :"ft0", "ft1", "ft2");
 
 
 
         } 
 
-        // activations[ldB * out] = acc;
-        // acc = 0.0;
-        activations[ldB * out] = acc_tot[0] + acc_tot[1] + acc_tot[2] + acc_tot[3];
-        acc_tot[0] = 0;
-        acc_tot[1] = 0;
-        acc_tot[2] = 0;
-        acc_tot[3] = 0;
+        activations[ldB * out] = acc;
+        acc = 0.0;
+        // activations[ldB * out] = acc_tot[0] + acc_tot[1] + acc_tot[2] + acc_tot[3];
+        // acc_tot[0] = 0;
+        // acc_tot[1] = 0;
+        // acc_tot[2] = 0;
+        // acc_tot[3] = 0;
         // End of SSR region.
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
@@ -509,12 +509,12 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     volatile uint32_t idx_eff;
     volatile uint32_t W_idx_eff;
 
-    const uint32_t unroll = 4;
-    register double W_grad_update_reg[unroll];
-    W_grad_update_reg[0] = 0.0;
-    W_grad_update_reg[1] = 0.0;
-    W_grad_update_reg[2] = 0.0;
-    W_grad_update_reg[3] = 0.0;
+    // const uint32_t unroll = 4;
+    // register double W_grad_update_reg[unroll];
+    // W_grad_update_reg[0] = 0.0;
+    // W_grad_update_reg[1] = 0.0;
+    // W_grad_update_reg[2] = 0.0;
+    // W_grad_update_reg[3] = 0.0;
 
 
     // get the value saved at target address
@@ -581,28 +581,35 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
         // b_checksum += b_grad_update;
 
 
-        // for(uint32_t in = 0; in < IN_CH; in++){
-        for(uint32_t in = 0; in < IN_CH / 4; in++){
+        for(uint32_t in = 0; in < IN_CH; in++){
+        //for(uint32_t in = 0; in < IN_CH / 4; in++){
 
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
             
+            // asm volatile(
+            //             "fmul.d         %[W_grad_update_0], %[b_grad_update], ft0\n"
+            //             "fmul.d         %[W_grad_update_1], %[b_grad_update], ft0\n"
+            //             "fmul.d         %[W_grad_update_2], %[b_grad_update], ft0\n"
+            //             "fmul.d         %[W_grad_update_3], %[b_grad_update], ft0\n"
+            //             : [ W_grad_update ] "+&f"(W_grad_update), [ W_grad_update_0 ] "+&f"(W_grad_update_reg[0]), [ W_grad_update_1 ] "+&f"(W_grad_update_reg[1]), [ W_grad_update_2 ] "+&f"(W_grad_update_reg[2]), [ W_grad_update_3 ] "+&f"(W_grad_update_reg[3])
+            //             : [ b_grad_update ] "f"(b_grad_update), [ zero ] "f"(zero)
+            //             : "ft0", "ft1", "ft2"
+            // );
+            // W_grad_update = b_grad_update * image[in];
+
             asm volatile(
-                        // "fmul.d         %[W_grad_update], %[b_grad_update], ft0\n"
-                        "fmul.d         %[W_grad_update_0], %[b_grad_update], ft0\n"
-                        "fmul.d         %[W_grad_update_1], %[b_grad_update], ft0\n"
-                        "fmul.d         %[W_grad_update_2], %[b_grad_update], ft0\n"
-                        "fmul.d         %[W_grad_update_3], %[b_grad_update], ft0\n"
-                        : [ W_grad_update ] "+&f"(W_grad_update), [ W_grad_update_0 ] "+&f"(W_grad_update_reg[0]), [ W_grad_update_1 ] "+&f"(W_grad_update_reg[1]), [ W_grad_update_2 ] "+&f"(W_grad_update_reg[2]), [ W_grad_update_3 ] "+&f"(W_grad_update_reg[3])
+                        "fmul.d         %[W_grad_update], %[b_grad_update], ft0\n"
+                        : [ W_grad_update ] "+&f"(W_grad_update)
                         : [ b_grad_update ] "f"(b_grad_update), [ zero ] "f"(zero)
                         : "ft0", "ft1", "ft2"
             );
-            // W_grad_update = b_grad_update * image[in];
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                weight_grads[out * ldW + in + 0] += W_grad_update_reg[0];
-                weight_grads[out * ldW + in + 1] += W_grad_update_reg[1];
-                weight_grads[out * ldW + in + 2] += W_grad_update_reg[2];
-                weight_grads[out * ldW + in + 3] += W_grad_update_reg[3];
+                weight_grads[out * ldW + in + 0] += W_grad_update;
+                // weight_grads[out * ldW + in + 0] += W_grad_update_reg[0];
+                // weight_grads[out * ldW + in + 1] += W_grad_update_reg[1];
+                // weight_grads[out * ldW + in + 2] += W_grad_update_reg[2];
+                // weight_grads[out * ldW + in + 3] += W_grad_update_reg[3];
                 // W_checksum += W_grad_update_reg[0] + W_grad_update_reg[1] + W_grad_update_reg[2] + W_grad_update_reg[3];
                 // W_checksum += W_grad_update;
             }
