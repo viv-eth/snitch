@@ -63,7 +63,7 @@ void feedforward_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
+        printf("new FEEDFORWARD FP32 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
     snrt_cluster_hw_barrier();
@@ -126,7 +126,7 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            // printf("SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("new SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -141,8 +141,8 @@ void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     
     float b_grad_update = 0.0;
     float W_grad_update = 0.0;
-    // float b_checksum = 0.0;
-    // float W_checksum = 0.0;
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
     volatile uint32_t idx_eff;
     volatile uint32_t idx_eff_W;
 
@@ -167,7 +167,7 @@ void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
         
-        // b_checksum += b_grad_update;
+        b_checksum += b_grad_update;
 
         //printf("b_grad_update = %f\n", b_grad_update);
 
@@ -179,15 +179,15 @@ void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             
             if(!(idx_eff_W > IN_CH * OUT_CH * 5 - 1)){
                 weight_grads[out * ldW + in] += W_grad_update;
-                // W_checksum += W_grad_update;
+                W_checksum += W_grad_update;
             }
         }
             
         bias_grads[ldB * out] = b_grad_update;
     }
 
-    // printf("GRADIENT UPDATE FP32 Baseline: b_checksum[%u] = %f\n", compute_id + 1, b_checksum);
-    // printf("GRADIENT UPDATE FP32 Baseline: W_checksum[%u] = %f\n", compute_id + 1, W_checksum);
+    printf("new GRADIENT UPDATE FP32 Baseline: b_checksum[%u] = %f\n", compute_id + 1, b_checksum);
+    printf("new GRADIENT UPDATE FP32 Baseline: W_checksum[%u] = %f\n", compute_id + 1, W_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
@@ -199,8 +199,8 @@ void training_step_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t number_of_images){
 
     float lr = 0.5;
-    // float b_checksum = 0.0;
-    // float W_checksum = 0.0;
+    float b_checksum = 0.0;
+    float W_checksum = 0.0;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff_W;
@@ -215,7 +215,7 @@ void training_step_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
-        // b_checksum += biases[ldB * out];
+        b_checksum += biases[ldB * out];
 
         for(uint32_t in = 0; in < IN_CH; in++){
 
@@ -224,13 +224,13 @@ void training_step_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             if(!(idx_eff_W > IN_CH * OUT_CH * 5 - 1)){
                 // printf("DEBUG: weight grads[%u] = %f\n", compute_id*IN_CH + out * ldW + in, weight_grads[out*ldW + in]);
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((float) number_of_images);
-                // W_checksum += weights[out * ldW + in];
+                W_checksum += weights[out * ldW + in];
             } 
         }
     }
 
-    // printf("new TRAINING STEP FP32 Baseline: b_checksum = %f\n", b_checksum);
-    // printf("new TRAINING STEP FP32 Baseline: W_checksum = %f\n", W_checksum);
+    printf("new TRAINING STEP FP32 Baseline: b_checksum = %f\n", b_checksum);
+    printf("new TRAINING STEP FP32 Baseline: W_checksum = %f\n", W_checksum);
 } // RTL PASS
 
 // INFO: start of FP32 network implementation using SSRs and SIMD instructions
@@ -258,11 +258,10 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     for (uint32_t out = 0; out < OUT_CH; out++) {
         idx_eff = compute_id + ldB * out;
         register float acc = 0.0;
-        // we need to add a dummy register to fully consume the SSRs
-        register float dummy = 0.0;
-        // register v2f32 reduce_reg;
+        register v2f32 reduce_reg;
         const uint32_t unroll = 4;
-        register v2f32 reduce_reg[unroll];
+        // register v2f32 reduce_reg[unroll];
+        register v2f32 red_reg;
         register v2f32 sum;
         const register float zero = 0;
         if(!(idx_eff > OUT_CH * 5 - 1)){
@@ -274,44 +273,55 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                                 sizeof(double));
                 
                 // setup of DATA MOVER for weights
-                snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                                IN_CH / 2, 
-                                OUT_CH - 1, 
-                                sizeof(double), 
-                                sizeof(double) * ldW / 2);
+                snrt_ssr_loop_1d(SNRT_SSR_DM1, 
+                                IN_CH / 2,  
+                                sizeof(double));
             }
             // we need to read the image for every new iteration
             // of a core, because otherwise it will evaluate to
             // all zeros due to the stream semantics
             // Start of SSR region
             snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
             snrt_ssr_enable();
             acc = biases[ldB * out];
             // INFO: The zero reg causes Out of Memory accesses - WTF? Discuss with GIM --> Issue was missing ft2 clobber (reserved for SSR)
+            // asm volatile(
+            //     // "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
+            //     "vfcpka.s.s        %[reduce_reg_0], %[acc], %[zero] \n"
+            //     "vfcpka.s.s        %[reduce_reg_1], %[zero], %[zero] \n"
+            //     "vfcpka.s.s        %[reduce_reg_2], %[zero], %[zero] \n"
+            //     "vfcpka.s.s        %[reduce_reg_3], %[zero], %[zero] \n"
+            //     // "frep.o            %[n_frep], 1, 0, 0 \n"
+            //     // "vfmac.s           %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
+            //     "frep.o            %[n_frep], 4, 0, 0 \n"
+            //     "vfmac.s           %[reduce_reg_0], ft0, ft1 \n" 
+            //     "vfmac.s           %[reduce_reg_1], ft0, ft1 \n"
+            //     "vfmac.s           %[reduce_reg_2], ft0, ft1 \n"
+            //     "vfmac.s           %[reduce_reg_3], ft0, ft1 \n"
+            //     "vfcpka.s.s        %[sum], %[zero], %[zero] \n"
+            //     // "vfsum.s           %[sum], %[reduce_reg] \n"
+            //     "vfsum.s           %[sum], %[reduce_reg_0] \n"
+            //     "vfsum.s           %[sum], %[reduce_reg_1] \n"
+            //     "vfsum.s           %[sum], %[reduce_reg_2] \n"
+            //     "vfsum.s           %[sum], %[reduce_reg_3] \n"
+            //     "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
+            //     : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg_0 ] "+f"(reduce_reg[0]), [ reduce_reg_1 ] "+f"(reduce_reg[1]), [ reduce_reg_2 ] "+f"(reduce_reg[2]), [ reduce_reg_3 ] "+f"(reduce_reg[3]) //, [ reduce_reg ] "+&f"(reduce_reg)
+            //     : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / (2 * 4) - 1)
+            //     : "ft0", "ft1", "ft2");
+
             asm volatile(
-                // "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
-                "vfcpka.s.s        %[reduce_reg_0], %[acc], %[zero] \n"
-                "vfcpka.s.s        %[reduce_reg_1], %[zero], %[zero] \n"
-                "vfcpka.s.s        %[reduce_reg_2], %[zero], %[zero] \n"
-                "vfcpka.s.s        %[reduce_reg_3], %[zero], %[zero] \n"
-                // "frep.o            %[n_frep], 1, 0, 0 \n"
-                // "vfmac.s           %[reduce_reg], ft0, ft1 \n"                     // load two values from image and weights into SIMD vector
-                "frep.o            %[n_frep], 4, 0, 0 \n"
-                "vfmac.s           %[reduce_reg_0], ft0, ft1 \n" 
-                "vfmac.s           %[reduce_reg_1], ft0, ft1 \n"
-                "vfmac.s           %[reduce_reg_2], ft0, ft1 \n"
-                "vfmac.s           %[reduce_reg_3], ft0, ft1 \n"
+                "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
+                "frep.o            %[n_frep], 1, 0, 0 \n"
+                "vfmac.s           %[reduce_reg], ft0, ft1 \n"
                 "vfcpka.s.s        %[sum], %[zero], %[zero] \n"
-                // "vfsum.s           %[sum], %[reduce_reg] \n"
-                "vfsum.s           %[sum], %[reduce_reg_0] \n"
-                "vfsum.s           %[sum], %[reduce_reg_1] \n"
-                "vfsum.s           %[sum], %[reduce_reg_2] \n"
-                "vfsum.s           %[sum], %[reduce_reg_3] \n"
+                "vfsum.s           %[sum], %[reduce_reg] \n"
                 "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
-                : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg_0 ] "+f"(reduce_reg[0]), [ reduce_reg_1 ] "+f"(reduce_reg[1]), [ reduce_reg_2 ] "+f"(reduce_reg[2]), [ reduce_reg_3 ] "+f"(reduce_reg[3]) //, [ reduce_reg ] "+&f"(reduce_reg)
-                : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / (2 * 4) - 1)
-                : "ft0", "ft1", "ft2");
+                : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg ] "+f"(reduce_reg)
+                : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2  - 1)
+                : "ft0", "ft1", "ft2"
+            );
+
 
             // End of SSR region.
             snrt_fpu_fence();
@@ -366,9 +376,6 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
-
-
-
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         b_grad_update = 0.0;
@@ -392,25 +399,21 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                                 sizeof(double));
                 
                 // SSR read setup of weight gradients 
-                snrt_ssr_loop_2d(SNRT_SSR_DM1, 
+                snrt_ssr_loop_1d(SNRT_SSR_DM1, 
                                 IN_CH / 2, 
-                                OUT_CH - 1, 
-                                sizeof(double), 
-                                sizeof(double) * ldW / 2);
+                                sizeof(double));
 
                 // SSR write setup of weight gradients
-                snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+                snrt_ssr_loop_1d(SNRT_SSR_DM2, 
                                 IN_CH / 2, 
-                                OUT_CH - 1, 
-                                sizeof(double), 
-                                sizeof(double) * ldW / 2);
+                                sizeof(double));
 
 
                 // SSR start address need to be configured each time
                 snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-                snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+                snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[out*ldW]);
                 // TODO: check WRITE stream
-                snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weight_grads[out*ldW]);
+                snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weight_grads[out*ldW]);
 
             }
         }
@@ -441,49 +444,61 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             if(!(idx_eff_W > IN_CH * OUT_CH * 5 - 1)){
                 // TODO: the first vfadd is actually not needed, but added in order to be able
                 // to compute the checksum of the weights ---> remove it for benchmarking
+                // asm volatile(
+                //     "vfcpka.s.s         %[sum], %[zero_reg], %[zero_reg] \n" 
+                //     "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n"       // load the bias gradient for each vector
+                //     "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"         // compute weight update b_grad * image
+                //     "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"         // add weight update to weight gradient
+                //     "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"           // write the values into the weight gradients
+                //     // "vfsum.s            %[sum], %[reduce_reg]\n"             // compute the checksum of the weight gradients --> remove it for benchmarking
+                //     "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n" 
+                //     "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"
+                //     "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"
+                //     "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg]\n"
+                //     "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n" 
+                //     "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"
+                //     "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"
+                //     "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg]\n"
+                //     "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n" 
+                //     "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"
+                //     "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"
+                //     "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg]\n"
+                //     ///// GIM: why is the below not working?
+                //     // "vfcpka.s.s         %[reduce_reg_0], %[b_grad], %[b_grad] \n"
+                //     // "vfmul.s            %[reduce_reg_0], %[reduce_reg_0], ft0 \n"
+                //     // "vfadd.s            %[reduce_reg_0], %[reduce_reg_0], ft1 \n"
+                //     // "vfadd.s            ft2, %[reduce_reg_0], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg_0]\n"
+                //     // "vfcpka.s.s         %[reduce_reg_1], %[b_grad], %[b_grad] \n"
+                //     // "vfmul.s            %[reduce_reg_1], %[reduce_reg_1], ft0 \n"
+                //     // "vfadd.s            %[reduce_reg_1], %[reduce_reg_1], ft1 \n"
+                //     // "vfadd.s            ft2, %[reduce_reg_1], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg_1]\n"
+                //     // "vfcpka.s.s         %[reduce_reg_2], %[b_grad], %[b_grad] \n"
+                //     // "vfmul.s            %[reduce_reg_2], %[reduce_reg_2], ft0 \n"
+                //     // "vfadd.s            %[reduce_reg_2], %[reduce_reg_2], ft1 \n"
+                //     // "vfadd.s            ft2, %[reduce_reg_2], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg_2]\n"
+                //     // "vfcpka.s.s         %[reduce_reg_3], %[b_grad], %[b_grad] \n"
+                //     // "vfmul.s            %[reduce_reg_3], %[reduce_reg_3], ft0 \n"
+                //     // "vfadd.s            %[reduce_reg_3], %[reduce_reg_3], ft1 \n"
+                //     // "vfadd.s            ft2, %[reduce_reg_3], %[zero_reg] \n"
+                //     // "vfsum.s            %[sum], %[reduce_reg_3]\n"
+                //     : [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg), [ sum ] "+&f"(sum)
+                //     : [b_grad] "f"(b_grad_update), [zero] "f"(zero)
+                //     : "ft0", "ft1", "ft2"
+                // );
+
                 asm volatile(
                     "vfcpka.s.s         %[sum], %[zero_reg], %[zero_reg] \n" 
                     "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n"       // load the bias gradient for each vector
                     "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"         // compute weight update b_grad * image
                     "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"         // add weight update to weight gradient
                     "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"           // write the values into the weight gradients
-                    // "vfsum.s            %[sum], %[reduce_reg]\n"             // compute the checksum of the weight gradients --> remove it for benchmarking
-                    "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n" 
-                    "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"
-                    "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"
-                    "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg]\n"
-                    "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n" 
-                    "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"
-                    "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"
-                    "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg]\n"
-                    "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n" 
-                    "vfmul.s            %[reduce_reg], %[reduce_reg], ft0 \n"
-                    "vfadd.s            %[reduce_reg], %[reduce_reg], ft1 \n"
-                    "vfadd.s            ft2, %[reduce_reg], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg]\n"
-                    ///// GIM: why is the below not working?
-                    // "vfcpka.s.s         %[reduce_reg_0], %[b_grad], %[b_grad] \n"
-                    // "vfmul.s            %[reduce_reg_0], %[reduce_reg_0], ft0 \n"
-                    // "vfadd.s            %[reduce_reg_0], %[reduce_reg_0], ft1 \n"
-                    // "vfadd.s            ft2, %[reduce_reg_0], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg_0]\n"
-                    // "vfcpka.s.s         %[reduce_reg_1], %[b_grad], %[b_grad] \n"
-                    // "vfmul.s            %[reduce_reg_1], %[reduce_reg_1], ft0 \n"
-                    // "vfadd.s            %[reduce_reg_1], %[reduce_reg_1], ft1 \n"
-                    // "vfadd.s            ft2, %[reduce_reg_1], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg_1]\n"
-                    // "vfcpka.s.s         %[reduce_reg_2], %[b_grad], %[b_grad] \n"
-                    // "vfmul.s            %[reduce_reg_2], %[reduce_reg_2], ft0 \n"
-                    // "vfadd.s            %[reduce_reg_2], %[reduce_reg_2], ft1 \n"
-                    // "vfadd.s            ft2, %[reduce_reg_2], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg_2]\n"
-                    // "vfcpka.s.s         %[reduce_reg_3], %[b_grad], %[b_grad] \n"
-                    // "vfmul.s            %[reduce_reg_3], %[reduce_reg_3], ft0 \n"
-                    // "vfadd.s            %[reduce_reg_3], %[reduce_reg_3], ft1 \n"
-                    // "vfadd.s            ft2, %[reduce_reg_3], %[zero_reg] \n"
-                    // "vfsum.s            %[sum], %[reduce_reg_3]\n"
+                    "vfsum.s            %[sum], %[reduce_reg]\n"             // compute the checksum of the weight gradients --> remove it for benchmarking
                     : [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg), [ sum ] "+&f"(sum)
                     : [b_grad] "f"(b_grad_update), [zero] "f"(zero)
                     : "ft0", "ft1", "ft2"
@@ -498,8 +513,8 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 
             } 
 
-            // in += 2;
-            in += 2*4;
+            in += 2;
+            // in += 2*4;
         }
 
         bias_grads[ldB * out] = b_grad_update;
@@ -512,7 +527,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     }
 
 
-    // printf("GRADIENT UPDATE FP32 SIMD with SSRs: b_checksum[%u] = %f\n", 1 + compute_id, b_checksum);
+    // printf("new GRADIENT UPDATE FP32 SIMD with SSRs: b_checksum[%u] = %f\n", 1 + compute_id, b_checksum);
     // printf("new GRADIENT UPDATE FP32 SIMD with SSRs: W_checksum[%u] = %f\n", 1 + compute_id, W_checksum);
 
     snrt_cluster_hw_barrier();
@@ -621,16 +636,24 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
         register float dummy = 0.0;
         // snrt_cluster_hw_barrier();
         // zero initialze the reduce register for each loop
+        // asm volatile(
+        //         // "vfcpka.s.s      %[reduce_reg], %[zero], %[zero] \n"
+        //         "vfcpka.s.s      %[reduce_reg_0], %[zero], %[zero] \n"
+        //         "vfcpka.s.s      %[reduce_reg_1], %[zero], %[zero] \n"
+        //         "vfcpka.s.s      %[reduce_reg_2], %[zero], %[zero] \n"
+        //         "vfcpka.s.s      %[reduce_reg_3], %[zero], %[zero] \n"
+        //         "vfcpka.s.s      %[zero_reg], %[zero], %[zero] \n"
+        //         : [ reduce_reg ] "+&f"(reduce_reg), [ zero_reg ] "+&f"(zero_reg),
+        //           [ reduce_reg_0 ] "+&f"(reduce_reg_0), [ reduce_reg_1 ] "+&f"(reduce_reg_1),
+        //           [ reduce_reg_2 ] "+&f"(reduce_reg_2), [ reduce_reg_3 ] "+&f"(reduce_reg_3)
+        //         : [ zero ] "f"(zero)
+        //         : "ft0", "ft1", "ft2"
+        // );
+
         asm volatile(
-                // "vfcpka.s.s      %[reduce_reg], %[zero], %[zero] \n"
-                "vfcpka.s.s      %[reduce_reg_0], %[zero], %[zero] \n"
-                "vfcpka.s.s      %[reduce_reg_1], %[zero], %[zero] \n"
-                "vfcpka.s.s      %[reduce_reg_2], %[zero], %[zero] \n"
-                "vfcpka.s.s      %[reduce_reg_3], %[zero], %[zero] \n"
+                "vfcpka.s.s      %[reduce_reg], %[zero], %[zero] \n"
                 "vfcpka.s.s      %[zero_reg], %[zero], %[zero] \n"
-                : [ reduce_reg ] "+&f"(reduce_reg), [ zero_reg ] "+&f"(zero_reg),
-                  [ reduce_reg_0 ] "+&f"(reduce_reg_0), [ reduce_reg_1 ] "+&f"(reduce_reg_1),
-                  [ reduce_reg_2 ] "+&f"(reduce_reg_2), [ reduce_reg_3 ] "+&f"(reduce_reg_3)
+                : [ reduce_reg ] "+&f"(reduce_reg), [ zero_reg ] "+&f"(zero_reg)
                 : [ zero ] "f"(zero)
                 : "ft0", "ft1", "ft2"
         );
@@ -641,14 +664,25 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
             
             // discuss with GIM: can I FREP this somehow?
             if(!(idx_eff_W  > IN_CH * OUT_CH * 5 - 1)){
+                // asm volatile(
+                //     "vfmul.s              %[reduce_reg_0], %[lr_vec], ft0 \n"
+                //     "vfmul.s              %[reduce_reg_1], %[lr_vec], ft0 \n"
+                //     "vfmul.s              %[reduce_reg_2], %[lr_vec], ft0 \n"
+                //     "vfmul.s              %[reduce_reg_3], %[lr_vec], ft0 \n"
+                //     // "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
+                //     // // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divide by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
+                //     // // "vfadd.s              ft2, %[reduce_reg], %[zero_reg] \n"               // write the value into the weights
+                // : [reduce_reg] "+&f"(reduce_reg), [zero_reg] "+&f"(zero_reg),
+                //   [reduce_reg_0] "+&f"(reduce_reg_0), [reduce_reg_1] "+&f"(reduce_reg_1),
+                //   [reduce_reg_2] "+&f"(reduce_reg_2), [reduce_reg_3] "+&f"(reduce_reg_3) 
+                // : [lr_vec] "f"(lr_vec), [nimg_vec] "f"(nimg_vec), [zero] "f"(zero), [one_vec] "f"(one_vec)
+                // : "ft0", "ft1", "ft2"
+                // ); 
+
                 asm volatile(
-                    "vfmul.s              %[reduce_reg_0], %[lr_vec], ft0 \n"
-                    "vfmul.s              %[reduce_reg_1], %[lr_vec], ft0 \n"
-                    "vfmul.s              %[reduce_reg_2], %[lr_vec], ft0 \n"
-                    "vfmul.s              %[reduce_reg_3], %[lr_vec], ft0 \n"
-                    // "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
-                    // // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divide by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
-                    // // "vfadd.s              ft2, %[reduce_reg], %[zero_reg] \n"               // write the value into the weights
+                    "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
+                    // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divide by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
+                    // "vfadd.s              ft2, %[reduce_reg], %[zero_reg] \n"               // write the value into the weights
                 : [reduce_reg] "+&f"(reduce_reg), [zero_reg] "+&f"(zero_reg),
                   [reduce_reg_0] "+&f"(reduce_reg_0), [reduce_reg_1] "+&f"(reduce_reg_1),
                   [reduce_reg_2] "+&f"(reduce_reg_2), [reduce_reg_3] "+&f"(reduce_reg_3) 
@@ -659,23 +693,23 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                 snrt_ssr_disable();
                 // W_checksum += reduce_reg[0] + reduce_reg[1];
                 // GIM: why does vfdiv fail in the RTL?
-                // weights[out*ldW] += reduce_reg[0] / nimg;
-                // weights[out*ldW + 1] += reduce_reg[1] / nimg;
+                weights[out*ldW + 0] += reduce_reg[0] / nimg;
+                weights[out*ldW + 1] += reduce_reg[1] / nimg;
                 // W_checksum += reduce_reg_0[0] + reduce_reg_1[0] + reduce_reg_2[0] + reduce_reg_3[0];
                 // W_checksum += reduce_reg_0[1] + reduce_reg_1[1] + reduce_reg_2[1] + reduce_reg_3[1];
-                weights[out*ldW + 0] += reduce_reg_0[0] / nimg;
-                weights[out*ldW + 1] += reduce_reg_0[1] / nimg;
-                weights[out*ldW + 2] += reduce_reg_1[0] / nimg;
-                weights[out*ldW + 3] += reduce_reg_1[1] / nimg;
-                weights[out*ldW + 4] += reduce_reg_2[0] / nimg;
-                weights[out*ldW + 5] += reduce_reg_2[1] / nimg;
-                weights[out*ldW + 6] += reduce_reg_3[0] / nimg;
-                weights[out*ldW + 7] += reduce_reg_3[1] / nimg;
+                // weights[out*ldW + 0] += reduce_reg_0[0] / nimg;
+                // weights[out*ldW + 1] += reduce_reg_0[1] / nimg;
+                // weights[out*ldW + 2] += reduce_reg_1[0] / nimg;
+                // weights[out*ldW + 3] += reduce_reg_1[1] / nimg;
+                // weights[out*ldW + 4] += reduce_reg_2[0] / nimg;
+                // weights[out*ldW + 5] += reduce_reg_2[1] / nimg;
+                // weights[out*ldW + 6] += reduce_reg_3[0] / nimg;
+                // weights[out*ldW + 7] += reduce_reg_3[1] / nimg;
                 snrt_ssr_enable();
             } 
 
-            //in += 2;
-            in += 2 * unroll;
+            in += 2;
+            // in += 2 * unroll;
 
         }
 
