@@ -97,7 +97,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
+        // printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
     }
 
     snrt_cluster_hw_barrier();
@@ -163,12 +163,10 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             }
         }
 
-        // printf("sum = %f\n", sum);
-
 
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             activations[out] /= sum;
-            printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
+            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
             // printf("Mean relative error = %f %%\n", 100*(temp_err/err_cnt));
         }
     }
@@ -188,8 +186,8 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     volatile uint32_t W_idx_eff;
     
     // Commented out for RTL
-    double b_checksum = 0.0;
-    double W_checksum = 0.0;
+    // double b_checksum = 0.0;
+    // double W_checksum = 0.0;
 
     // double loss_val = 0.0;
     // double loss_wo_log;
@@ -226,7 +224,7 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
 
         // add the update to the bias gradient checksum
-        b_checksum += b_grad_update;
+        // b_checksum += b_grad_update;
 
         for(uint32_t in = 0; in < IN_CH; in++){
             
@@ -240,15 +238,15 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 // On the next iterations, we take the sum of the previous and new updates.
         //         weight_grads[out * ldW + in] += W_grad_update; // NOTE: this causes trouble in the RTL ...
                 weight_grads[out * ldW + in] = W_grad_update; 
-                W_checksum += W_grad_update;
+                // W_checksum += W_grad_update;
             }
         }
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
     }
 
-    printf("GRADIENT UPDATE FP64 Baseline: b_checksum = %f\n", b_checksum);
-    printf("GRADIENT UPDATE FP64 Baseline: W_checksum = %f\n", W_checksum);
+    // printf("GRADIENT UPDATE FP64 Baseline: b_checksum = %f\n", b_checksum);
+    // printf("GRADIENT UPDATE FP64 Baseline: W_checksum = %f\n", W_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
@@ -260,8 +258,8 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t number_of_images){
 
     float lr = 0.5;
-    double b_checksum = 0.0;
-    double W_checksum = 0.0;
+    // double b_checksum = 0.0;
+    // double W_checksum = 0.0;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
@@ -279,7 +277,7 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
-        b_checksum += biases[ldB * out];
+        // b_checksum += biases[ldB * out];
 
         for(uint32_t in = 0; in < IN_CH; in++){
 
@@ -287,13 +285,13 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
-                W_checksum += weights[out * ldW + in];
+                // W_checksum += weights[out * ldW + in];
             } 
         }
     }
 
-    printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
-    printf("TRAINING STEP FP64 Baseline: W_checksum = %f\n", W_checksum);
+    // printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
+    // printf("TRAINING STEP FP64 Baseline: W_checksum = %f\n", W_checksum);
 
 } // RTL PASS
 

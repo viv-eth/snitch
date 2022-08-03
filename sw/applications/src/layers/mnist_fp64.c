@@ -16,15 +16,15 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0 // WARN: for SSRs we cannot run the training step in the RTL
+#define RUN_TRAINING_STEP 1 // WARN: for SSRs we cannot run the training step in the RTL
 #define GET_ACCURACY 0
 #define GET_LOSS 0
-#define RUN_RTL 0
+#define RUN_RTL 1
 
 void mnist_fp64(const network_fp64_t *n){
 
