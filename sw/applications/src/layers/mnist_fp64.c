@@ -16,12 +16,12 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 1
+#define BASELINE 0
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 1 // WARN: for SSRs we cannot run the training step in the RTL
+#define RUN_TRAINING_STEP 0 // WARN: for SSRs we cannot run the training step in the RTL
 #define GET_ACCURACY 0
 #define GET_LOSS 0
 #define RUN_RTL 1
@@ -287,10 +287,10 @@ void mnist_fp64(const network_fp64_t *n){
                     feedforward_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                     ldB, images, ldI, compute_id, setup_SSR);
+                    benchmark_get_cycle();
                     softmax_activation_fp64_ssrn(n->IN_CH1, n->IN_CH2, div,
                                     &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                                     images, ldI, compute_id, compute_num, max, setup_SSR);
-                    benchmark_get_cycle();
                 }
 
                 if(!compute_id && !RUN_RTL){
@@ -514,7 +514,7 @@ void mnist_fp64(const network_fp64_t *n){
         //TODO: load the LR from the network struct or via DRAM perloading
         //*learning_rate = 0.5;
 
-        if(RUN_TRAINING_STEP && !RUN_RTL){
+        if(RUN_TRAINING_STEP){
 
             if(!compute_id && !RUN_RTL){
                     printf("[MNIST] FP64 Training step start\n");
