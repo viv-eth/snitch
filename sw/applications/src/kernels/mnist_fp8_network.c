@@ -773,8 +773,8 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     }
 
-    printf("TRAINING STEP FP16 SIMD with SSRs: W_checksum = %f\n", W_checksum);
-    printf("TRAINING STEP FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
+    printf("TRAINING STEP FP8 SIMD with SSRs: W_checksum = %f\n", W_checksum);
+    printf("TRAINING STEP FP8 SIMD with SSRs: b_checksum = %f\n", b_checksum);
 
 }
 
