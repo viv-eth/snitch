@@ -76,8 +76,8 @@ void mnist_fp8(const network_fp8_t *n){
     char *images;
     char *activations_cl0;
     // keep FP32 master copy of activations for SoftMax
-    float *max;
     float *activations_cl0_fp32;
+    float *max;
 
     // cluster 1 variabels:
     char *weights_cl1; // dummy variable to match offsets with cluster 0
