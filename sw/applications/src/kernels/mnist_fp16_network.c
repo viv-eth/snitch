@@ -430,13 +430,13 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     // get the value saved at target address
     uint16_t target_n = target[0];
 
-    // uint16_t* target_ptr = &target;
+    uint16_t* target_ptr = &target;
 
-    // uint16_t* check_target_ptr = &target;
+    uint16_t* check_target_ptr = &target;
 
     // increment the pointer by one address so that we
     // do not match with the actual target variable
-    // check_target_ptr++;
+    check_target_ptr++;
     
     // compute the loss
 
@@ -460,9 +460,9 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             act = activations[ldB * out];
             act_ptr = &act;
 
-            // if(idx_eff == target_n){
-            //     check_target_ptr = &target;
-            // }
+            if(idx_eff == target_n){
+                check_target_ptr = &target;
+            }
 
             // GIM: we have to assign pointer here otherwise out of memory accesses
             // CODE BELOW DEFINITELY PASSES IN THE RTL!!!!
@@ -476,20 +476,6 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             //     : "ft0", "ft1", "ft2", "ft3"
             // ); // RTL PASS 
 
-            // asm volatile(
-            //     "flh            ft3, 0(%[act])\n"
-            //     "fcvt.s.h       %[b_grad_update], ft3\n"
-            //     "beq            %[target_n], %[check_target_ptr], 1f\n"
-            //     "bne            %[target_n], %[check_target_ptr], 2f\n"
-            //     "1:            \n"
-            //     "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
-            //     "2:            \n"
-            //     : [b_grad_update] "+&f"(b_grad_update)
-            //     : [act] "r"(act_ptr), [target_n] "r"(target_ptr), [check_target_ptr] "r"(check_target_ptr),
-            //       [one] "f"(one)
-            //     : "ft0", "ft1", "ft2", "ft3"
-            // );
-
             asm volatile(
                 "flh            ft3, 0(%[act])\n"
                 "fcvt.s.h       %[b_grad_update], ft3\n"
@@ -499,10 +485,24 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
                 "2:            \n"
                 : [b_grad_update] "+&f"(b_grad_update)
-                : [act] "r"(act_ptr), [target_n] "r"(target_n), [check_target_ptr] "r"(idx_eff),
+                : [act] "r"(act_ptr), [target_n] "r"(target_ptr), [check_target_ptr] "r"(check_target_ptr),
                   [one] "f"(one)
                 : "ft0", "ft1", "ft2", "ft3"
             );
+
+            // asm volatile(
+            //     "flh            ft3, 0(%[act])\n"
+            //     "fcvt.s.h       %[b_grad_update], ft3\n"
+            //     "beq            %[target_n], %[check_target_ptr], 1f\n"
+            //     "bne            %[target_n], %[check_target_ptr], 2f\n"
+            //     "1:            \n"
+            //     "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
+            //     "2:            \n"
+            //     : [b_grad_update] "+&f"(b_grad_update)
+            //     : [act] "r"(act_ptr), [target_n] "r"(target_n), [check_target_ptr] "r"(idx_eff),
+            //       [one] "f"(one)
+            //     : "ft0", "ft1", "ft2", "ft3"
+            // );
 
             // printf("After Update: b_grad_update = %f\n", b_grad_update);
 
@@ -738,6 +738,8 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
         } 
         
         register v4f16 reduce_reg;
+        uint16_t unroll = 4;
+        register v4f16 unroll_reg[4];
         const register float zero = 0.0;
         register v2f32 zero_reg;
         register float sum = 0.0f;
@@ -746,14 +748,31 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
             "vfcpka.h.s          %[reduce_reg], %[zero], %[zero] \n"
             "vfcpkb.h.s          %[reduce_reg], %[zero], %[zero] \n"
             : [reduce_reg] "+&f"(reduce_reg), [zero_reg] "+&f"(zero_reg)
-            : [zero] "f"(zero), [one] "f"(1.0f)
+            : [zero] "f"(zero)
             : "ft0", "ft1", "ft2"
         );
+
+        // asm volatile (
+        //     "vfcpka.h.s          %[unroll_reg_0], %[zero], %[zero] \n"
+        //     "vfcpkb.h.s          %[unroll_reg_0], %[zero], %[zero] \n"
+        //     "vfcpka.h.s          %[unroll_reg_1], %[zero], %[zero] \n"
+        //     "vfcpkb.h.s          %[unroll_reg_1], %[zero], %[zero] \n"
+        //     "vfcpka.h.s          %[unroll_reg_2], %[zero], %[zero] \n"
+        //     "vfcpkb.h.s          %[unroll_reg_2], %[zero], %[zero] \n"
+        //     "vfcpka.h.s          %[unroll_reg_3], %[zero], %[zero] \n"
+        //     "vfcpkb.h.s          %[unroll_reg_3], %[zero], %[zero] \n"
+        //     : [unroll_reg_0] "+&f"(unroll_reg[0]), [unroll_reg_1] "+&f"(unroll_reg[1]), 
+        //       [unroll_reg_2] "+&f"(unroll_reg[2]), [unroll_reg_3] "+&f"(unroll_reg[3]) 
+        //     : [zero] "f"(zero)
+        //     : "ft0", "ft1", "ft2"
+        // );
 
         snrt_ssr_enable();
         for(uint32_t in = 0; in < IN_CH;){
             idx_eff_W = compute_id*IN_CH + out * ldW + in;
             if(!(idx_eff_W  + 3 > IN_CH * OUT_CH * 5 - 1)){ 
+                
+                // snrt_ssr_enable();
 
                 asm volatile(
                     "vfcpka.h.s          %[reduce_reg], %[lr], %[lr] \n"
@@ -762,10 +781,31 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                     // "vfsum.s             %[sum], %[reduce_reg]\n"
                     "vfmul.h             %[reduce_reg], %[reduce_reg], ft0 \n"
                    // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> banshee: add floating point exception for divide by zero
-                : [reduce_reg] "+&f"(reduce_reg), [sum] "+&f"(sum)
+                : [reduce_reg] "+&f"(reduce_reg)
                 : [zero] "f"(zero), [lr] "f"(-lr)
                 : "ft0", "ft1", "ft2"
                 );  
+
+
+                // asm volatile(
+                //     "vfcpka.h.s          %[unroll_reg_0], %[lr], %[lr] \n"
+                //     "vfcpkb.h.s          %[unroll_reg_0], %[lr], %[lr] \n"
+                //     "vfcpka.h.s          %[unroll_reg_1], %[lr], %[lr] \n"
+                //     "vfcpkb.h.s          %[unroll_reg_1], %[lr], %[lr] \n"
+                //     "vfcpka.h.s          %[unroll_reg_2], %[lr], %[lr] \n"
+                //     "vfcpkb.h.s          %[unroll_reg_2], %[lr], %[lr] \n"
+                //     "vfcpka.h.s          %[unroll_reg_3], %[lr], %[lr] \n"
+                //     "vfcpkb.h.s          %[unroll_reg_3], %[lr], %[lr] \n"
+                //     "vfmul.h             %[unroll_reg_0], %[unroll_reg_0], ft0 \n"
+                //     "vfmul.h             %[unroll_reg_1], %[unroll_reg_1], ft0 \n"
+                //     "vfmul.h             %[unroll_reg_2], %[unroll_reg_2], ft0 \n"
+                //     "vfmul.h             %[unroll_reg_3], %[unroll_reg_3], ft0 \n"
+                //    // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divde by the size of the dataset --> banshee: add floating point exception for divide by zero
+                // : [unroll_reg_0] "+&f"(unroll_reg[0]), [unroll_reg_1] "+&f"(unroll_reg[1]), 
+                //   [unroll_reg_2] "+&f"(unroll_reg[2]), [unroll_reg_3] "+&f"(unroll_reg[3])
+                // : [zero] "f"(zero), [lr] "f"(-lr)
+                // : "ft0", "ft1", "ft2"
+                // ); 
                 
                 snrt_ssr_disable(); 
                 weights[out*ldW + in + 0] += reduce_reg[0] / nimg;
@@ -773,6 +813,27 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                 weights[out*ldW + in + 2] += reduce_reg[2] / nimg;
                 weights[out*ldW + in + 3] += reduce_reg[3] / nimg;
                 // W_checksum += reduce_reg[0] + reduce_reg[1] + reduce_reg[2] + reduce_reg[3];
+                // weights[out*ldW + in + 0] += unroll_reg[0][0] / nimg;
+                // weights[out*ldW + in + 1] += unroll_reg[0][1] / nimg;
+                // weights[out*ldW + in + 2] += unroll_reg[0][2] / nimg;
+                // weights[out*ldW + in + 3] += unroll_reg[0][3] / nimg;
+                // weights[out*ldW + in + 4] += unroll_reg[1][0] / nimg;
+                // weights[out*ldW + in + 5] += unroll_reg[1][1] / nimg;
+                // weights[out*ldW + in + 6] += unroll_reg[1][2] / nimg;
+                // weights[out*ldW + in + 7] += unroll_reg[1][3] / nimg;
+                // weights[out*ldW + in + 8] += unroll_reg[2][0] / nimg;
+                // weights[out*ldW + in + 9] += unroll_reg[2][1] / nimg;
+                // weights[out*ldW + in + 10] += unroll_reg[2][2] / nimg;
+                // weights[out*ldW + in + 11] += unroll_reg[2][3] / nimg;
+                // weights[out*ldW + in + 12] += unroll_reg[3][0] / nimg;
+                // weights[out*ldW + in + 13] += unroll_reg[3][1] / nimg;
+                // weights[out*ldW + in + 14] += unroll_reg[3][2] / nimg;
+                // weights[out*ldW + in + 15] += unroll_reg[3][3] / nimg;
+                // W_checksum += unroll_reg[0][0] + unroll_reg[0][1] + unroll_reg[0][2] + unroll_reg[0][3] 
+                //             + unroll_reg[1][0] + unroll_reg[1][1] + unroll_reg[1][2] + unroll_reg[1][3] 
+                //             + unroll_reg[2][0] + unroll_reg[2][1] + unroll_reg[2][2] + unroll_reg[2][3] 
+                //             + unroll_reg[3][0] + unroll_reg[3][1] + unroll_reg[3][2] + unroll_reg[3][3];
+
                 snrt_ssr_enable();
             } 
 
