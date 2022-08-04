@@ -78,7 +78,7 @@ void feedforward_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("FEEDFORWARD FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
+        printf("FEEDFORWARD FP16 Baseline: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);  
     }
 
     snrt_cluster_hw_barrier();
@@ -202,8 +202,8 @@ void gradient_update_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // printf("GRADIENT UPDATE FP16 Baseline: bias_grads[%u] = %f\n", 1 + compute_id + out * ldB, bias_grads[ldB * out]);
     }
 
-    // printf("GRADIENT UPDATE FP16 Baseline: W_checksum = %f\n", W_checksum);
-    // printf("GRADIENT UPDATE FP16 Baseline: b_checksum = %f\n", b_checksum);
+    printf("GRADIENT UPDATE FP16 Baseline: W_checksum = %f\n", W_checksum);
+    printf("GRADIENT UPDATE FP16 Baseline: b_checksum = %f\n", b_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
@@ -328,44 +328,44 @@ void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             
                 
             // calculate the dot product of the image and the weights (increment by four columns in each iteration)
-            // asm volatile(
-            //     "frep.o           %[n_frep], 4, 0, 0\n"
-            //     "vfadd.s          %[reduce_reg], %[zero_reg], %[zero_reg] \n"
-            //     "vfadd.s          %[sum], %[zero_reg], %[zero_reg] \n"
-            //     "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
-            //     "vfsum.s          %[sum], %[reduce_reg]\n"
-            //     "fadd.s           %[tacc], %[tacc], %[sum] \n"
-            //     //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped? --> instruction not supported for FREP
-            // : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), 
-            //   [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg)
-            // : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
-            // : "ft0", "ft1", "ft2"
-            // );
-
             asm volatile(
-                "frep.o           %[n_frep], 13, 0, 0\n"
-                "vfadd.s          %[reduce_reg_0], %[zero_reg], %[zero_reg] \n"
-                "vfadd.s          %[reduce_reg_1], %[zero_reg], %[zero_reg] \n"
-                "vfadd.s          %[reduce_reg_2], %[zero_reg], %[zero_reg] \n"
-                "vfadd.s          %[reduce_reg_3], %[zero_reg], %[zero_reg] \n"
+                "frep.o           %[n_frep], 4, 0, 0\n"
+                "vfadd.s          %[reduce_reg], %[zero_reg], %[zero_reg] \n"
                 "vfadd.s          %[sum], %[zero_reg], %[zero_reg] \n"
-                "vfdotpex.s.h     %[reduce_reg_0], ft1, ft0 \n"
-                "vfdotpex.s.h     %[reduce_reg_1], ft1, ft0 \n"
-                "vfdotpex.s.h     %[reduce_reg_2], ft1, ft0 \n"
-                "vfdotpex.s.h     %[reduce_reg_3], ft1, ft0 \n"
-                "vfsum.s          %[sum], %[reduce_reg_0]\n"
-                "vfsum.s          %[sum], %[reduce_reg_1]\n"
-                "vfsum.s          %[sum], %[reduce_reg_2]\n"
-                "vfsum.s          %[sum], %[reduce_reg_3]\n"
+                "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
+                "vfsum.s          %[sum], %[reduce_reg]\n"
                 "fadd.s           %[tacc], %[tacc], %[sum] \n"
                 //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped? --> instruction not supported for FREP
             : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), 
-              [zero_reg] "+&f"(zero_reg), 
-              [reduce_reg_0] "+&f"(reduce_reg_0), [reduce_reg_1] "+&f"(reduce_reg_1),
-              [reduce_reg_2] "+&f"(reduce_reg_2), [reduce_reg_3] "+&f"(reduce_reg_3)
-            : [zero] "f"(zero), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
+              [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg)
+            : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
             : "ft0", "ft1", "ft2"
             );
+
+            // asm volatile(
+            //     "frep.o           %[n_frep], 13, 0, 0\n"
+            //     "vfadd.s          %[reduce_reg_0], %[zero_reg], %[zero_reg] \n"
+            //     "vfadd.s          %[reduce_reg_1], %[zero_reg], %[zero_reg] \n"
+            //     "vfadd.s          %[reduce_reg_2], %[zero_reg], %[zero_reg] \n"
+            //     "vfadd.s          %[reduce_reg_3], %[zero_reg], %[zero_reg] \n"
+            //     "vfadd.s          %[sum], %[zero_reg], %[zero_reg] \n"
+            //     "vfdotpex.s.h     %[reduce_reg_0], ft1, ft0 \n"
+            //     "vfdotpex.s.h     %[reduce_reg_1], ft1, ft0 \n"
+            //     "vfdotpex.s.h     %[reduce_reg_2], ft1, ft0 \n"
+            //     "vfdotpex.s.h     %[reduce_reg_3], ft1, ft0 \n"
+            //     "vfsum.s          %[sum], %[reduce_reg_0]\n"
+            //     "vfsum.s          %[sum], %[reduce_reg_1]\n"
+            //     "vfsum.s          %[sum], %[reduce_reg_2]\n"
+            //     "vfsum.s          %[sum], %[reduce_reg_3]\n"
+            //     "fadd.s           %[tacc], %[tacc], %[sum] \n"
+            //     //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped? --> instruction not supported for FREP
+            // : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), 
+            //   [zero_reg] "+&f"(zero_reg), 
+            //   [reduce_reg_0] "+&f"(reduce_reg_0), [reduce_reg_1] "+&f"(reduce_reg_1),
+            //   [reduce_reg_2] "+&f"(reduce_reg_2), [reduce_reg_3] "+&f"(reduce_reg_3)
+            // : [zero] "f"(zero), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
+            // : "ft0", "ft1", "ft2"
+            // );
 
             // End of SSR region.
             snrt_ssr_disable();
@@ -420,8 +420,8 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     __fp16 zero_fp16 = 0.0;
 
     // __fp16 b_checksum = 0.0f;
+    // __fp16 W_checksum = 0.0;
     __fp16 W_grad_update = 0.0;
-    __fp16 W_checksum = 0.0;
     uint16_t idx_eff;
     volatile uint32_t idx_eff_W;
 
@@ -430,13 +430,13 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     // get the value saved at target address
     uint16_t target_n = target[0];
 
-    uint16_t* target_ptr = &target;
+    // uint16_t* target_ptr = &target;
 
-    uint16_t* check_target_ptr = &target;
+    // uint16_t* check_target_ptr = &target;
 
     // increment the pointer by one address so that we
     // do not match with the actual target variable
-    check_target_ptr++;
+    // check_target_ptr++;
     
     // compute the loss
 
@@ -460,9 +460,9 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             act = activations[ldB * out];
             act_ptr = &act;
 
-            if(idx_eff == target_n){
-                check_target_ptr = &target;
-            }
+            // if(idx_eff == target_n){
+            //     check_target_ptr = &target;
+            // }
 
             // GIM: we have to assign pointer here otherwise out of memory accesses
             // CODE BELOW DEFINITELY PASSES IN THE RTL!!!!
@@ -476,6 +476,20 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
             //     : "ft0", "ft1", "ft2", "ft3"
             // ); // RTL PASS 
 
+            // asm volatile(
+            //     "flh            ft3, 0(%[act])\n"
+            //     "fcvt.s.h       %[b_grad_update], ft3\n"
+            //     "beq            %[target_n], %[check_target_ptr], 1f\n"
+            //     "bne            %[target_n], %[check_target_ptr], 2f\n"
+            //     "1:            \n"
+            //     "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
+            //     "2:            \n"
+            //     : [b_grad_update] "+&f"(b_grad_update)
+            //     : [act] "r"(act_ptr), [target_n] "r"(target_ptr), [check_target_ptr] "r"(check_target_ptr),
+            //       [one] "f"(one)
+            //     : "ft0", "ft1", "ft2", "ft3"
+            // );
+
             asm volatile(
                 "flh            ft3, 0(%[act])\n"
                 "fcvt.s.h       %[b_grad_update], ft3\n"
@@ -485,7 +499,7 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
                 "fsub.s         %[b_grad_update], %[b_grad_update], %[one]\n"
                 "2:            \n"
                 : [b_grad_update] "+&f"(b_grad_update)
-                : [act] "r"(act_ptr), [target_n] "r"(target_ptr), [check_target_ptr] "r"(check_target_ptr),
+                : [act] "r"(act_ptr), [target_n] "r"(target_n), [check_target_ptr] "r"(idx_eff),
                   [one] "f"(one)
                 : "ft0", "ft1", "ft2", "ft3"
             );
@@ -494,11 +508,11 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
             // bias_grads[ldB * out] = b_grad_update; //GIM: why does this not work
 
-            bias_grad = b_grad_update;
-            bias_grads[ldB * out] = bias_grad;
+            // bias_grad = b_grad_update;
+            // bias_grads[ldB * out] = bias_grad;
 
-            // printf("bias_grad = %f\n", bias_grads[ldB * out]);
-            // printf("bias_grad = %f\n", bias_grad);
+            // b_checksum += b_grad_update;
+            bias_grads[ldB * out] = b_grad_update;
 
 
 
@@ -662,7 +676,7 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     }
 
     // printf("GRADIENT UPDATE FP16 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
-    // printf("GRADIENT UPDATE FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
+    // printf("GRADIENT UPDATE FP16 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
 
     snrt_cluster_hw_barrier();
 
@@ -693,8 +707,8 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     // __fp16 b_checksum = 0.0f;
     // __fp16 W_checksum = 0.0f;
 
-    uint32_t volatile idx_eff = 0;
-    uint32_t volatile idx_eff_W = 0;
+    uint32_t idx_eff = 0;
+    uint32_t idx_eff_W = 0;
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -771,8 +785,8 @@ void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
     }
 
-    // printf("TRAINING STEP FP16 SIMD with SSRs: W_checksum = %f\n", W_checksum);
-    // printf("TRAINING STEP FP16 SIMD with SSRs: b_checksum = %f\n", b_checksum);
+    // printf("TRAINING STEP FP16 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
+    // printf("TRAINING STEP FP16 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
 
 
 } // RTL TODO

@@ -219,10 +219,10 @@ void mnist_fp16(const network_fp16_t *n){
                     feedforward_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id);
+                    benchmark_get_cycle();
                     softmax_activation_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                                 &images[curr_img], ldI, compute_id, compute_num, max);
-                    benchmark_get_cycle();
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
@@ -230,10 +230,10 @@ void mnist_fp16(const network_fp16_t *n){
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id,
                                     setup_SSR);
+                    benchmark_get_cycle();
                     softmax_activation_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                                     &images[curr_img], ldI, compute_id, compute_num, max);
-                    benchmark_get_cycle();
                 }
 
                 // if(!compute_id){
