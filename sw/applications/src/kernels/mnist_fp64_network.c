@@ -115,8 +115,6 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     int err_cnt = 0;
     double temp_err;
 
-    // double euler_constant = 2.7182818284590452353602874713527;
-
     volatile uint32_t idx_eff;
 
     max_core = activations[0];
@@ -189,7 +187,7 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // double b_checksum = 0.0;
     // double W_checksum = 0.0;
 
-    // double loss_val = 0.0;
+    double loss_val = 0.0;
     // double loss_wo_log;
 
 
@@ -201,14 +199,14 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // not be included in the benchmarking.
 
     // compute the loss
-    // if(!compute_id){
-    //     loss_val = 0.0 - log(activations[target_n - compute_id]);
-    //     loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
-    //     printf("loss with math.h = %f\n", loss_val);
-    //     printf("loss with my_log = %f\n", loss_wo_log);
-    // } 
+    if(!compute_id){
+        loss_val = 0.0 - log(activations[target_n - compute_id]);
+        // loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
+        // printf("loss with math.h = %f\n", loss_val);
+        // printf("loss with my_log = %f\n", loss_wo_log);
+    } 
 
-    // loss[0] = loss_val;
+    loss[0] = loss_val;
 
     // printf("loss = %f\n", loss[0]);
 

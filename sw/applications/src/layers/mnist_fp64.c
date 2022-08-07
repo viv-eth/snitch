@@ -16,15 +16,21 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
 #define RUN_GRADIENT_UPDATE 1
-#define RUN_TRAINING_STEP 0 // WARN: for SSRs we cannot run the training step in the RTL
-#define GET_ACCURACY 0
+#define RUN_TRAINING_STEP 1 // WARN: for SSRs we cannot run the training step in the RTL
+#define GET_ACCURACY 1
 #define GET_LOSS 0
-#define RUN_RTL 1
+#define RUN_RTL 0
+#define RUN_FENGA 1
+
+// define NN properties
+#define NUM_EPOCHS 1
+#define BATCH_SIZE 10
+#define STEPS(batches) (int)NUM_EPOCHS*(batches)
 
 void mnist_fp64(const network_fp64_t *n){
 
@@ -43,7 +49,7 @@ void mnist_fp64(const network_fp64_t *n){
 
     // number of total images that we load
     // NOTE: partial load for simulation purposes only
-    uint32_t number_of_images = 1;
+    uint32_t number_of_images = 10;
 
     // size of the weight matrix, same for weight gradients
     // on cluster 0 we store the weights, on cluster 1 the
@@ -154,9 +160,6 @@ void mnist_fp64(const network_fp64_t *n){
     uint32_t *images_dram = (void *)0x80040000;
     uint32_t *targets_dram = (void *)0x80108000;
 
-    // binary DRAM dataset memory start address
-    // uint32_t *binary_dram = (void *)0x80109000;
-
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
     // TODO: add the epochs
@@ -192,9 +195,11 @@ void mnist_fp64(const network_fp64_t *n){
     snrt_cluster_hw_barrier();
 
     // We now loop through the images
-    for(uint32_t image = 0; image < number_of_images; image++){
+    for(uint32_t image = 0; image < BATCH_SIZE; image++){
+        
         // we calculate the pointer postion of the current image
         uint32_t volatile curr_img = image * IN_CH * 2; // --> Why * 2? 
+        // we calculate the pointer postion of the current target
         uint32_t volatile curr_target = image;
 
         
@@ -266,7 +271,7 @@ void mnist_fp64(const network_fp64_t *n){
 
             if(RUN_FEEDFORWARD){
                 
-                if(!compute_id && !RUN_RTL){
+                if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 FF start\n");
                 }
 
@@ -293,7 +298,7 @@ void mnist_fp64(const network_fp64_t *n){
                                     images, ldI, compute_id, compute_num, max, setup_SSR);
                 }
 
-                if(!compute_id && !RUN_RTL){
+                if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 FF end\n");
                 }
 
@@ -404,7 +409,7 @@ void mnist_fp64(const network_fp64_t *n){
             }
 
             if(RUN_GRADIENT_UPDATE){
-                if(!compute_id && !RUN_RTL){
+                if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 GU start\n");
                 }
                 if(BASELINE){
@@ -426,11 +431,11 @@ void mnist_fp64(const network_fp64_t *n){
                                         loss, compute_num, setup_SSR);
                     benchmark_get_cycle();
                 }
-                if(!compute_id && !RUN_RTL){
+                if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 GU end\n");
                 }
             } else {
-                if(!compute_id && !RUN_RTL){
+                if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 GU not run. \n");
                 }
             } // end of gradient update
@@ -444,7 +449,7 @@ void mnist_fp64(const network_fp64_t *n){
                     snrt_cluster_hw_barrier();
                 }
             } else {
-                if(!cluster_id && !RUN_RTL){
+                if(!cluster_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 GU not run. \n");
                 }
             }
@@ -516,7 +521,7 @@ void mnist_fp64(const network_fp64_t *n){
 
         if(RUN_TRAINING_STEP){
 
-            if(!compute_id && !RUN_RTL){
+            if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 Training step start\n");
             }
 
@@ -538,7 +543,7 @@ void mnist_fp64(const network_fp64_t *n){
                 benchmark_get_cycle();
             }
 
-            if(!compute_id && !RUN_RTL){
+            if(!compute_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 Training step done\n");
             }
         }
@@ -548,14 +553,14 @@ void mnist_fp64(const network_fp64_t *n){
             if(RUN_TRAINING_STEP){
                 // no HW barriers required for Baseline
             } else {
-                if(!cluster_id && !RUN_RTL){
+                if(!cluster_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 Training Step not run. \n");
                 }
             }
         } else {
             if(RUN_TRAINING_STEP){
             } else {
-                if(!cluster_id && !RUN_RTL){
+                if(!cluster_id && !RUN_RTL && !RUN_FENGA){
                     printf("[MNIST] FP64 Training Step not run. \n");
                 }
             }

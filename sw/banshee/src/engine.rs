@@ -1023,12 +1023,12 @@ impl<'a, 'b> Cpu<'a, 'b> {
             TraceAccess::RMWMem => format!("AMO:{:08x}", data as u32),
             TraceAccess::ReadReg(x) => format!("x{}:{:08x}", x, data as u32),
             TraceAccess::WriteReg(x) => format!("x{}={:08x}", x, data as u32),
-            TraceAccess::ReadFReg(x) => format!("f{}:{:08x}", x, data as u64),
-            TraceAccess::WriteFReg(x) => format!("f{}={:08x}", x, data as u64),
+            // TraceAccess::ReadFReg(x) => format!("f{}:{:08x}", x, data as u64),
+            // TraceAccess::WriteFReg(x) => format!("f{}={:08x}", x, data as u64),
             // TraceAccess::ReadFReg(x) => format!("f{}:{:#b}", x, data as u64),
             // TraceAccess::WriteFReg(x) => format!("f{}={:#b}", x, data as u64),
-            // TraceAccess::ReadFReg(x) => format!("f{:02}:{:>16.6}", x, f64::from_bits(data)),
-            // TraceAccess::WriteFReg(x) => format!("f{:02}={:>16.6}", x, f64::from_bits(data)),
+            TraceAccess::ReadFReg(x) => format!("f{:02}:{:>16.6}", x, f64::from_bits(data)),
+            TraceAccess::WriteFReg(x) => format!("f{:02}={:>16.6}", x, f64::from_bits(data)),
             TraceAccess::ReadF32Reg(x) => {
                 format!("f{:02}:{:>12.4}", x, f32::from_bits(data as u32))
             }

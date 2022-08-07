@@ -25,10 +25,8 @@ pub fn bin_read(bin_path: &str, mut offset: u64) -> Result<HashMap<u64, u32>, Bo
     let mut result = HashMap::<u64, u32>::new();
 
     // we read in the binary data from the file into a buffer
-    let mut bin_buf = BufReader::new(File::open(bin_path).unwrap());
-
     // trace!("bin_read: bin_path = {}", bin_path);
-
+    let mut bin_buf = BufReader::new(File::open(bin_path).unwrap());
 
     // we define the buffer in which we read in single values
     // we always have to read in 32 bits into memory for the DRAM
