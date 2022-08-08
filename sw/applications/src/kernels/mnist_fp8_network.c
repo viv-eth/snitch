@@ -8,6 +8,10 @@
 #include "printf.h"
 #include "snrt.h"
 
+#define FLT_MIN 1E-37
+#define FLT_MAX 1E+37
+
+
 typedef float v2f32 __attribute__((vector_size(8)));
 union fp32_v2f32_u { 
         v2f32 v2; 
@@ -28,6 +32,11 @@ float my_fabs(float x) {
     }
 }
 
+typedef union {
+    double f64;
+    v8f8 vec;
+} v8s;
+
 double my_exp(float x) 
 { 
     const double epsilon = 1e-7; 
@@ -45,6 +54,23 @@ double my_exp(float x)
     } while (my_fabs(term)>=epsilon); 
     return sum; 
 } 
+
+uint32_t my_pow(uint32_t base, uint32_t exponent) {
+
+	uint32_t result = 1;
+
+    // printf("base = %u, exponent = %u\n", base, exponent);
+    
+    while (exponent != 0) {
+        result *= base;
+        --exponent;
+    }
+
+    // printf("result = %u\n", result);
+
+    return result;
+
+}
 
 float get_float_from_byte(char value) {
     
@@ -70,6 +96,8 @@ float get_float_from_byte(char value) {
             // account for 2s complement
             if(e == 1) {
                 exp_acc -= (int)(pow(2, exp_len));
+                // printf("pow = %f\n", pow(2, exp_len));
+                // printf("my_pow = %u\n", my_pow(2, exp_len));
             } else {
                 exp_acc += (int)(pow(2, exp_len));
             }
@@ -205,8 +233,9 @@ void softmax_activation_fp8n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             if(act_ptr[out] != 0b00000000){
                 // printf("DEBUG NON ZERO: act_ptr[%u] = %d\n", out + 1 + compute_id, act_ptr[out]);
                 // act_ptr[out] = exp(act_ptr[out] - max_global);
-                act_ptr[out] = my_exp(act_ptr[out] - max_global);
-                printf("DEBUG: act_ptr[%u] = %d\n", out + 1 + compute_id, act_ptr[out]);
+                // act_ptr[out] = my_exp(act_ptr[out] - max_global);
+                act_ptr[out] = my_exp(act_ptr[out]);
+                // printf("DEBUG: act_ptr[%u] = %d\n", out + 1 + compute_id, act_ptr[out]);
                 sum += act_ptr[out];
                 //printf("DEBUG: sum = %f\n", sum);
             } else {
@@ -222,8 +251,8 @@ void softmax_activation_fp8n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             printf("SOFTMAX FP8 (no SIMD): activation[%u] = ", out + 1);
             print_byte(activations[out]);
             printf(" = %d\n", activations[out]);
-            // printf(" = ");
-            // get_float_from_byte(activations[out]);
+            printf(" = ");
+            get_float_from_byte(activations[out]);
         }
     }
 
@@ -238,10 +267,7 @@ void softmax_activation_fp32_ex(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_C
     float sum = 0.0;
     float max_global;
 
-    volatile uint32_t idx_eff;
-
-    // snrt_ssr_enable();
-
+    uint32_t idx_eff;
     max_core = activations_fp32[0];
 
     for(uint32_t out = 0; out < OUT_CH; out++){
@@ -275,7 +301,10 @@ void softmax_activation_fp32_ex(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_C
             if(activations_fp32[out]){
                 // activations_fp32[out] = exp(activations_fp32[out] - max_global);
                 // printf("DEBUG: activations_fp32[%u] - max_global = %.10f\n", out, activations_fp32[out] - max_global);
+                // printf("DEBUG: activations_fp32[%u] - 0 = %.10f\n", out, activations_fp32[out] - 0);
                 activations_fp32[out] = my_exp(activations_fp32[out] - max_global);
+                // activations_fp32[out] = my_exp(activations_fp32[out]);
+                // printf("activations_fp32[out] = %f\n", activations_fp32[out]);
                 sum += activations_fp32[out];
             } else {
                 activations_fp32[out] = 0.0;
@@ -286,7 +315,6 @@ void softmax_activation_fp32_ex(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_C
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations_fp32[out] /= sum;
             float act_fp32 = activations_fp32[out];
-            // printf("activations_fp32[%u] = %.10f\n", out, act_fp32);
             register v8f8 act_fp8_ptr;
             register v2f32 sum;
             register float sum_f;
@@ -303,11 +331,11 @@ void softmax_activation_fp32_ex(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_C
                 : "ft0", "ft1", "ft2"
             );
             activations[out] = act_fp8_ptr[0];
-            float fp8_float = get_float_from_byte(activations[out]);
+            // float fp8_float = get_float_from_byte(activations[out]);
             // printf("SOFTMAX FP32 expanding (no SIMD): activation[%u] = %.10f\n", out + 1, activations_fp32[out]);
-            printf("SOFTMAX FP32 expanding (no SIMD): activation[%u] = ", out + 1);
-            print_byte(activations[out]);
-            printf(" = %d = %f\n", activations[out], fp8_float);
+            // printf("SOFTMAX FP32 expanding (no SIMD): activation[%u] = ", out + 1);
+            // print_byte(activations[out]);
+            // printf(" = %d = %.10f\n", activations[out], fp8_float);
 
         }
     }
@@ -431,6 +459,8 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     const register float zero = 0.0;
 
+    float acc_float = 0.0;
+
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     uint32_t idx_eff;
@@ -452,13 +482,7 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 snrt_ssr_loop_1d(SNRT_SSR_DM0, 
                                 IN_CH / 8, 
                                 sizeof(double));
-                
-                // setup of DATA MOVER for weights
-                // snrt_ssr_loop_2d(SNRT_SSR_DM1, 
-                //                 IN_CH / 8, 
-                //                 OUT_CH - 1, 
-                //                 sizeof(double), 
-                //                 sizeof(double) * ldW / 8);
+
                 snrt_ssr_loop_1d(SNRT_SSR_DM1, 
                                 IN_CH / 8, 
                                 sizeof(double));
@@ -470,31 +494,47 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             register float reduce_reg;
             const uint16_t unroll = 4;
             register v2f32 sum;
+            register v2f32 sum_t;
+            register v4f16 sum_tt;
             register v8f8 dotp;
             register v4f16 zero_reg;
             register float tacc;
+            register float conv;
             register v4f16 c;
             register v8f8 test;
+            register v8s convert;
+
 
             // Start of SSR region
-            // snrt_ssr_enable();
+            snrt_ssr_enable();
             // printf("FP8opt DEBUG: before computation acc = ");
             // print_byte(acc);
             // printf("\n");
 
-            snrt_ssr_enable();
-
             acc = biases[ldB * out];
+            // printf("dummy = ");
+            // print_byte(acc);
+            // printf("\n");
+            convert.vec[0] = acc;
+            convert.vec[1] = 0;
+            convert.vec[2] = 0;
+            convert.vec[3] = 0;
+            convert.vec[4] = 0;
+            convert.vec[5] = 0;
+            convert.vec[6] = 0;
+            convert.vec[7] = 0;
+
+
 
             asm volatile(
                 "vfcpka.s.s    %[tacc], %[zero], %[zero]\n" // zero initialize accumulator
-                "vfcpka.h.s    %[zero_reg], %[zero], %[zero] \n"
-                "vfcpkb.h.s    %[zero_reg], %[zero], %[zero] \n"
-                "vfcpka.h.s    %[sum], %[zero], %[zero] \n"
-                "vfcpkb.h.s    %[sum], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[zero_reg], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum_tt], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum_t], %[zero], %[zero] \n"
                 "vfadd.s       %[c], %[zero_reg], %[zero_reg] \n"
                 "vfadd.s       %[test], %[zero_reg], %[zero_reg] \n"
-                : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg), [sum] "+&f"(sum), 
+                : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg), [sum] "+&f"(sum), [sum_tt] "+&f"(sum_tt), [sum_t] "+&f"(sum_t), 
                   [c] "+&f"(c), [test] "+&f"(test)
                 : [zero] "f"(zero)
                 : "ft0", "ft1", "ft2"
@@ -506,14 +546,16 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 "vfdotpex.h.b     %[c], ft1, ft0 \n"
                 "vfsumex.s.h      %[sum], %[c]\n"
                 "vfsum.s          %[tacc], %[sum]\n"
+                "vfsumex.h.b      %[sum_tt], %[convert]\n"
+                "vfsumex.s.h      %[sum_t], %[sum_tt]\n"
                 "vfcpka.b.s       %[test], %[tacc], %[zero] \n"
                 "vfcpkb.b.s       %[test], %[zero], %[zero] \n"
                 "vfcpkc.b.s       %[test], %[zero], %[zero] \n"
                 "vfcpkd.b.s       %[test], %[zero], %[zero] \n"
             //     // "fadd.s           %[tacc], %[tacc], %[sum] \n"
             //     //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped? --> instruction not supported for FREP
-            : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), 
-              [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg),
+            : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), [sum_tt] "+f"(sum_tt), [sum_t] "+f"(sum_t), 
+              [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg), [convert] "+&f"(convert.f64), 
               [c] "+&f"(c), [test] "+&f"(test)
             : [zero] "f"(zero), [n_frep] "r"(IN_CH / 8 - 1)
             : "ft0", "ft1", "ft2"
@@ -524,15 +566,24 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             // printf("test[%u] = ", compute_id + ldB * out + 1);
             // print_bits(test[0]);
             // snrt_fpu_fence();
+            float dummy = sum_t[0];
+            // printf("dummy = %f\n", dummy);
+            // printf("tacc = %f\n", tacc);
+            // printf("dummy + tacc = %f\n", dummy + tacc);
             acc += test[0];
             activations[ldB * out] = acc;
-            float acc_float = get_float_from_byte(acc);
-            // activations_fp32[ldB * out] = 1000*acc_float;
-            activations_fp32[ldB * out] = acc_float;
+            float act_fp32 = dummy + tacc;
+            // acc_float = get_float_from_byte(acc);
+            if(act_fp32 >= FLT_MAX) {
+                // printf("ERROR: underflow/overflow\n");
+                act_fp32 = 0.0;
+            }
+            activations_fp32[ldB * out] = act_fp32;
             printf("FEEDFORWARD FP8 OPT: acc[%u] = ", 1 + compute_id + out * ldB);
             print_byte(activations[ldB * out]);  
             printf(" = %d = %0.10f\n", activations[ldB * out], activations_fp32[ldB * out]);
             acc = 0b00000000;
+            asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
         }
     }
@@ -543,7 +594,7 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                         char *weight_grads, uint32_t ldW, char *bias_grads,
                         float *activations_fp32, uint32_t ldB, char *image, 
-                        uint32_t *target, uint32_t ldI, uint32_t compute_id, 
+                        char *target, uint32_t ldI, uint32_t compute_id, 
                         char *loss, uint32_t compute_num, uint32_t setup_SSR){
 
     register volatile double ft0 asm("ft0");
@@ -555,20 +606,64 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     float b_checksum = 0.0;
     float W_checksum = 0.0;
 
+    // volatile float act = 0.0;
+    register float idx_eff_fp32; 
+    register float target_fp32;
+    const register float one = 1.0;
+    const register float zero = 0.0;
+
     uint32_t idx_eff;
+    uint32_t max_idx = OUT_CH * 5 - 1;
     uint32_t idx_eff_W;
 
     // get the value saved at target address
     uint32_t target_n = *target;
+    // printf("target_n = %d\n", target_n);
+
+    // printf("gradient_update_fp8n_opt: target_n = %u\n", target_n);
+    
+    uint32_t t;
+
+    // uint32_t* target_ptr = &target;
+
+    // uint32_t* check_target_ptr = &target;
+
+    // increment the pointer by one address so that we
+    // do not match with the actual target variable
+    // check_target_ptr++;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
 
     for(uint32_t out = 0; out < OUT_CH; out++){
-        idx_eff = compute_id + ldB * out;
-        // printf("idx_eff = %u\n", idx_eff);
-        if(!(idx_eff > OUT_CH * 5 - 1)){
-            // printf("idx_eff = %u\n", idx_eff);
-            b_grad_update = (idx_eff == *target) ? activations_fp32[ldB * out] - 1 : activations_fp32[ldB * out];
+        // idx_eff = compute_id + ldB * out;
+
+        b_grad_update = activations_fp32[ldB * out];
+
+        // printf("before b_grad_update = %f\n", b_grad_update);
+        
+        asm volatile(
+            // "mv      %[t], %[target]\n"
+            // "lw      %[t], 0(%[t]) \n"
+            // "lw      %[t], 0(%[target])\n"
+            // "fcvt.s.wu   %[target_fp32], ft3\n"
+            "mul      %[idx_eff], %[ldB], %[out] \n"
+            "add      %[idx_eff], %[idx_eff], %[compute_id] \n" // idx_eff = compute_id + ldB * out
+            "bltu     %[idx_eff], %[max_idx], 1f \n" // if idx_eff < max_idx, go to 1
+            "beq      %[idx_eff], %[max_idx], 1f \n" // if idx_eff == max_idx, go to 1
+            "bgtu     %[idx_eff], %[max_idx], 2f \n" // if idx_eff > max_idx, go to 2
+            "1: \n"
+            // "mv       %[target_n], %[t] \n" // target_n = t
+            "bne      %[idx_eff], %[target], 2f \n" // if idx_eff != target, go to 2
+            "fsub.s   %[b_grad_update], %[b_grad_update], %[one]\n" // if idx_eff == target: b_grad_update = b_grad_update - 1
+            "2: \n"
+            : [idx_eff] "+r"(idx_eff), [b_grad_update] "+f"(b_grad_update), 
+              [target_fp32] "+f"(target_fp32), [target] "+r"(target_n), [t] "+r"(t)
+            : [ldB] "r"(ldB), [out] "r"(out), [compute_id] "r"(compute_id),
+              [max_idx] "r"(max_idx), [zero] "f"(zero), [one] "f"(one)
+        );
+
+        if(idx_eff <= max_idx){
+
             b_checksum += b_grad_update;
             // now we pack the b_grad_update into the bias_grads vector
             register v8f8 b_grad_update_reg;
@@ -577,6 +672,7 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             register v4f16 sum_reduce_reg_v4;
             register v2f32 sum_reduce_reg_v2;
             register float sum = 0.0;
+
             asm volatile(
                 "vfcpka.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
                 "vfcpkb.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
@@ -604,8 +700,6 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
             }
 
-            // Start of SSR region
-            snrt_ssr_enable();
 
             // SSR start address need to be configured each time
             snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
@@ -614,6 +708,9 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             for(uint32_t in = 0; in < IN_CH;){
                 idx_eff_W = compute_id * IN_CH + out * ldW + in;
                 if(!(idx_eff_W + 7 > IN_CH * OUT_CH * 5 - 1)){
+
+                    // Start of SSR region
+                    snrt_ssr_enable();
 
                     asm volatile(
                         "vfcpka.s.s       %[reduce_reg], %[zero], %[zero] \n"
@@ -643,14 +740,11 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                     weight_grads[out*ldW + in + 6] += reduce_reg[6];
                     weight_grads[out*ldW + in + 7] += reduce_reg[7];
                     W_checksum += sum;
-                    snrt_ssr_enable();
 
-                    in += 8;
                 }
+                
+                in += 8;
             }
-
-
-            snrt_ssr_disable();
         }
     }
 
@@ -773,8 +867,8 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     }
 
-    printf("TRAINING STEP FP8 SIMD with SSRs: W_checksum = %f\n", W_checksum);
-    printf("TRAINING STEP FP8 SIMD with SSRs: b_checksum = %f\n", b_checksum);
+    printf("TRAINING STEP FP8 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
+    printf("TRAINING STEP FP8 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
 
 }
 
