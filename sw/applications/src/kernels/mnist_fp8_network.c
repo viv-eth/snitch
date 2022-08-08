@@ -494,6 +494,7 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             register float reduce_reg;
             const uint16_t unroll = 4;
             register v2f32 sum;
+            register v2f32 sum_unroll[unroll];
             register v2f32 sum_t;
             register v4f16 sum_tt;
             register v8f8 dotp;
@@ -501,6 +502,7 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             register float tacc;
             register float conv;
             register v4f16 c;
+            register v4f16 c_unroll[unroll];
             register v8f8 test;
             register v8s convert;
 
@@ -526,26 +528,80 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 
 
+            // asm volatile(
+            //     "vfcpka.s.s    %[tacc], %[zero], %[zero]\n" // zero initialize accumulator
+            //     "vfcpka.s.s    %[zero_reg], %[zero], %[zero] \n"
+            //     "vfcpka.s.s    %[sum], %[zero], %[zero] \n"
+            //     "vfcpka.s.s    %[sum_tt], %[zero], %[zero] \n"
+            //     "vfcpka.s.s    %[sum_t], %[zero], %[zero] \n"
+            //     "vfadd.s       %[c], %[zero_reg], %[zero_reg] \n"
+            //     "vfadd.s       %[test], %[zero_reg], %[zero_reg] \n"
+            //     : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg), [sum] "+&f"(sum), [sum_tt] "+&f"(sum_tt), [sum_t] "+&f"(sum_t), 
+            //       [c] "+&f"(c), [test] "+&f"(test)
+            //     : [zero] "f"(zero)
+            //     : "ft0", "ft1", "ft2"
+            // );
+
             asm volatile(
                 "vfcpka.s.s    %[tacc], %[zero], %[zero]\n" // zero initialize accumulator
                 "vfcpka.s.s    %[zero_reg], %[zero], %[zero] \n"
-                "vfcpka.s.s    %[sum], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum0], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum1], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum2], %[zero], %[zero] \n"
+                "vfcpka.s.s    %[sum3], %[zero], %[zero] \n"
                 "vfcpka.s.s    %[sum_tt], %[zero], %[zero] \n"
                 "vfcpka.s.s    %[sum_t], %[zero], %[zero] \n"
-                "vfadd.s       %[c], %[zero_reg], %[zero_reg] \n"
+                "vfadd.s       %[c0], %[zero_reg], %[zero_reg] \n"
+                "vfadd.s       %[c1], %[zero_reg], %[zero_reg] \n"
+                "vfadd.s       %[c2], %[zero_reg], %[zero_reg] \n"
+                "vfadd.s       %[c3], %[zero_reg], %[zero_reg] \n"
                 "vfadd.s       %[test], %[zero_reg], %[zero_reg] \n"
-                : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg), [sum] "+&f"(sum), [sum_tt] "+&f"(sum_tt), [sum_t] "+&f"(sum_t), 
+                : [tacc] "+&f"(tacc), [zero_reg] "+&f"(zero_reg), [sum_tt] "+&f"(sum_tt), [sum_t] "+&f"(sum_t), 
+                  [sum0] "+&f"(sum_unroll[0]), [sum1] "+&f"(sum_unroll[1]), 
+                  [sum2] "+&f"(sum_unroll[2]), [sum3] "+&f"(sum_unroll[3]), 
+                  [c0] "+&f"(c_unroll[0]), [c1] "+&f"(c_unroll[1]), 
+                  [c2] "+&f"(c_unroll[2]), [c3] "+&f"(c_unroll[3]),
                   [c] "+&f"(c), [test] "+&f"(test)
                 : [zero] "f"(zero)
                 : "ft0", "ft1", "ft2"
             );
 
+            // // calculate the dot product of the image and the weights (increment by four columns in each iteration)
+            // asm volatile(
+            //     "frep.o           %[n_frep], 1, 0, 0\n"
+            //     "vfdotpex.h.b     %[c], ft1, ft0 \n"
+            //     "vfsumex.s.h      %[sum], %[c]\n"
+            //     "vfsum.s          %[tacc], %[sum]\n"
+            //     "vfsumex.h.b      %[sum_tt], %[convert]\n"
+            //     "vfsumex.s.h      %[sum_t], %[sum_tt]\n"
+            //     "vfcpka.b.s       %[test], %[tacc], %[zero] \n"
+            //     "vfcpkb.b.s       %[test], %[zero], %[zero] \n"
+            //     "vfcpkc.b.s       %[test], %[zero], %[zero] \n"
+            //     "vfcpkd.b.s       %[test], %[zero], %[zero] \n"
+            // //     // "fadd.s           %[tacc], %[tacc], %[sum] \n"
+            // //     //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped? --> instruction not supported for FREP
+            // : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), [sum_tt] "+f"(sum_tt), [sum_t] "+f"(sum_t), 
+            //   [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg), [convert] "+&f"(convert.f64), 
+            //   [c] "+&f"(c), [test] "+&f"(test)
+            // : [zero] "f"(zero), [n_frep] "r"(IN_CH / 8 - 1)
+            // : "ft0", "ft1", "ft2"
+            // );
+
             // calculate the dot product of the image and the weights (increment by four columns in each iteration)
             asm volatile(
-                "frep.o           %[n_frep], 1, 0, 0\n"
-                "vfdotpex.h.b     %[c], ft1, ft0 \n"
-                "vfsumex.s.h      %[sum], %[c]\n"
-                "vfsum.s          %[tacc], %[sum]\n"
+                "frep.o           %[n_frep], 4, 0, 0\n"
+                "vfdotpex.h.b     %[c0], ft1, ft0 \n"
+                "vfdotpex.h.b     %[c1], ft1, ft0 \n"
+                "vfdotpex.h.b     %[c2], ft1, ft0 \n"
+                "vfdotpex.h.b     %[c3], ft1, ft0 \n"
+                "vfsumex.s.h      %[sum0], %[c0]\n"
+                "vfsumex.s.h      %[sum1], %[c1]\n"
+                "vfsumex.s.h      %[sum2], %[c2]\n"
+                "vfsumex.s.h      %[sum3], %[c3]\n"
+                "vfsum.s          %[tacc], %[sum0]\n"
+                "vfsum.s          %[tacc], %[sum1]\n"
+                "vfsum.s          %[tacc], %[sum2]\n"
+                "vfsum.s          %[tacc], %[sum3]\n"
                 "vfsumex.h.b      %[sum_tt], %[convert]\n"
                 "vfsumex.s.h      %[sum_t], %[sum_tt]\n"
                 "vfcpka.b.s       %[test], %[tacc], %[zero] \n"
@@ -556,7 +612,9 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             //     //"vfcpka.s.s       %[sum], %[zero], %[zero] \n" // GIM: why is this not freped? --> instruction not supported for FREP
             : [sum] "+f"(sum), [dotp] "+f"(dotp), [tacc] "+f"(tacc), [sum_tt] "+f"(sum_tt), [sum_t] "+f"(sum_t), 
               [zero_reg] "+&f"(zero_reg), [reduce_reg] "+&f"(reduce_reg), [convert] "+&f"(convert.f64), 
-              [c] "+&f"(c), [test] "+&f"(test)
+              [c0] "+&f"(c_unroll[0]), [c1] "+&f"(c_unroll[1]), [c2] "+&f"(c_unroll[2]), [c3] "+&f"(c_unroll[3]),
+              [sum0] "+&f"(sum_unroll[0]), [sum1] "+&f"(sum_unroll[1]), [sum2] "+&f"(sum_unroll[2]), [sum3] "+&f"(sum_unroll[3]),
+              [test] "+&f"(test)
             : [zero] "f"(zero), [n_frep] "r"(IN_CH / 8 - 1)
             : "ft0", "ft1", "ft2"
             );
@@ -579,9 +637,9 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 act_fp32 = 0.0;
             }
             activations_fp32[ldB * out] = act_fp32;
-            printf("FEEDFORWARD FP8 OPT: acc[%u] = ", 1 + compute_id + out * ldB);
-            print_byte(activations[ldB * out]);  
-            printf(" = %d = %0.10f\n", activations[ldB * out], activations_fp32[ldB * out]);
+            // printf("FEEDFORWARD FP8 OPT: acc[%u] = ", 1 + compute_id + out * ldB);
+            // print_byte(activations[ldB * out]);  
+            // printf(" = %d = %0.10f\n", activations[ldB * out], activations_fp32[ldB * out]);
             acc = 0b00000000;
             asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
@@ -611,6 +669,7 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     register float target_fp32;
     const register float one = 1.0;
     const register float zero = 0.0;
+    const uint16_t unroll = 4;
 
     uint32_t idx_eff;
     uint32_t max_idx = OUT_CH * 5 - 1;
@@ -664,22 +723,53 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         if(idx_eff <= max_idx){
 
-            b_checksum += b_grad_update;
+            // b_checksum += b_grad_update;
             // now we pack the b_grad_update into the bias_grads vector
             register v8f8 b_grad_update_reg;
+            register v8f8 b_grad_update_reg_unroll[unroll];
             // we define a reduce register 
             register v8f8 reduce_reg;
+            register v8f8 reduce_reg_unroll[unroll];
             register v4f16 sum_reduce_reg_v4;
             register v2f32 sum_reduce_reg_v2;
             register float sum = 0.0;
 
+            // asm volatile(
+            //     "vfcpka.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkc.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkd.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpka.s.s       %[reduce_reg], %[zero], %[zero] \n"
+            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg)
+            //     : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
+            //     : "ft0", "ft1", "ft2"
+            // );
+
             asm volatile(
-                "vfcpka.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-                "vfcpkb.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-                "vfcpkc.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-                "vfcpkd.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-                "vfcpka.s.s       %[reduce_reg], %[zero], %[zero] \n"
-                : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg)
+                "vfcpka.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkc.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkd.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
+                "vfcpka.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkc.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkd.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
+                "vfcpka.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkc.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkd.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
+                "vfcpka.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkc.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkd.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
+                : [b_grad_update_reg0] "+&f"(b_grad_update_reg_unroll[0]), [b_grad_update_reg1] "+&f"(b_grad_update_reg_unroll[1]),
+                  [b_grad_update_reg2] "+&f"(b_grad_update_reg_unroll[2]), [b_grad_update_reg3] "+&f"(b_grad_update_reg_unroll[3]),
+                  [reduce_reg0] "+&f"(reduce_reg_unroll[0]), [reduce_reg1] "+&f"(reduce_reg_unroll[1]),
+                  [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3])
                 : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
                 : "ft0", "ft1", "ft2"
             );
@@ -703,7 +793,7 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
             // SSR start address need to be configured each time
             snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weight_grads[out*ldW]);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[out*ldW]);
 
             for(uint32_t in = 0; in < IN_CH;){
                 idx_eff_W = compute_id * IN_CH + out * ldW + in;
@@ -713,17 +803,32 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                     snrt_ssr_enable();
 
                     asm volatile(
-                        "vfcpka.s.s       %[reduce_reg], %[zero], %[zero] \n"
-                        "vfmul.b          %[reduce_reg], %[b_grad_update_reg], ft0 \n"
-                        "vfadd.b          %[reduce_reg], %[reduce_reg], ft1 \n"
+                        "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
+                        "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
+                        "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
+                        "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
+                        "vfmul.b          %[reduce_reg0], %[b_grad_update_reg0], ft0 \n"
+                        "vfmul.b          %[reduce_reg1], %[b_grad_update_reg1], ft0 \n"
+                        "vfmul.b          %[reduce_reg2], %[b_grad_update_reg2], ft0 \n"
+                        "vfmul.b          %[reduce_reg3], %[b_grad_update_reg3], ft0 \n"
+                        "vfadd.b          %[reduce_reg0], %[reduce_reg0], ft1 \n"
+                        "vfadd.b          %[reduce_reg1], %[reduce_reg1], ft1 \n"
+                        "vfadd.b          %[reduce_reg2], %[reduce_reg2], ft1 \n"
+                        "vfadd.b          %[reduce_reg3], %[reduce_reg3], ft1 \n"
                         // INFO: below lines for debugging only
-                        "vfcpka.s.s       %[sum_reduce_reg_v4], %[zero], %[zero]\n"
-                        "vfcpka.s.s       %[sum_reduce_reg_v2], %[zero], %[zero]\n"
-                        "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
-                        "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg] \n"
-                        "vfsumex.s.h      %[sum_reduce_reg_v2], %[sum_reduce_reg_v4] \n"
-                        "vfsum.s          %[sum], %[sum_reduce_reg_v2] \n"
-                        : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg),
+                        // "vfcpka.s.s       %[sum_reduce_reg_v4], %[zero], %[zero]\n"
+                        // "vfcpka.s.s       %[sum_reduce_reg_v2], %[zero], %[zero]\n"
+                        // "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg0] \n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg1] \n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg2] \n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg3] \n"
+                        // "vfsumex.s.h      %[sum_reduce_reg_v2], %[sum_reduce_reg_v4] \n"
+                        // "vfsum.s          %[sum], %[sum_reduce_reg_v2] \n"
+                        : [b_grad_update_reg0] "+&f"(b_grad_update_reg_unroll[0]), [b_grad_update_reg1] "+&f"(b_grad_update_reg_unroll[1]),
+                          [b_grad_update_reg2] "+&f"(b_grad_update_reg_unroll[2]), [b_grad_update_reg3] "+&f"(b_grad_update_reg_unroll[3]),
+                          [reduce_reg0] "+&f"(reduce_reg_unroll[0]), [reduce_reg1] "+&f"(reduce_reg_unroll[1]),
+                          [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3]),
                           [sum_reduce_reg_v4] "+&f"(sum_reduce_reg_v4), [sum_reduce_reg_v2] "+&f"(sum_reduce_reg_v2),
                           [sum] "+&f"(sum)
                         : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
@@ -731,19 +836,44 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                     );
 
                     snrt_ssr_disable(); 
-                    weight_grads[out*ldW + in + 0] += reduce_reg[0];
-                    weight_grads[out*ldW + in + 1] += reduce_reg[1];
-                    weight_grads[out*ldW + in + 2] += reduce_reg[2];
-                    weight_grads[out*ldW + in + 3] += reduce_reg[3];
-                    weight_grads[out*ldW + in + 4] += reduce_reg[4];
-                    weight_grads[out*ldW + in + 5] += reduce_reg[5];
-                    weight_grads[out*ldW + in + 6] += reduce_reg[6];
-                    weight_grads[out*ldW + in + 7] += reduce_reg[7];
-                    W_checksum += sum;
+                    weight_grads[out*ldW + in + 0] += reduce_reg_unroll[0][0];
+                    weight_grads[out*ldW + in + 1] += reduce_reg_unroll[0][1];
+                    weight_grads[out*ldW + in + 2] += reduce_reg_unroll[0][2];
+                    weight_grads[out*ldW + in + 3] += reduce_reg_unroll[0][3];
+                    weight_grads[out*ldW + in + 4] += reduce_reg_unroll[0][4];
+                    weight_grads[out*ldW + in + 5] += reduce_reg_unroll[0][5];
+                    weight_grads[out*ldW + in + 6] += reduce_reg_unroll[0][6];
+                    weight_grads[out*ldW + in + 7] += reduce_reg_unroll[1][7];
+                    weight_grads[out*ldW + in + 8] += reduce_reg_unroll[1][0];
+                    weight_grads[out*ldW + in + 9] += reduce_reg_unroll[1][1];
+                    weight_grads[out*ldW + in + 10] += reduce_reg_unroll[1][2];
+                    weight_grads[out*ldW + in + 11] += reduce_reg_unroll[1][3];
+                    weight_grads[out*ldW + in + 12] += reduce_reg_unroll[1][4];
+                    weight_grads[out*ldW + in + 13] += reduce_reg_unroll[1][5];
+                    weight_grads[out*ldW + in + 14] += reduce_reg_unroll[1][6];
+                    weight_grads[out*ldW + in + 15] += reduce_reg_unroll[1][7];
+                    weight_grads[out*ldW + in + 16] += reduce_reg_unroll[2][0];
+                    weight_grads[out*ldW + in + 17] += reduce_reg_unroll[2][1];
+                    weight_grads[out*ldW + in + 18] += reduce_reg_unroll[2][2];
+                    weight_grads[out*ldW + in + 19] += reduce_reg_unroll[2][3];
+                    weight_grads[out*ldW + in + 20] += reduce_reg_unroll[2][4];
+                    weight_grads[out*ldW + in + 21] += reduce_reg_unroll[2][5];
+                    weight_grads[out*ldW + in + 22] += reduce_reg_unroll[2][6];
+                    weight_grads[out*ldW + in + 23] += reduce_reg_unroll[2][7];
+                    weight_grads[out*ldW + in + 24] += reduce_reg_unroll[3][0];
+                    weight_grads[out*ldW + in + 25] += reduce_reg_unroll[3][1];
+                    weight_grads[out*ldW + in + 26] += reduce_reg_unroll[3][2];
+                    weight_grads[out*ldW + in + 27] += reduce_reg_unroll[3][3];
+                    weight_grads[out*ldW + in + 28] += reduce_reg_unroll[3][4];
+                    weight_grads[out*ldW + in + 29] += reduce_reg_unroll[3][5];
+                    weight_grads[out*ldW + in + 30] += reduce_reg_unroll[3][6];
+                    weight_grads[out*ldW + in + 31] += reduce_reg_unroll[3][7];
+                    // W_checksum += sum;
 
                 }
                 
-                in += 8;
+                // in += 8;
+                in += 8 * unroll;
             }
         }
     }
@@ -751,8 +881,8 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     
 
-    printf("GRADIENT UPDATE FP8 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
-    printf("GRADIENT UPDATE FP8 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
+    // printf("GRADIENT UPDATE FP8 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
+    // printf("GRADIENT UPDATE FP8 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
 
     snrt_cluster_hw_barrier();
 
@@ -785,6 +915,8 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     uint32_t idx_eff;
     uint32_t idx_eff_W;
 
+    const uint16_t unroll = 4;
+
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         idx_eff = compute_id + out * ldB;
@@ -796,7 +928,7 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             // shift bias grads to right by log2_lr_inv (i.e. divide by the inverse of the learning rate)
             // and divide the number by the number of images
             biases[ldB * out] -= (bias_grads[ldB * out] >> log2_lr_inv) >> log2_num_images;
-            b_checksum += get_float_from_byte(biases[ldB * out]);
+            // b_checksum += get_float_from_byte(biases[ldB * out]);
 
             if (setup_SSR) {
                 
@@ -807,7 +939,7 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             
         }
             
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, &weight_grads[out*ldW]);
             // printf("LR * BIAS_GRADS[%u] = ", idx_eff);
             // print_byte(bias_grads[ldB * out]);
             // printf(" = %d = %f\n", (bias_grads[ldB * out] >> log2_lr_inv), get_float_from_byte(bias_grads[ldB * out]));
@@ -827,39 +959,104 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             if(!(idx_eff_W  + 7 > IN_CH * OUT_CH * 5 - 1)){
 
                 register v8f8 reduce_reg;
+                register v8f8 reduce_reg_unroll[unroll];
                 register v4f16 sum_reduce_reg_v4;
                 register v2f32 sum_reduce_reg_v2;
                 register float sum = 0.0;
+                // asm volatile(
+                //     "vfcpka.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                //     "vfcpkb.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                //     "vfcpkc.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                //     "vfcpkd.b.s       %[reduce_reg], %[lr], %[lr] \n"
+                //     "vfmul.b          %[reduce_reg], %[reduce_reg], ft0"
+                //     : [reduce_reg] "+&f"(reduce_reg)
+                //     : [lr] "f"(lr), [zero] "f"(0.0)
+                //     : "ft0", "ft1", "ft2"
+                // );
+
                 asm volatile(
-                    "vfcpka.b.s       %[reduce_reg], %[lr], %[lr] \n"
-                    "vfcpkb.b.s       %[reduce_reg], %[lr], %[lr] \n"
-                    "vfcpkc.b.s       %[reduce_reg], %[lr], %[lr] \n"
-                    "vfcpkd.b.s       %[reduce_reg], %[lr], %[lr] \n"
-                    "vfmul.b          %[reduce_reg], %[reduce_reg], ft0"
-                    : [reduce_reg] "+&f"(reduce_reg)
+                    "vfcpka.b.s       %[reduce_reg0], %[lr], %[lr] \n"
+                    "vfcpkb.b.s       %[reduce_reg0], %[lr], %[lr] \n"
+                    "vfcpkc.b.s       %[reduce_reg0], %[lr], %[lr] \n"
+                    "vfcpkd.b.s       %[reduce_reg0], %[lr], %[lr] \n"
+                    "vfcpka.b.s       %[reduce_reg1], %[lr], %[lr] \n"
+                    "vfcpkb.b.s       %[reduce_reg1], %[lr], %[lr] \n"
+                    "vfcpkc.b.s       %[reduce_reg1], %[lr], %[lr] \n"
+                    "vfcpkd.b.s       %[reduce_reg1], %[lr], %[lr] \n"
+                    "vfcpka.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    "vfcpkb.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    "vfcpkc.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    "vfcpkd.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    "vfcpka.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    "vfcpkb.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    "vfcpkc.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    "vfcpkd.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    "vfmul.b          %[reduce_reg0], %[reduce_reg0], ft0 \n"
+                    "vfmul.b          %[reduce_reg1], %[reduce_reg1], ft0 \n"
+                    "vfmul.b          %[reduce_reg2], %[reduce_reg2], ft0 \n"
+                    "vfmul.b          %[reduce_reg3], %[reduce_reg3], ft0 \n"
+                    : [reduce_reg0] "+&f"(reduce_reg_unroll[0]), [reduce_reg1] "+&f"(reduce_reg_unroll[1]),
+                      [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3])
                     : [lr] "f"(lr), [zero] "f"(0.0)
                     : "ft0", "ft1", "ft2"
                 );
 
                 snrt_ssr_disable(); 
-                weight_grads[out*ldW + in + 0] += reduce_reg[0];
-                weight_grads[out*ldW + in + 1] += reduce_reg[1];
-                weight_grads[out*ldW + in + 2] += reduce_reg[2];
-                weight_grads[out*ldW + in + 3] += reduce_reg[3];
-                weight_grads[out*ldW + in + 4] += reduce_reg[4];
-                weight_grads[out*ldW + in + 5] += reduce_reg[5];
-                weight_grads[out*ldW + in + 6] += reduce_reg[6];
-                weight_grads[out*ldW + in + 7] += reduce_reg[7];
-                W_checksum += get_float_from_byte(reduce_reg[0]) + get_float_from_byte(reduce_reg[1]) 
-                            + get_float_from_byte(reduce_reg[2]) + get_float_from_byte(reduce_reg[3]) 
-                            + get_float_from_byte(reduce_reg[4]) + get_float_from_byte(reduce_reg[5]) 
-                            + get_float_from_byte(reduce_reg[6]) + get_float_from_byte(reduce_reg[7]);
+                weight_grads[out*ldW + in + 0] += reduce_reg_unroll[0][0];
+                weight_grads[out*ldW + in + 1] += reduce_reg_unroll[0][1];
+                weight_grads[out*ldW + in + 2] += reduce_reg_unroll[0][2];
+                weight_grads[out*ldW + in + 3] += reduce_reg_unroll[0][3];
+                weight_grads[out*ldW + in + 4] += reduce_reg_unroll[0][4];
+                weight_grads[out*ldW + in + 5] += reduce_reg_unroll[0][5];
+                weight_grads[out*ldW + in + 6] += reduce_reg_unroll[0][6];
+                weight_grads[out*ldW + in + 7] += reduce_reg_unroll[0][7];
+                weight_grads[out*ldW + in + 8] += reduce_reg_unroll[1][0];
+                weight_grads[out*ldW + in + 9] += reduce_reg_unroll[1][1];
+                weight_grads[out*ldW + in + 10] += reduce_reg_unroll[1][2];
+                weight_grads[out*ldW + in + 11] += reduce_reg_unroll[1][3];
+                weight_grads[out*ldW + in + 12] += reduce_reg_unroll[1][4];
+                weight_grads[out*ldW + in + 13] += reduce_reg_unroll[1][5];
+                weight_grads[out*ldW + in + 14] += reduce_reg_unroll[1][6];
+                weight_grads[out*ldW + in + 15] += reduce_reg_unroll[1][7];
+                weight_grads[out*ldW + in + 16] += reduce_reg_unroll[2][0];
+                weight_grads[out*ldW + in + 17] += reduce_reg_unroll[2][1];
+                weight_grads[out*ldW + in + 18] += reduce_reg_unroll[2][2];
+                weight_grads[out*ldW + in + 19] += reduce_reg_unroll[2][3];
+                weight_grads[out*ldW + in + 20] += reduce_reg_unroll[2][4];
+                weight_grads[out*ldW + in + 21] += reduce_reg_unroll[2][5];
+                weight_grads[out*ldW + in + 22] += reduce_reg_unroll[2][6];
+                weight_grads[out*ldW + in + 23] += reduce_reg_unroll[2][7];
+                weight_grads[out*ldW + in + 24] += reduce_reg_unroll[3][0];
+                weight_grads[out*ldW + in + 25] += reduce_reg_unroll[3][1];
+                weight_grads[out*ldW + in + 26] += reduce_reg_unroll[3][2];
+                weight_grads[out*ldW + in + 27] += reduce_reg_unroll[3][3];
+                weight_grads[out*ldW + in + 28] += reduce_reg_unroll[3][4];
+                weight_grads[out*ldW + in + 29] += reduce_reg_unroll[3][5];
+                weight_grads[out*ldW + in + 30] += reduce_reg_unroll[3][6];
+                weight_grads[out*ldW + in + 31] += reduce_reg_unroll[3][7];
+                // W_checksum += get_float_from_byte(reduce_reg_unroll[0][0]) + get_float_from_byte(reduce_reg_unroll[0][1]) 
+                //             + get_float_from_byte(reduce_reg_unroll[0][2]) + get_float_from_byte(reduce_reg_unroll[0][3]) 
+                //             + get_float_from_byte(reduce_reg_unroll[0][4]) + get_float_from_byte(reduce_reg_unroll[0][5]) 
+                //             + get_float_from_byte(reduce_reg_unroll[0][6]) + get_float_from_byte(reduce_reg_unroll[0][7])
+                //             + get_float_from_byte(reduce_reg_unroll[1][0]) + get_float_from_byte(reduce_reg_unroll[1][1]) 
+                //             + get_float_from_byte(reduce_reg_unroll[1][2]) + get_float_from_byte(reduce_reg_unroll[1][3]) 
+                //             + get_float_from_byte(reduce_reg_unroll[1][4]) + get_float_from_byte(reduce_reg_unroll[1][5]) 
+                //             + get_float_from_byte(reduce_reg_unroll[1][6]) + get_float_from_byte(reduce_reg_unroll[1][7])
+                //             + get_float_from_byte(reduce_reg_unroll[2][0]) + get_float_from_byte(reduce_reg_unroll[2][1]) 
+                //             + get_float_from_byte(reduce_reg_unroll[2][2]) + get_float_from_byte(reduce_reg_unroll[2][3]) 
+                //             + get_float_from_byte(reduce_reg_unroll[2][4]) + get_float_from_byte(reduce_reg_unroll[2][5]) 
+                //             + get_float_from_byte(reduce_reg_unroll[2][6]) + get_float_from_byte(reduce_reg_unroll[2][7])
+                //             + get_float_from_byte(reduce_reg_unroll[3][0]) + get_float_from_byte(reduce_reg_unroll[3][1]) 
+                //             + get_float_from_byte(reduce_reg_unroll[3][2]) + get_float_from_byte(reduce_reg_unroll[3][3]) 
+                //             + get_float_from_byte(reduce_reg_unroll[3][4]) + get_float_from_byte(reduce_reg_unroll[3][5]) 
+                //             + get_float_from_byte(reduce_reg_unroll[3][6]) + get_float_from_byte(reduce_reg_unroll[3][7]);
                 snrt_ssr_enable();
 
 
             }
 
-            in += 8;
+            // in += 8;
+            in += 8 * unroll;
 
         } 
         snrt_ssr_disable();  
@@ -867,8 +1064,8 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     }
 
-    printf("TRAINING STEP FP8 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
-    printf("TRAINING STEP FP8 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
+    // printf("TRAINING STEP FP8 SIMD with SSRs: W_checksum[%u] = %f\n", compute_id, W_checksum);
+    // printf("TRAINING STEP FP8 SIMD with SSRs: b_checksum[%u] = %f\n", compute_id, b_checksum);
 
 }
 
