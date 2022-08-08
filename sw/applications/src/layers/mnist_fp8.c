@@ -59,7 +59,7 @@ void mnist_fp8(const network_fp8_t *n){
     // size for storing the maximum on each core of a cluster (only used on cluster 0)
     uint32_t max_size = compute_num * n->dtype;
     // size of the target for image classification (0...9)
-    uint32_t target_size = sizeof(uint32_t);
+    uint32_t target_size = n->dtype;
     // result of the cross entropy loss calculation
     uint32_t loss_size = n->dtype;
     // synchronization flags for the compute cores on among clusters
@@ -85,8 +85,8 @@ void mnist_fp8(const network_fp8_t *n){
     char *bias_grads_cl1;
     char *activations_cl1;
     float *activations_cl1_fp32;
-    char *loss;
-    uint32_t *targets;
+    float *loss;
+    char *targets;
 
     // INFO FP16 cluster memory setup
     // @brief Cluster Memory Structure for each cluster to ensure
@@ -106,6 +106,8 @@ void mnist_fp8(const network_fp8_t *n){
         // INFO: the activations are also used for the bias gradients
         activations_cl0 = ptr;
         ptr += act_mat_size;
+        targets = ptr;
+        ptr += target_size * 8;
         activations_cl0_fp32 = ptr;
         ptr += act_fp32_mat_size;
         max = ptr;
@@ -121,12 +123,13 @@ void mnist_fp8(const network_fp8_t *n){
         ptr += image_size * number_of_images;
         activations_cl1 = ptr;
         ptr += act_mat_size;
+        targets = ptr;
+        // TODO: adjust targets properly to multiples of 8
+        ptr += target_size * 8;
         activations_cl1_fp32 = ptr;
         ptr += act_fp32_mat_size;
         loss = ptr;
         ptr += loss_size;
-        targets = ptr;
-        ptr += target_size * number_of_images;
     }
     // NOTE: following lines for debugging purposes only
     // void *ptr_end = (double *)snrt_cluster_memory().end;
@@ -190,7 +193,7 @@ void mnist_fp8(const network_fp8_t *n){
                 snrt_dma_txid_t txid_targets = 
                     snrt_dma_start_1d(targets,                                   // destination
                                     n->targets,                                  // source
-                                    sizeof(uint32_t) * number_of_images);        // size
+                                    n->dtype * 8);                               // size
                 
                 snrt_dma_wait_all();
         snrt_dma_stop_tracking();
@@ -249,10 +252,10 @@ void mnist_fp8(const network_fp8_t *n){
                     feedforward_fp8n_opt(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id, setup_SSR, &activations_cl0_fp32[b_offset]);
+                    benchmark_get_cycle();
                     softmax_activation_fp32_ex(n->IN_CH1, n->IN_CH2, div,
                                             &activations_cl0_fp32[b_offset], &activations_cl0[b_offset], ldB, compute_id, 
                                             compute_num, max);
-                    benchmark_get_cycle();
                 }
 
                 // if(!compute_id){
@@ -335,6 +338,8 @@ void mnist_fp8(const network_fp8_t *n){
 
             float *act_ptr = ((uint32_t)activations_cl1_fp32) - cluster_offset;
             char *img_ptr = ((uint32_t)images) - cluster_offset;
+
+            // printf("curr_target: %u\n", curr_target);
 
             if(RUN_GRADIENT_UPDATE){
                 // if(!compute_id){

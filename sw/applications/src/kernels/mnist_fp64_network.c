@@ -206,7 +206,7 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // printf("loss with my_log = %f\n", loss_wo_log);
     } 
 
-    loss[0] = loss_val;
+    loss[0] += loss_val;
 
     // printf("loss = %f\n", loss[0]);
 
@@ -229,14 +229,29 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
 
             W_grad_update = b_grad_update * image[in];
+            // if(!compute_id){
+            //     if(150 < in && in < 170){
+            //         printf("W_grad_update[%u] = %f\n", in, W_grad_update);
+            //     }
+            // }
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
                 // TODO: add also epoch count. Upon first iteration we 
                 // just assign the weight gradient update to initialize the values.
                 // On the next iterations, we take the sum of the previous and new updates.
-        //         weight_grads[out * ldW + in] += W_grad_update; // NOTE: this causes trouble in the RTL ...
-                weight_grads[out * ldW + in] = W_grad_update; 
+                // if(!compute_id){
+                //     if(150 < in && in < 170){
+                //         printf("before weight_grads[%u] = %f\n", W_idx_eff, weight_grads[out * ldW + in]);
+                //     }
+                // }
+                weight_grads[out * ldW + in] += W_grad_update; // NOTE: this causes trouble in the RTL ...
+                // weight_grads[out * ldW + in] = W_grad_update;
                 // W_checksum += W_grad_update;
+                // if(!compute_id){
+                //     if(150 < in && in < 170){
+                //         printf("after weight_grads[%u] = %f\n", W_idx_eff, weight_grads[out * ldW + in]);
+                //     }
+                // }
             }
         }
             
@@ -282,7 +297,17 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
+                // if(!compute_id){
+                //     if(150 < in && in < 170){
+                //         printf("before weights[%u] = %f\n", W_idx_eff, weights[out * ldW + in]);
+                //     }
+                // }
                 weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
+                // if(!compute_id){
+                //     if(150 < in && in < 170){
+                //         printf("after weights[%u] = %f\n", W_idx_eff, weights[out * ldW + in]);
+                //     }
+                // }
                 // W_checksum += weights[out * ldW + in];
             } 
         }

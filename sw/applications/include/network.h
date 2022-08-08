@@ -124,7 +124,7 @@ typedef struct network_fp8_t_ {
     char *W_grad;
 
     char *images;
-    uint32_t *targets;
+    char *targets;
     float learning_rate;
 
     precision_t dtype;
