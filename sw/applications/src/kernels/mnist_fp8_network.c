@@ -793,7 +793,7 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                                 IN_CH / 8, 
                                 sizeof(double));
 
-                // // SSR WRITE setup of weight grads
+                // // // SSR WRITE setup of weight grads
                 // snrt_ssr_loop_1d(SNRT_SSR_DM2, 
                 //                 IN_CH / 8, 
                 //                 sizeof(double));
@@ -816,17 +816,18 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                     asm volatile(
                         "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
                         "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
-                        "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
-                        "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
+                        // "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
+                        // "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
                         "vfmul.b          %[reduce_reg0], %[b_grad_update_reg0], ft0 \n"
                         "vfmul.b          %[reduce_reg1], %[b_grad_update_reg1], ft0 \n"
+                        // "vfsum.b          ft2, %[reduce_reg0] \n" // GIM: why does this stall in the RTL?
+                        // "vfsum.b          ft2, %[reduce_reg1] \n"
                         // "vfmul.b          %[reduce_reg2], %[b_grad_update_reg2], ft0 \n"
                         // "vfmul.b          %[reduce_reg3], %[b_grad_update_reg3], ft0 \n"
                         // "vfadd.b          %[reduce_reg0], %[reduce_reg0], ft1 \n"
                         // "vfadd.b          %[reduce_reg1], %[reduce_reg1], ft1 \n"
                         // "vfadd.b          %[reduce_reg2], %[reduce_reg2], ft1 \n"
                         // "vfadd.b          %[reduce_reg3], %[reduce_reg3], ft1 \n"
-                        // "vfsum.b          ft2, "
                         // INFO: below lines for debugging only
                         // "vfcpka.s.s       %[sum_reduce_reg_v4], %[zero], %[zero]\n"
                         // "vfcpka.s.s       %[sum_reduce_reg_v2], %[zero], %[zero]\n"
@@ -849,22 +850,22 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
                     snrt_ssr_disable(); 
                     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
-        //             weight_grads[out*ldW + in + 0] += reduce_reg_unroll[0][0];
-        //             weight_grads[out*ldW + in + 1] += reduce_reg_unroll[0][1];
-        //             weight_grads[out*ldW + in + 2] += reduce_reg_unroll[0][2];
-        //             weight_grads[out*ldW + in + 3] += reduce_reg_unroll[0][3];
-        //             weight_grads[out*ldW + in + 4] += reduce_reg_unroll[0][4];
-        //             weight_grads[out*ldW + in + 5] += reduce_reg_unroll[0][5];
-        //             weight_grads[out*ldW + in + 6] += reduce_reg_unroll[0][6];
-        //             weight_grads[out*ldW + in + 7] += reduce_reg_unroll[1][7];
-        //             weight_grads[out*ldW + in + 8] += reduce_reg_unroll[1][0];
-        //             weight_grads[out*ldW + in + 9] += reduce_reg_unroll[1][1];
-        //             weight_grads[out*ldW + in + 10] += reduce_reg_unroll[1][2];
-        //             weight_grads[out*ldW + in + 11] += reduce_reg_unroll[1][3];
-        //             weight_grads[out*ldW + in + 12] += reduce_reg_unroll[1][4];
-        //             weight_grads[out*ldW + in + 13] += reduce_reg_unroll[1][5];
-        //             weight_grads[out*ldW + in + 14] += reduce_reg_unroll[1][6];
-        //             weight_grads[out*ldW + in + 15] += reduce_reg_unroll[1][7];
+                    weight_grads[out*ldW + in + 0 ] += reduce_reg_unroll[0].vec[0];
+                    weight_grads[out*ldW + in + 1 ] += reduce_reg_unroll[0].vec[1];
+                    weight_grads[out*ldW + in + 2 ] += reduce_reg_unroll[0].vec[2];
+                    weight_grads[out*ldW + in + 3 ] += reduce_reg_unroll[0].vec[3];
+                    weight_grads[out*ldW + in + 4 ] += reduce_reg_unroll[0].vec[4];
+                    weight_grads[out*ldW + in + 5 ] += reduce_reg_unroll[0].vec[5];
+                    weight_grads[out*ldW + in + 6 ] += reduce_reg_unroll[0].vec[6];
+                    weight_grads[out*ldW + in + 7 ] += reduce_reg_unroll[1].vec[7];
+                    weight_grads[out*ldW + in + 8 ] += reduce_reg_unroll[1].vec[0];
+                    weight_grads[out*ldW + in + 9 ] += reduce_reg_unroll[1].vec[1];
+                    weight_grads[out*ldW + in + 10] += reduce_reg_unroll[1].vec[2];
+                    weight_grads[out*ldW + in + 11] += reduce_reg_unroll[1].vec[3];
+                    weight_grads[out*ldW + in + 12] += reduce_reg_unroll[1].vec[4];
+                    weight_grads[out*ldW + in + 13] += reduce_reg_unroll[1].vec[5];
+                    weight_grads[out*ldW + in + 14] += reduce_reg_unroll[1].vec[6];
+                    weight_grads[out*ldW + in + 15] += reduce_reg_unroll[1].vec[7];
         //             weight_grads[out*ldW + in + 16] += reduce_reg_unroll[2][0];
         //             weight_grads[out*ldW + in + 17] += reduce_reg_unroll[2][1];
         //             weight_grads[out*ldW + in + 18] += reduce_reg_unroll[2][2];
