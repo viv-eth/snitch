@@ -479,6 +479,7 @@ impl Engine {
                 for idx in 0 .. ssr.index.len() {
                     if ssr.index[idx] != ssr.bound[idx] {
                         warn!("Final state hart {}: SSR {} NOT fully consumed.", cpu.hartid, ssr_id);
+                        warn!("index != bound : {:?} != {:?}", ssr.index[idx], ssr.bound[idx]);
                     }
                 }
                 if ((ssr.dims != 0) && !(ssr.done)){
