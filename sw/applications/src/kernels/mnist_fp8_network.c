@@ -494,7 +494,8 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             }
 
             snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
+            // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_2D, &weights[out*ldW]);
 
             register float reduce_reg;
             const uint16_t unroll = 4;
@@ -593,19 +594,19 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
             // calculate the dot product of the image and the weights (increment by four columns in each iteration)
             asm volatile(
-                "frep.o           %[n_frep], 4, 0, 0\n"
+                "frep.o           %[n_frep], 2, 0, 0\n"
                 "vfdotpex.h.b     %[c0], ft1, ft0 \n"
                 "vfdotpex.h.b     %[c1], ft1, ft0 \n"
-                "vfdotpex.h.b     %[c2], ft1, ft0 \n"
-                "vfdotpex.h.b     %[c3], ft1, ft0 \n"
+                // "vfdotpex.h.b     %[c2], ft1, ft0 \n"
+                // "vfdotpex.h.b     %[c3], ft1, ft0 \n"
                 "vfsumex.s.h      %[sum0], %[c0]\n"
                 "vfsumex.s.h      %[sum1], %[c1]\n"
-                "vfsumex.s.h      %[sum2], %[c2]\n"
-                "vfsumex.s.h      %[sum3], %[c3]\n"
+                // "vfsumex.s.h      %[sum2], %[c2]\n"
+                // "vfsumex.s.h      %[sum3], %[c3]\n"
                 "vfsum.s          %[tacc], %[sum0]\n"
                 "vfsum.s          %[tacc], %[sum1]\n"
-                "vfsum.s          %[tacc], %[sum2]\n"
-                "vfsum.s          %[tacc], %[sum3]\n"
+                // "vfsum.s          %[tacc], %[sum2]\n"
+                // "vfsum.s          %[tacc], %[sum3]\n"
                 "vfsumex.h.b      %[sum_tt], %[convert]\n"
                 "vfsumex.s.h      %[sum_t], %[sum_tt]\n"
                 "vfcpka.b.s       %[test], %[tacc], %[zero] \n"
@@ -619,7 +620,7 @@ void feedforward_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
               [c0] "+&f"(c_unroll[0].f64), [c1] "+&f"(c_unroll[1].f64), [c2] "+&f"(c_unroll[2].f64), [c3] "+&f"(c_unroll[3].f64),
               [sum0] "+&f"(sum_unroll[0].f64), [sum1] "+&f"(sum_unroll[1].f64), [sum2] "+&f"(sum_unroll[2].f64), [sum3] "+&f"(sum_unroll[3].f64),
               [test] "+&f"(test)
-            : [zero] "f"(zero), [n_frep] "r"(IN_CH / (8 * unroll) - 1)
+            : [zero] "f"(zero), [n_frep] "r"(IN_CH / (8 * 2) - 1)
             : "ft0", "ft1", "ft2"
             );
 
@@ -724,121 +725,130 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
               [max_idx] "r"(max_idx), [zero] "f"(zero), [one] "f"(one)
         );
 
-        // if(idx_eff <= max_idx){
+        if(idx_eff <= max_idx){
 
-        //     // b_checksum += b_grad_update;
-        //     // now we pack the b_grad_update into the bias_grads vector
-        //     register v8f8 b_grad_update_reg;
-        //     register v8f8 b_grad_update_reg_unroll[unroll];
-        //     // we define a reduce register 
-        //     register v8f8 reduce_reg;
-        //     register v8f8 reduce_reg_unroll[unroll];
-        //     register v4f16 sum_reduce_reg_v4;
-        //     register v2f32 sum_reduce_reg_v2;
-        //     register float sum = 0.0;
 
-        //     // asm volatile(
-        //     //     "vfcpka.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-        //     //     "vfcpkb.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-        //     //     "vfcpkc.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-        //     //     "vfcpkd.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-        //     //     "vfcpka.s.s       %[reduce_reg], %[zero], %[zero] \n"
-        //     //     : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg)
-        //     //     : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
-        //     //     : "ft0", "ft1", "ft2"
-        //     // );
+            // b_checksum += b_grad_update;
+            // now we pack the b_grad_update into the bias_grads vector
+            register v8f8 b_grad_update_reg;
+            register v8s b_grad_update_reg_unroll[unroll];
+            // we define a reduce register 
+            register v8f8 reduce_reg;
+            register v8s reduce_reg_unroll[unroll];
+            register v4f16 sum_reduce_reg_v4;
+            register v2f32 sum_reduce_reg_v2;
+            register float sum = 0.0;
 
-        //     asm volatile(
-        //         "vfcpka.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkb.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkc.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkd.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
-        //         "vfcpka.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkb.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkc.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkd.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
-        //         "vfcpka.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkb.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkc.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkd.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
-        //         "vfcpka.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkb.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkc.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpkd.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
-        //         "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
-        //         : [b_grad_update_reg0] "+&f"(b_grad_update_reg_unroll[0]), [b_grad_update_reg1] "+&f"(b_grad_update_reg_unroll[1]),
-        //           [b_grad_update_reg2] "+&f"(b_grad_update_reg_unroll[2]), [b_grad_update_reg3] "+&f"(b_grad_update_reg_unroll[3]),
-        //           [reduce_reg0] "+&f"(reduce_reg_unroll[0]), [reduce_reg1] "+&f"(reduce_reg_unroll[1]),
-        //           [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3])
-        //         : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
-        //         : "ft0", "ft1", "ft2"
-        //     );
+            // asm volatile(
+            //     "vfcpka.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkc.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkd.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpka.s.s       %[reduce_reg], %[zero], %[zero] \n"
+            //     : [b_grad_update_reg] "+&f"(b_grad_update_reg), [reduce_reg] "+&f"(reduce_reg)
+            //     : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
+            //     : "ft0", "ft1", "ft2"
+            // );
 
-        //     bias_grads[ldB * out] = b_grad_update_reg[0];
+            asm volatile(
+                "vfcpka.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkc.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkd.b.s       %[b_grad_update_reg0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
+                "vfcpka.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkc.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkd.b.s       %[b_grad_update_reg1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
+                // "vfcpka.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpkb.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpkc.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpkd.b.s       %[b_grad_update_reg2], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
+                // "vfcpka.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpkb.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpkc.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpkd.b.s       %[b_grad_update_reg3], %[b_grad_update], %[b_grad_update] \n"
+                // "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
+                : [b_grad_update_reg0] "+&f"(b_grad_update_reg_unroll[0].f64), [b_grad_update_reg1] "+&f"(b_grad_update_reg_unroll[1].f64),
+                  [b_grad_update_reg2] "+&f"(b_grad_update_reg_unroll[2].f64), [b_grad_update_reg3] "+&f"(b_grad_update_reg_unroll[3].f64),
+                  [reduce_reg0] "+&f"(reduce_reg_unroll[0].f64), [reduce_reg1] "+&f"(reduce_reg_unroll[1].f64),
+                  [reduce_reg2] "+&f"(reduce_reg_unroll[2].f64), [reduce_reg3] "+&f"(reduce_reg_unroll[3].f64)
+                : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
+                : "ft0", "ft1", "ft2"
+            );
 
-        //     if (setup_SSR) {
+            bias_grads[ldB * out] = b_grad_update_reg[0];
 
-        //         // setup of DATA MOVER input data (MNIST image)
-        //         snrt_ssr_loop_1d(SNRT_SSR_DM0, 
-        //                         IN_CH / 8, 
-        //                         sizeof(double));
+            if (setup_SSR) {
+
+                // setup of DATA MOVER input data (MNIST image)
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                IN_CH / 8, 
+                                sizeof(double));
                 
-        //         // SSR READ setup of weight grads
-        //         snrt_ssr_loop_1d(SNRT_SSR_DM1, 
-        //                         IN_CH / 8, 
-        //                         sizeof(double));
+                // SSR READ setup of weight grads
+                snrt_ssr_loop_1d(SNRT_SSR_DM1, 
+                                IN_CH / 8, 
+                                sizeof(double));
 
-        //     }
+                // // SSR WRITE setup of weight grads
+                // snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+                //                 IN_CH / 8, 
+                //                 sizeof(double));
+
+            }
 
 
-        //     // SSR start address need to be configured each time
-        //     snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
-        //     snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[out*ldW]);
+            // SSR start address need to be configured each time
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[out*ldW]);
+            // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weight_grads[out*ldW]);
 
-        //     for(uint32_t in = 0; in < IN_CH;){
-        //         idx_eff_W = compute_id * IN_CH + out * ldW + in;
-        //         if(!(idx_eff_W + 7 > IN_CH * OUT_CH * 5 - 1)){
+            for(uint32_t in = 0; in < IN_CH;){
+                idx_eff_W = compute_id * IN_CH + out * ldW + in;
+                if(!(idx_eff_W + 7 > IN_CH * OUT_CH * 5 - 1)){
 
-        //             // Start of SSR region
-        //             snrt_ssr_enable();
+                    // Start of SSR region
+                    snrt_ssr_enable();
 
-        //             asm volatile(
-        //                 "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
-        //                 "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
-        //                 "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
-        //                 "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
-        //                 "vfmul.b          %[reduce_reg0], %[b_grad_update_reg0], ft0 \n"
-        //                 "vfmul.b          %[reduce_reg1], %[b_grad_update_reg1], ft0 \n"
-        //                 "vfmul.b          %[reduce_reg2], %[b_grad_update_reg2], ft0 \n"
-        //                 "vfmul.b          %[reduce_reg3], %[b_grad_update_reg3], ft0 \n"
-        //                 "vfadd.b          %[reduce_reg0], %[reduce_reg0], ft1 \n"
-        //                 "vfadd.b          %[reduce_reg1], %[reduce_reg1], ft1 \n"
-        //                 "vfadd.b          %[reduce_reg2], %[reduce_reg2], ft1 \n"
-        //                 "vfadd.b          %[reduce_reg3], %[reduce_reg3], ft1 \n"
-        //                 // INFO: below lines for debugging only
-        //                 // "vfcpka.s.s       %[sum_reduce_reg_v4], %[zero], %[zero]\n"
-        //                 // "vfcpka.s.s       %[sum_reduce_reg_v2], %[zero], %[zero]\n"
-        //                 // "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
-        //                 // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg0] \n"
-        //                 // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg1] \n"
-        //                 // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg2] \n"
-        //                 // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg3] \n"
-        //                 // "vfsumex.s.h      %[sum_reduce_reg_v2], %[sum_reduce_reg_v4] \n"
-        //                 // "vfsum.s          %[sum], %[sum_reduce_reg_v2] \n"
-        //                 : [b_grad_update_reg0] "+&f"(b_grad_update_reg_unroll[0]), [b_grad_update_reg1] "+&f"(b_grad_update_reg_unroll[1]),
-        //                   [b_grad_update_reg2] "+&f"(b_grad_update_reg_unroll[2]), [b_grad_update_reg3] "+&f"(b_grad_update_reg_unroll[3]),
-        //                   [reduce_reg0] "+&f"(reduce_reg_unroll[0]), [reduce_reg1] "+&f"(reduce_reg_unroll[1]),
-        //                   [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3]),
-        //                   [sum_reduce_reg_v4] "+&f"(sum_reduce_reg_v4), [sum_reduce_reg_v2] "+&f"(sum_reduce_reg_v2),
-        //                   [sum] "+&f"(sum)
-        //                 : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
-        //                 : "ft0", "ft1", "ft2"
-        //             );
+                    asm volatile(
+                        "vfcpka.s.s       %[reduce_reg0], %[zero], %[zero] \n"
+                        "vfcpka.s.s       %[reduce_reg1], %[zero], %[zero] \n"
+                        "vfcpka.s.s       %[reduce_reg2], %[zero], %[zero] \n"
+                        "vfcpka.s.s       %[reduce_reg3], %[zero], %[zero] \n"
+                        "vfmul.b          %[reduce_reg0], %[b_grad_update_reg0], ft0 \n"
+                        "vfmul.b          %[reduce_reg1], %[b_grad_update_reg1], ft0 \n"
+                        // "vfmul.b          %[reduce_reg2], %[b_grad_update_reg2], ft0 \n"
+                        // "vfmul.b          %[reduce_reg3], %[b_grad_update_reg3], ft0 \n"
+                        // "vfadd.b          %[reduce_reg0], %[reduce_reg0], ft1 \n"
+                        // "vfadd.b          %[reduce_reg1], %[reduce_reg1], ft1 \n"
+                        // "vfadd.b          %[reduce_reg2], %[reduce_reg2], ft1 \n"
+                        // "vfadd.b          %[reduce_reg3], %[reduce_reg3], ft1 \n"
+                        // "vfsum.b          ft2, "
+                        // INFO: below lines for debugging only
+                        // "vfcpka.s.s       %[sum_reduce_reg_v4], %[zero], %[zero]\n"
+                        // "vfcpka.s.s       %[sum_reduce_reg_v2], %[zero], %[zero]\n"
+                        // "vfcpka.s.s       %[sum], %[zero], %[zero]\n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg0] \n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg1] \n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg2] \n"
+                        // "vfsumex.h.b      %[sum_reduce_reg_v4], %[reduce_reg3] \n"
+                        // "vfsumex.s.h      %[sum_reduce_reg_v2], %[sum_reduce_reg_v4] \n"
+                        // "vfsum.s          %[sum], %[sum_reduce_reg_v2] \n"
+                        : [b_grad_update_reg0] "+&f"(b_grad_update_reg_unroll[0].f64), [b_grad_update_reg1] "+&f"(b_grad_update_reg_unroll[1].f64),
+                          [b_grad_update_reg2] "+&f"(b_grad_update_reg_unroll[2].f64), [b_grad_update_reg3] "+&f"(b_grad_update_reg_unroll[3].f64),
+                          [reduce_reg0] "+&f"(reduce_reg_unroll[0].f64), [reduce_reg1] "+&f"(reduce_reg_unroll[1].f64),
+                          [reduce_reg2] "+&f"(reduce_reg_unroll[2].f64), [reduce_reg3] "+&f"(reduce_reg_unroll[3].f64),
+                          [sum_reduce_reg_v4] "+&f"(sum_reduce_reg_v4), [sum_reduce_reg_v2] "+&f"(sum_reduce_reg_v2),
+                          [sum] "+&f"(sum)
+                        : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0)
+                        : "ft0", "ft1", "ft2"
+                    );
 
-        //             snrt_ssr_disable(); 
+                    snrt_ssr_disable(); 
+                    asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
         //             weight_grads[out*ldW + in + 0] += reduce_reg_unroll[0][0];
         //             weight_grads[out*ldW + in + 1] += reduce_reg_unroll[0][1];
         //             weight_grads[out*ldW + in + 2] += reduce_reg_unroll[0][2];
@@ -873,12 +883,12 @@ void gradient_update_fp8n_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         //             weight_grads[out*ldW + in + 31] += reduce_reg_unroll[3][7];
         //             // W_checksum += sum;
 
-        //         }
+                }
                 
-        //         // in += 8;
-        //         in += 8 * unroll;
-        //     }
-        // }
+                // in += 8;
+                in += 8 * 2;
+            }
+        }
     }
 
 
