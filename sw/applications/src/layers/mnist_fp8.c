@@ -253,9 +253,9 @@ void mnist_fp8(const network_fp8_t *n){
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id, setup_SSR, &activations_cl0_fp32[b_offset]);
                     benchmark_get_cycle();
-                    // softmax_activation_fp32_ex(n->IN_CH1, n->IN_CH2, div,
-                    //                         &activations_cl0_fp32[b_offset], &activations_cl0[b_offset], ldB, compute_id, 
-                    //                         compute_num, max);
+                    softmax_activation_fp32_ex(n->IN_CH1, n->IN_CH2, div,
+                                            &activations_cl0_fp32[b_offset], &activations_cl0[b_offset], ldB, compute_id, 
+                                            compute_num, max);
                 }
 
                 // if(!compute_id){
@@ -274,8 +274,8 @@ void mnist_fp8(const network_fp8_t *n){
                 } else {
                     // INFO: FP8 with SSRs
                     snrt_cluster_hw_barrier();
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
-                    // snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
+                    snrt_cluster_hw_barrier(); // --> HW barrier for SoftMax, commented out for RTL debug
                 }
             } 
             // else {
