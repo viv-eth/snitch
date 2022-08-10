@@ -973,7 +973,7 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             if(!(idx_eff_W  + 7 > IN_CH * OUT_CH * 5 - 1)){
 
                 register v8f8 reduce_reg;
-                register v8f8 reduce_reg_unroll[unroll];
+                register v8s reduce_reg_unroll[unroll];
                 register v4f16 sum_reduce_reg_v4;
                 register v2f32 sum_reduce_reg_v2;
                 register float sum = 0.0;
@@ -997,57 +997,57 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                     "vfcpkb.b.s       %[reduce_reg1], %[lr], %[lr] \n"
                     "vfcpkc.b.s       %[reduce_reg1], %[lr], %[lr] \n"
                     "vfcpkd.b.s       %[reduce_reg1], %[lr], %[lr] \n"
-                    "vfcpka.b.s       %[reduce_reg2], %[lr], %[lr] \n"
-                    "vfcpkb.b.s       %[reduce_reg2], %[lr], %[lr] \n"
-                    "vfcpkc.b.s       %[reduce_reg2], %[lr], %[lr] \n"
-                    "vfcpkd.b.s       %[reduce_reg2], %[lr], %[lr] \n"
-                    "vfcpka.b.s       %[reduce_reg3], %[lr], %[lr] \n"
-                    "vfcpkb.b.s       %[reduce_reg3], %[lr], %[lr] \n"
-                    "vfcpkc.b.s       %[reduce_reg3], %[lr], %[lr] \n"
-                    "vfcpkd.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    // "vfcpka.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    // "vfcpkb.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    // "vfcpkc.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    // "vfcpkd.b.s       %[reduce_reg2], %[lr], %[lr] \n"
+                    // "vfcpka.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    // "vfcpkb.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    // "vfcpkc.b.s       %[reduce_reg3], %[lr], %[lr] \n"
+                    // "vfcpkd.b.s       %[reduce_reg3], %[lr], %[lr] \n"
                     "vfmul.b          %[reduce_reg0], %[reduce_reg0], ft0 \n"
                     "vfmul.b          %[reduce_reg1], %[reduce_reg1], ft0 \n"
-                    "vfmul.b          %[reduce_reg2], %[reduce_reg2], ft0 \n"
-                    "vfmul.b          %[reduce_reg3], %[reduce_reg3], ft0 \n"
-                    : [reduce_reg0] "+&f"(reduce_reg_unroll[0]), [reduce_reg1] "+&f"(reduce_reg_unroll[1]),
-                      [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3])
+                    // "vfmul.b          %[reduce_reg2], %[reduce_reg2], ft0 \n"
+                    // "vfmul.b          %[reduce_reg3], %[reduce_reg3], ft0 \n"
+                    : [reduce_reg0] "+&f"(reduce_reg_unroll[0].f64), [reduce_reg1] "+&f"(reduce_reg_unroll[1].f64)
+                    //   [reduce_reg2] "+&f"(reduce_reg_unroll[2]), [reduce_reg3] "+&f"(reduce_reg_unroll[3])
                     : [lr] "f"(lr), [zero] "f"(0.0)
                     : "ft0", "ft1", "ft2"
                 );
 
                 snrt_ssr_disable(); 
-                weight_grads[out*ldW + in + 0] += reduce_reg_unroll[0][0];
-                weight_grads[out*ldW + in + 1] += reduce_reg_unroll[0][1];
-                weight_grads[out*ldW + in + 2] += reduce_reg_unroll[0][2];
-                weight_grads[out*ldW + in + 3] += reduce_reg_unroll[0][3];
-                weight_grads[out*ldW + in + 4] += reduce_reg_unroll[0][4];
-                weight_grads[out*ldW + in + 5] += reduce_reg_unroll[0][5];
-                weight_grads[out*ldW + in + 6] += reduce_reg_unroll[0][6];
-                weight_grads[out*ldW + in + 7] += reduce_reg_unroll[0][7];
-                weight_grads[out*ldW + in + 8] += reduce_reg_unroll[1][0];
-                weight_grads[out*ldW + in + 9] += reduce_reg_unroll[1][1];
-                weight_grads[out*ldW + in + 10] += reduce_reg_unroll[1][2];
-                weight_grads[out*ldW + in + 11] += reduce_reg_unroll[1][3];
-                weight_grads[out*ldW + in + 12] += reduce_reg_unroll[1][4];
-                weight_grads[out*ldW + in + 13] += reduce_reg_unroll[1][5];
-                weight_grads[out*ldW + in + 14] += reduce_reg_unroll[1][6];
-                weight_grads[out*ldW + in + 15] += reduce_reg_unroll[1][7];
-                weight_grads[out*ldW + in + 16] += reduce_reg_unroll[2][0];
-                weight_grads[out*ldW + in + 17] += reduce_reg_unroll[2][1];
-                weight_grads[out*ldW + in + 18] += reduce_reg_unroll[2][2];
-                weight_grads[out*ldW + in + 19] += reduce_reg_unroll[2][3];
-                weight_grads[out*ldW + in + 20] += reduce_reg_unroll[2][4];
-                weight_grads[out*ldW + in + 21] += reduce_reg_unroll[2][5];
-                weight_grads[out*ldW + in + 22] += reduce_reg_unroll[2][6];
-                weight_grads[out*ldW + in + 23] += reduce_reg_unroll[2][7];
-                weight_grads[out*ldW + in + 24] += reduce_reg_unroll[3][0];
-                weight_grads[out*ldW + in + 25] += reduce_reg_unroll[3][1];
-                weight_grads[out*ldW + in + 26] += reduce_reg_unroll[3][2];
-                weight_grads[out*ldW + in + 27] += reduce_reg_unroll[3][3];
-                weight_grads[out*ldW + in + 28] += reduce_reg_unroll[3][4];
-                weight_grads[out*ldW + in + 29] += reduce_reg_unroll[3][5];
-                weight_grads[out*ldW + in + 30] += reduce_reg_unroll[3][6];
-                weight_grads[out*ldW + in + 31] += reduce_reg_unroll[3][7];
+                weight_grads[out*ldW + in + 0 ] += reduce_reg_unroll[0].vec[0];
+                weight_grads[out*ldW + in + 1 ] += reduce_reg_unroll[0].vec[1];
+                weight_grads[out*ldW + in + 2 ] += reduce_reg_unroll[0].vec[2];
+                weight_grads[out*ldW + in + 3 ] += reduce_reg_unroll[0].vec[3];
+                weight_grads[out*ldW + in + 4 ] += reduce_reg_unroll[0].vec[4];
+                weight_grads[out*ldW + in + 5 ] += reduce_reg_unroll[0].vec[5];
+                weight_grads[out*ldW + in + 6 ] += reduce_reg_unroll[0].vec[6];
+                weight_grads[out*ldW + in + 7 ] += reduce_reg_unroll[0].vec[7];
+                weight_grads[out*ldW + in + 8 ] += reduce_reg_unroll[1].vec[0];
+                weight_grads[out*ldW + in + 9 ] += reduce_reg_unroll[1].vec[1];
+                weight_grads[out*ldW + in + 10] += reduce_reg_unroll[1].vec[2];
+                weight_grads[out*ldW + in + 11] += reduce_reg_unroll[1].vec[3];
+                weight_grads[out*ldW + in + 12] += reduce_reg_unroll[1].vec[4];
+                weight_grads[out*ldW + in + 13] += reduce_reg_unroll[1].vec[5];
+                weight_grads[out*ldW + in + 14] += reduce_reg_unroll[1].vec[6];
+                weight_grads[out*ldW + in + 15] += reduce_reg_unroll[1].vec[7];
+                // weight_grads[out*ldW + in + 16] += reduce_reg_unroll[2].vec[0];
+                // weight_grads[out*ldW + in + 17] += reduce_reg_unroll[2].vec[1];
+                // weight_grads[out*ldW + in + 18] += reduce_reg_unroll[2].vec[2];
+                // weight_grads[out*ldW + in + 19] += reduce_reg_unroll[2].vec[3];
+                // weight_grads[out*ldW + in + 20] += reduce_reg_unroll[2].vec[4];
+                // weight_grads[out*ldW + in + 21] += reduce_reg_unroll[2].vec[5];
+                // weight_grads[out*ldW + in + 22] += reduce_reg_unroll[2].vec[6];
+                // weight_grads[out*ldW + in + 23] += reduce_reg_unroll[2].vec[7];
+                // weight_grads[out*ldW + in + 24] += reduce_reg_unroll[3].vec[0];
+                // weight_grads[out*ldW + in + 25] += reduce_reg_unroll[3].vec[1];
+                // weight_grads[out*ldW + in + 26] += reduce_reg_unroll[3].vec[2];
+                // weight_grads[out*ldW + in + 27] += reduce_reg_unroll[3].vec[3];
+                // weight_grads[out*ldW + in + 28] += reduce_reg_unroll[3].vec[4];
+                // weight_grads[out*ldW + in + 29] += reduce_reg_unroll[3].vec[5];
+                // weight_grads[out*ldW + in + 30] += reduce_reg_unroll[3].vec[6];
+                // weight_grads[out*ldW + in + 31] += reduce_reg_unroll[3].vec[7];
                 // W_checksum += get_float_from_byte(reduce_reg_unroll[0][0]) + get_float_from_byte(reduce_reg_unroll[0][1]) 
                 //             + get_float_from_byte(reduce_reg_unroll[0][2]) + get_float_from_byte(reduce_reg_unroll[0][3]) 
                 //             + get_float_from_byte(reduce_reg_unroll[0][4]) + get_float_from_byte(reduce_reg_unroll[0][5]) 
@@ -1070,7 +1070,7 @@ void training_step_fp8_opt(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             }
 
             // in += 8;
-            in += 8 * unroll;
+            in += 8 * 2;
 
         } 
         snrt_ssr_disable();  
