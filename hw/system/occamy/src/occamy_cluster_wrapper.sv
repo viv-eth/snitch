@@ -128,12 +128,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -190,12 +190,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -252,12 +252,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -314,12 +314,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -376,12 +376,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -438,12 +438,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -500,12 +500,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -562,12 +562,12 @@ package occamy_cluster_pkg;
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED,
                        fpnew_pkg::MERGED},  // FMA
-                    '{fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED,
-                        fpnew_pkg::DISABLED}, // DIVSQRT
+                    '{fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED,
+                        fpnew_pkg::MERGED}, // DIVSQRT
                     '{fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
                         fpnew_pkg::PARALLEL,
@@ -759,7 +759,7 @@ module occamy_cluster_wrapper (
     .RVE (9'b000000000),
     .RVF (9'b111111111),
     .RVD (9'b111111111),
-    .XDivSqrt (9'b000000000),
+    .XDivSqrt (9'b011111111),
     .XF16 (9'b011111111),
     .XF16ALT (9'b011111111),
     .XF8 (9'b011111111),
