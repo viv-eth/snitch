@@ -329,57 +329,6 @@ fn main() -> Result<()> {
     *  provided in the SnitchUtilities CMAKE
     *  file.
     */
-    // First we check whether a file containing the training data (without labels)
-    // has been provided.
-    /*if has_train_data {
-        trace!("Entering DRAM preloading");
-        let train_data_path = matches.value_of("train-data-file-path").unwrap();
-        // we save the contents of the file or throw an error if something went wrong
-        // TODO: find more efficient alternative to read string
-        let train_data_contents = fs::read_to_string(train_data_path)
-            .expect("Something went wrong reading the file");
-        // // now we read in the contents into a HashMap<u64, u32> as <address, value> pair
-        let train_data = readmem::<u32>(&train_data_contents, ContentType::Float).unwrap();
-        // get memory handle, mutex thread lock, unwrap checks if element found, otherwise panics
-        // memory is defined as HashMap --> memory: Mutex<HashMap<u64, u32>>
-        // where the first value corresponds to the address 
-        let mut mem = engine.memory.lock().unwrap();
-        // we will extend the DRAM by the values we just read in
-        trace!("Starting to write the training data to DRAM");
-        mem.extend(train_data);
-        for i in 0x80040000..0x80104000 {
-            let val = mem.get(&(i)).copied().unwrap_or(0);
-            let float = unsafe { std::mem::transmute::<u32, f32>(val) };
-            trace!("address = 0x{:x}, original value = {:b}, float value = {}", i, val, float);
-        }
-    }*/
-
-    // First we check whether a file containing the training data (without labels)
-    // has been provided.
-    /*if has_train_labels {
-        trace!("Loading labels");
-        let train_labels_path = matches.value_of("train-labels-file-path").unwrap();
-        // we save the contents of the file or throw an error if something went wrong
-        let train_labels_contents = fs::read_to_string(train_labels_path)
-            .expect("Something went wrong reading the file");
-        // now we read in the contents into a HashMap<u64, u32> as <address, value> pair
-        let train_labels = readmem::<u32>(&train_labels_contents, ContentType::Hex).unwrap();
-        // get memory handle, mutex thread lock, unwrap checks if element found, otherwise panics
-        // memory is defined as HashMap --> memory: Mutex<HashMap<u64, u32>>
-        // where the first value corresponds to the address 
-        let mut mem = engine.memory.lock().unwrap();
-        // we will extend the DRAM by the values we just read in
-        trace!("Starting to write the training labels to DRAM");
-        mem.extend(train_labels);
-        // for (k, v) in mem.iter(){
-        //     trace!("address = 0x{:x}, HEX value = 0x{:x}, value = {}", k, v, v);
-        // }
-        for i in 0x80108000..0x80108400 {
-            let val:u32 = mem.get(&(i)).copied().unwrap_or(0);
-            // let float = unsafe { std::mem::transmute::<u32, f32>(val) };
-            trace!("address = 0x{:x}, HEX value = 0x{:x}, label value = {}", i, val, val);
-        }
-    }*/
 
     if has_train_bin {
 
@@ -395,8 +344,8 @@ fn main() -> Result<()> {
 
         trace!("Train data starts at address: 0x{:x}", mem_offset);
 
-        let train_data = dram_preload::bin_read(bin_path, mem_offset).unwrap();
-            
+        let train_data = dram_preload::generic_bin_read::<4>(bin_path, mem_offset).unwrap();
+
         let train_data_length = train_data.len() as u64;
 
         let mut mem = engine.memory.lock().unwrap();
@@ -418,7 +367,7 @@ fn main() -> Result<()> {
         // turn the string into a u64
         let mut mem_offset = u64::from_str_radix(memory_offset, 16).unwrap();
         trace!("Train labels starts at address: 0x{:x}", mem_offset);
-        let train_labels = dram_preload::bin_u32_read(bin_path, mem_offset).unwrap();
+        let train_labels = dram_preload::generic_bin_read::<8>(bin_path, mem_offset).unwrap();
         let train_labels_length = train_labels.len() as u64;
         let mut mem = engine.memory.lock().unwrap();
         mem.extend(train_labels);
