@@ -29,7 +29,7 @@ void snrt_cluster_sw_barrier() {
 }
 
 static volatile struct snrt_barrier global_barrier
-    __attribute__((section(".dram")));
+    __attribute__((section(".bss")));
 
 /// Synchronize clusters globally with a global software barrier
 void snrt_global_barrier() {
