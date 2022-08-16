@@ -83,10 +83,6 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         register double acc = biases[ldB * out];
         idx_eff = compute_id + ldB * out;
         for(uint32_t in = 0; in < IN_CH; in++){
-            // if(!compute_id){
-            //     printf("image[%u] = %f\n", in, image[in]);
-            // }
-            // acc += image[in] * weights[out * ldW + in];
             // INFO: If this is not set harts start reading outside the mem map
             // FIXME: Next harts should start computation of the subsequent image
             if(!(idx_eff > OUT_CH * 5 - 1)){
@@ -97,7 +93,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
+        printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
     }
 
     snrt_cluster_hw_barrier();
@@ -147,25 +143,25 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
+
+            // printf("FF activation[%u] = %f\n", out, activations[out]);
+            
             if(activations[out]){
-                // reference = exp(activations[out] - max_global); //INFO: changing this to not use EXP, since exponential seem to fail in the RTL
-                // activations[out] = activations[out] - max_global; // this works in the RTL
-                activations[out] = my_exp(activations[out] - max_global); 
-                // if(activations[out]>1e-20){
-                //     err_cnt++;
-                //     temp_err += fabs(reference/activations[out]-1);
-                // }
+                activations[out] = exp(activations[out] - max_global); 
                 sum += activations[out];
             } else {
                 activations[out] = 0.0;
             }
+
+            // activations[out] /= sum;
+            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
         }
 
 
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             activations[out] /= sum;
-            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
-            // printf("Mean relative error = %f %%\n", 100*(temp_err/err_cnt));
+            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out, activations[out]);
+            printf("FF softmax[%u] = %f\n", out, activations[out]);
         }
     }
 
@@ -184,11 +180,12 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     volatile uint32_t W_idx_eff;
     
     // Commented out for RTL
-    // double b_checksum = 0.0;
-    // double W_checksum = 0.0;
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
 
     double loss_val = 0.0;
     // double loss_wo_log;
+
 
 
     // get the value saved at target address
@@ -200,15 +197,19 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // compute the loss
     if(!compute_id){
+        // printf("target = %u\n", target_n);
+        // printf("activation[%u] = %f\n", target_n, activations[target_n]);
         loss_val = 0.0 - log(activations[target_n - compute_id]);
+        // printf("loss activation[target] = %f\n", activations[target_n - compute_id]);
+        printf("GU current loss = %f\n", loss_val);
+        // printf("GU activation[target = %u] = %.15f\n", target_n - compute_id, activations[target_n - compute_id]);
         // loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
         // printf("loss with math.h = %f\n", loss_val);
         // printf("loss with my_log = %f\n", loss_wo_log);
+        loss[0] += loss_val;
     } 
 
-    loss[0] = loss_val;
 
-    // printf("loss = %f\n", loss[0]);
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     
@@ -220,6 +221,7 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // printf("activations[%u] = %f\n", idx_eff, activations[ldB * out]);
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        W_checksum = 0.0;
 
         // add the update to the bias gradient checksum
         // b_checksum += b_grad_update;
@@ -227,24 +229,23 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         for(uint32_t in = 0; in < IN_CH; in++){
             
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
-
             W_grad_update = b_grad_update * image[in];
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                // TODO: add also epoch count. Upon first iteration we 
-                // just assign the weight gradient update to initialize the values.
-                // On the next iterations, we take the sum of the previous and new updates.
-        //         weight_grads[out * ldW + in] += W_grad_update; // NOTE: this causes trouble in the RTL ...
                 weight_grads[out * ldW + in] = W_grad_update; 
-                // W_checksum += W_grad_update;
+                W_checksum += W_grad_update;
             }
+
         }
+        
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
+        printf("GU W_checksum[%u] = %f\n", idx_eff, W_checksum);
+        printf("GU bias_grads[%u] = %f\n", idx_eff, b_grad_update);
     }
 
-    // printf("GRADIENT UPDATE FP64 Baseline: b_checksum = %f\n", b_checksum);
-    // printf("GRADIENT UPDATE FP64 Baseline: W_checksum = %f\n", W_checksum);
+    // printf("GRADIENT UPDATE FP64 Baseline: b_checksum[%u] = %f\n", idx_eff, b_checksum);
+    // printf("GRADIENT UPDATE FP64 Baseline: W_checksum[%u] = %f\n", idx_eff, W_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
@@ -255,9 +256,9 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images){
 
-    float lr = 0.5;
-    // double b_checksum = 0.0;
-    // double W_checksum = 0.0;
+    double lr = 0.5;
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
@@ -270,22 +271,28 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // make sure that biases outside of the number of
         // output channels are zero
         if(!(idx_eff > OUT_CH * 5 - 1)){
-            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((double) number_of_images);
+            biases[ldB * out] -= lr * bias_grads[ldB * out];
         } else {
             biases[ldB * out] = 0;
         }
 
+        W_checksum = 0.0;
+
         // b_checksum += biases[ldB * out];
+
+        printf("TS updated bias[%u] = %f\n", idx_eff, biases[ldB * out]);
 
         for(uint32_t in = 0; in < IN_CH; in++){
 
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
-                // W_checksum += weights[out * ldW + in];
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in]; // / ((double) number_of_images);
+                W_checksum += weights[out * ldW + in];
             } 
         }
+
+        printf("TS updated weight_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
 
     // printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
