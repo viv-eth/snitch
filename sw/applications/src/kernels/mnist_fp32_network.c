@@ -132,7 +132,7 @@ void softmax_activation_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            // printf("new SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out, activations[out]);
+            printf("new SOFTMAX FP32 (no SIMD): activation[%u] = %f\n", out, activations[out]);
         }
     }
 
