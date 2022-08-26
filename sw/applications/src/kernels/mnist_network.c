@@ -2,7 +2,7 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-#include "mnist_network.h"
+#include "mnist_network_old.h"
 
 #include "printf.h"
 #include "snrt.h"
@@ -52,7 +52,7 @@ void feedforward_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
 } // WORKS on Cluster 0
 
-void softmax_activation_fp64(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+void softmax_activation_fp64_old(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *activations, uint32_t ldB,
                 double *image, uint32_t ldI, uint32_t compute_id, 
                 uint32_t compute_num, double *max, uint32_t* core_sync){

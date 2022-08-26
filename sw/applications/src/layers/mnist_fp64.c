@@ -16,11 +16,11 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 1
+#define RUN_GRADIENT_UPDATE 0
 #define RUN_TRAINING_STEP 0 // WARN: for SSRs we cannot run the training step in the RTL
 #define GET_ACCURACY 0
 #define GET_LOSS 0
@@ -194,7 +194,7 @@ void mnist_fp64(const network_fp64_t *n){
     // We now loop through the images
     for(uint32_t image = 0; image < number_of_images; image++){
         // we calculate the pointer postion of the current image
-        uint32_t volatile curr_img = image * IN_CH * 2; // --> Why * 2? 
+        uint32_t volatile curr_img = image * IN_CH; // --> Why * 2? 
         uint32_t volatile curr_target = image;
 
         
@@ -273,26 +273,26 @@ void mnist_fp64(const network_fp64_t *n){
                 if(BASELINE){
                     // INFO: baseline
                     benchmark_get_cycle();
-                    feedforward_fp64n(n->IN_CH1, n->IN_CH2, div, 
+                    feedforward_fp64n(IN_CH, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                    ldB, images, ldI, compute_id);
+                                    ldB, images, compute_id);
                     benchmark_get_cycle();
-                    softmax_activation_fp64n(n->IN_CH1, n->IN_CH2, div, 
-                                &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                images, ldI, compute_id, compute_num, max);
+                    softmax_activation_fp64n(div, 
+                                &activations_cl0[b_offset], ldB,
+                                compute_id, compute_num, max);
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
-                    feedforward_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
+                    feedforward_fp64_ssrn(IN_CH, div, 
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                    ldB, images, ldI, compute_id, setup_SSR);
+                                    ldB, images, compute_id, setup_SSR);
                     benchmark_get_cycle();
                     // softmax_activation_fp64_ssrn(n->IN_CH1, n->IN_CH2, div,
                     //                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
                     //                 images, ldI, compute_id, compute_num, max, setup_SSR);
-                    softmax_activation_fp64n(n->IN_CH1, n->IN_CH2, div, 
-                                &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                images, ldI, compute_id, compute_num, max);
+                    softmax_activation_fp64n(div, 
+                                &activations_cl0[b_offset], ldB,
+                                compute_id, compute_num, max);
                 }
 
                 if(!compute_id && !RUN_RTL){
@@ -527,15 +527,16 @@ void mnist_fp64(const network_fp64_t *n){
                 training_step_fp64n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
                                     &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                                    compute_id, compute_num, number_of_images);
+                                    compute_id, compute_num, 1);
                 benchmark_get_cycle();
             } else {
                 // INFO: FP64 with SSRs
                 benchmark_get_cycle();
+                // WARN: assigning "wrong" values for RTL benchmarking
                 training_step_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
-                                    &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
-                                    &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                                    compute_id, compute_num, number_of_images, setup_SSR);
+                                    &weights_cl0[W_offset], &weights_cl0[W_offset], ldW, 
+                                    &biases_cl0[b_offset], &biases_cl0[b_offset], ldB, 
+                                    compute_id, compute_num, 1, setup_SSR);
                 benchmark_get_cycle();
             }
 

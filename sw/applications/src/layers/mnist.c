@@ -5,7 +5,7 @@
 #include "mnist.h"
 
 #include "network.h"
-#include "mnist_network.h"
+#include "mnist_network_old.h"
 #include "printf.h"
 #include "snrt.h"
 #include "utils.h"
@@ -275,14 +275,14 @@ void mnist(const network_t *n){
                             feedforward_fp64(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                             ldB, &images[curr_img], ldI, compute_id);
-                            softmax_activation_fp64(n->IN_CH1, n->IN_CH2, div, 
+                            softmax_activation_fp64_old(n->IN_CH1, n->IN_CH2, div, 
                                         &weights[W_offset], ldW, &activations[b_offset], ldB,
                                         &images[curr_img], ldI, compute_id, compute_num, max, &core_sync);
                             benchmark_get_cycle();
                         } else {
                             // INFO: FP64 with SSRs
                             benchmark_get_cycle();
-                            feedforward_fp64_ssr(n->IN_CH1, n->IN_CH2, div, 
+                            feedforward_fp64_ssr_old(n->IN_CH1, n->IN_CH2, div, 
                                             &weights[W_offset], ldW, &biases[b_offset], &activations[b_offset],
                                             ldB, &images[curr_img], ldI, compute_id, &core_sync[compute_id],
                                             setup_SSR);

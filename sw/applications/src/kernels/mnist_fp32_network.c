@@ -192,7 +192,7 @@ void gradient_update_fp32n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             idx_eff_W = compute_id*IN_CH + out * ldW + in; // computed correctly
             
             if(!(idx_eff_W > IN_CH * OUT_CH * 5 - 1)){
-                weight_grads[out * ldW + in] += W_grad_update;
+                weight_grads[out * ldW + in] = W_grad_update;
                 W_checksum += W_grad_update;
             }
         }
@@ -356,9 +356,9 @@ void feedforward_fp32_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
     }
 
-    // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //     printf("new FEEDFORWARD FP32 SIMD with SSRs: acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);
-    // }
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+        printf("new FEEDFORWARD FP32 SIMD with SSRs: acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);
+    }
 
     snrt_cluster_hw_barrier();
 
@@ -381,7 +381,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     float b_grad_update = 0.0;
     // float W_grad_update = 0.0;
     // float b_checksum = 0.0;
-    // register float W_checksum = 0.0;
+    register float W_checksum = 0.0;
     // float loss_val = 0.0;
     volatile uint32_t idx_eff;
     volatile uint32_t idx_eff_W;
@@ -402,7 +402,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         b_grad_update = 0.0;
-        // W_checksum = 0.0;
+        W_checksum = 0.0;
         idx_eff = compute_id + ldB * out;
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         // INFO: we need to add this, since after DMA transfer out of bound activations
@@ -443,7 +443,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         }
 
         // b_checksum += b_grad_update;
-        // printf("new GRADIENT UPDATE FP32 with SSRs: bias_grads[%u] = %f\n", idx_eff, b_grad_update);
+        printf("new GRADIENT UPDATE FP32 with SSRs: bias_grads[%u] = %f\n", idx_eff, b_grad_update);
         snrt_ssr_enable();  
         register v2f32 reduce_reg;
         const uint32_t unroll = 4;
@@ -514,9 +514,10 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 
                 // INFO: need to disable SSRs, as they do not have access to 
                 //       other FP registers
-                // snrt_ssr_disable();
+                snrt_ssr_disable();
                 // W_checksum += sum;
-                // snrt_ssr_enable();
+                W_checksum += weight_grads[out*ldW + in] + weight_grads[out*ldW + in + 1];
+                snrt_ssr_enable();
                 
             } 
 
@@ -530,7 +531,7 @@ void gradient_update_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
-        // printf("new GRADIENT UPDATE FP32 with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
+        printf("new GRADIENT UPDATE FP32 with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
 
     }
 
@@ -557,7 +558,7 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     float lr = 0.5;
 
     // float b_checksum = 0.0;
-    // float W_checksum = 0.0;
+    float W_checksum = 0.0;
 
     // convert number of images to float for vectorized computation
     register v2f32 lr_vec;
@@ -580,6 +581,8 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
     // WARN In the RTL SSR strides MUST BE of size DOUBLE
 
     for(uint32_t out = 0; out < OUT_CH; out++){
+
+        W_checksum = 0.0;
 
         idx_eff = compute_id + out * ldB;
         // NOTE: we don't use SSRs for biases, as we don't have enough data movers
@@ -612,12 +615,12 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
             // snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);        
 
-            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((float) number_of_images);
+            biases[ldB * out] -= lr * bias_grads[ldB * out];
         } else {
             biases[ldB * out] = 0;
         }
 
-        // printf("new TRAINING STEP FP32 with SSRs: biases[%u] = %f\n", idx_eff, biases[ldB * out]);
+        printf("new TRAINING STEP FP32 with SSRs: biases[%u] = %f\n", idx_eff, biases[ldB * out]);
 
         // b_checksum += biases[ldB * out];
         
@@ -678,15 +681,16 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
                 asm volatile(
                     "vfmul.s              %[reduce_reg], %[lr_vec], ft0 \n"                 // compute the weight update
-                    "vfadd.s             ft2, ft1, %[reduce_reg] \n"
+                    "vfadd.s              ft2, ft1, %[reduce_reg] \n"
                     // "vfdiv.s              %[reduce_reg], %[reduce_reg], %[nimg_vec] \n"     // divide by the size of the dataset --> TODO: banshee: add floating point exception for divide by zero
                 : [reduce_reg] "+&f"(reduce_reg)
                 : [lr_vec] "f"(lr_vec)
                 : "ft0", "ft1", "ft2"
                 ); 
 
-                // snrt_ssr_disable();
-                // // W_checksum += reduce_reg[0] + reduce_reg[1];
+                snrt_ssr_disable();
+                // W_checksum += reduce_reg[0] + reduce_reg[1];
+                W_checksum += weights[out*ldW + in + 0] + weights[out*ldW + in + 1];
                 // // GIM: why does vfdiv fail in the RTL?
                 // // weights[out*ldW + 0] += reduce_reg[0];
                 // // weights[out*ldW + 1] += reduce_reg[1];
@@ -700,7 +704,7 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                 // weights[out*ldW + 5] += reduce_reg_2[1];
                 // weights[out*ldW + 6] += reduce_reg_3[0];
                 // weights[out*ldW + 7] += reduce_reg_3[1];
-                // snrt_ssr_enable();
+                snrt_ssr_enable();
             } 
 
             in += 2;
@@ -711,7 +715,7 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
-        // printf("new TRAINING STEP FP32 with SSRs and SIMD: W_checksum[%u] = %f\n", idx_eff, W_checksum);
+        printf("new TRAINING STEP FP32 with SSRs and SIMD: W_checksum[%u] = %f\n", idx_eff, W_checksum);
 
     }
 
