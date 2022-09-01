@@ -218,19 +218,19 @@ void mnist_fp32(const network_fp32_t *n){
                                     &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
                                     ldB, &images[curr_img], ldI, compute_id);
                     benchmark_get_cycle();
-                    softmax_activation_fp32n(n->IN_CH1, n->IN_CH2, div, 
-                                &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                &images[curr_img], ldI, compute_id, compute_num, max);
+                    softmax_activation_fp32n(div, 
+                                &activations_cl0[b_offset], ldB,
+                                compute_id, compute_num, max);
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
-                    feedforward_fp32_ssr_simd_frep(n->IN_CH1, n->IN_CH2, div, 
+                    feedforward_fp32_ssr_simd_frep(IN_CH, div, 
                                         &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                        ldB, &images[curr_img], ldI, compute_id, setup_SSR);
+                                        ldB, &images[curr_img], compute_id, setup_SSR);
                     benchmark_get_cycle();
-                    softmax_activation_fp32n(n->IN_CH1, n->IN_CH2, div, 
-                                &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                &images[curr_img], ldI, compute_id, compute_num, max);
+                    softmax_activation_fp32n(div, 
+                                &activations_cl0[b_offset], ldB,
+                                compute_id, compute_num, max);
                 }
 
                 // if(!compute_id){
@@ -320,20 +320,20 @@ void mnist_fp32(const network_fp32_t *n){
                 if(BASELINE){
                     // INFO: baseline
                     benchmark_get_cycle();
-                    gradient_update_fp32n(n->IN_CH1, n->IN_CH2, div, 
+                    gradient_update_fp32n(IN_CH, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
                                         &bias_grads_cl1[b_offset], &act_ptr[b_offset], 
-                                        ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
-                                        loss, compute_num);
+                                        ldB, &img_ptr[curr_img], &targets[curr_img], compute_id, 
+                                        loss);
                     benchmark_get_cycle();
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
-                    gradient_update_fp32_ssr_simdn(n->IN_CH1, n->IN_CH2, div, 
+                    gradient_update_fp32_ssr_simdn(IN_CH, div, 
                                             &weight_grads_cl1[W_offset], ldW, 
                                             &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                                            ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
-                                            loss, compute_num, setup_SSR);
+                                            ldB, &images[curr_img], &targets[curr_img], compute_id, 
+                                            loss, setup_SSR);
                     benchmark_get_cycle();
                 }
                 // if(!compute_id){
@@ -440,10 +440,10 @@ void mnist_fp32(const network_fp32_t *n){
             } else {
                 // INFO: FP64 with SSRs
                 benchmark_get_cycle();
-                training_step_fp32_ssr_simdn(n->IN_CH1, n->IN_CH2, div, 
+                training_step_fp32_ssr_simdn(IN_CH, div, 
                                             &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
                                             &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                                            compute_id, compute_num, number_of_images, setup_SSR);
+                                            compute_id, compute_num, setup_SSR);
                 benchmark_get_cycle();
             }
 
