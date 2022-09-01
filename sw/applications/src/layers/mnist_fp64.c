@@ -16,12 +16,12 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 1
+#define BASELINE 0
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
-#define RUN_GRADIENT_UPDATE 0
-#define RUN_TRAINING_STEP 0 // WARN: for SSRs we cannot run the training step in the RTL
+#define RUN_GRADIENT_UPDATE 1
+#define RUN_TRAINING_STEP 1 // WARN: for SSRs we cannot run the training step in the RTL
 #define GET_ACCURACY 0
 #define GET_LOSS 0
 #define RUN_RTL 1
@@ -412,20 +412,20 @@ void mnist_fp64(const network_fp64_t *n){
                 if(BASELINE){
                     // INFO: baseline
                     benchmark_get_cycle();
-                    gradient_update_fp64n(n->IN_CH1, n->IN_CH2, div, 
+                    gradient_update_fp64n(IN_CH, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
                                         &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                                        ldB, img_ptr, targets, ldI, compute_id, 
-                                        loss, compute_num);
+                                        ldB, img_ptr, targets, compute_id, 
+                                        loss);
                     benchmark_get_cycle();
                 } else {
                     // INFO: FP64 with SSRs
                     benchmark_get_cycle();
-                    gradient_update_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
+                    gradient_update_fp64_ssrn(IN_CH, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
                                         &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                                        ldB, images, targets, ldI, compute_id, 
-                                        loss, compute_num, setup_SSR);
+                                        ldB, images, targets, compute_id, 
+                                        loss, setup_SSR);
                     benchmark_get_cycle();
                 }
                 if(!compute_id && !RUN_RTL){
@@ -524,19 +524,23 @@ void mnist_fp64(const network_fp64_t *n){
             if(BASELINE){
                 // INFO: baseline
                 benchmark_get_cycle();
-                training_step_fp64n(n->IN_CH1, n->IN_CH2, div, 
+                training_step_fp64n(IN_CH, div, 
                                     &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
                                     &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                                    compute_id, compute_num, 1);
+                                    compute_id);
                 benchmark_get_cycle();
             } else {
                 // INFO: FP64 with SSRs
                 benchmark_get_cycle();
                 // WARN: assigning "wrong" values for RTL benchmarking
-                training_step_fp64_ssrn(n->IN_CH1, n->IN_CH2, div, 
+                training_step_fp64_ssrn(IN_CH, div, 
                                     &weights_cl0[W_offset], &weights_cl0[W_offset], ldW, 
                                     &biases_cl0[b_offset], &biases_cl0[b_offset], ldB, 
-                                    compute_id, compute_num, 1, setup_SSR);
+                                    compute_id, setup_SSR);
+                // training_step_fp64n(IN_CH, div, 
+                //                     &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                //                     &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                //                     compute_id);
                 benchmark_get_cycle();
             }
 
@@ -548,7 +552,6 @@ void mnist_fp64(const network_fp64_t *n){
     } else if(!snrt_is_compute_core() && cluster_id == 0){
         if(BASELINE){
             if(RUN_TRAINING_STEP){
-                // no HW barriers required for Baseline
             } else {
                 if(!cluster_id && !RUN_RTL){
                     printf("[MNIST] FP64 Training Step not run. \n");
@@ -563,5 +566,7 @@ void mnist_fp64(const network_fp64_t *n){
             }
         }
     }
+
+    snrt_global_barrier();
 
 }

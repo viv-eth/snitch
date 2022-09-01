@@ -27,7 +27,7 @@ int main(){
     mnist_t.targets = (void *)mnist_labels_dram;
     
     mnist_fp64(&mnist_t);
-
+    
     snrt_global_barrier();
 
     return 0;
