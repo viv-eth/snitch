@@ -1,4 +1,4 @@
-while getopts :c:r:t:d:f:v:s:h opt; do
+while getopts :c:r:t:d:f:v:s:l:h opt; do
   case "${opt}" in
     h)
       echo "[BANSHEE] Usage: banshee.sh [-h]"
@@ -15,6 +15,10 @@ while getopts :c:r:t:d:f:v:s:h opt; do
       echo "[BANSHEE]   -f: Select if only a specific binary should be built. If not set all binaries will be built."
       echo "[BANSHEE] Usage: banshee.sh [-v]"
       echo "[BANSHEE]   -v: Define whether verbose output should be enabled. Default is disabled."
+      echo "[BANSHEE] Usage: banshee.sh [-s]"
+      echo "[BANSHEE]   -s: Define the SNITCH_LOG variable."
+      echo "[BANSHEE] Usage: banshee.sh [-l]"
+      echo "[BANSHEE]   -l: Define whether the output should be logged to a file or not."
       exit 1
       ;;
     c)
@@ -55,6 +59,14 @@ while getopts :c:r:t:d:f:v:s:h opt; do
     s) # SNITCH_LOG mode
         snitch_log_mode="${OPTARG}"
         echo "[BANSHEE] Setting SNITCH_LOG to $snitch_log_mode"
+        ;;
+    l) # define whether terminal output should be logged to file
+        log="${OPTARG}"
+        if [ "$log" = "1" ]; then
+            echo "[BANSHEE] Logging terminal output to file."
+        else
+            echo "[BANSHEE] Terminal output will not be logged to file."
+        fi
         ;;
     \?)
       echo "[BANSHEE] Invalid option: -$OPTARG" >&2
@@ -98,16 +110,20 @@ if [ -z $binary ]
     make -j
 else
     echo "[BANSHEE] Building binary $binary"
-    filename=${binary}_banshee_${RANDOM_NUMBER}.txt
-    # check if the file exists
-    if [ -f $filename ]; then
-        # change the name of the file by adding a random number
-        RANDOM_NUMBER_2=$(($RANDOM % 1000))
-        filename = ${binary}_banshee_${RANDOM_NUMBER + RANDOM_NUMBER_2}.txt
+    if [ "$log" = "1" ]; then
+        filename=${binary}_banshee_${RANDOM_NUMBER}.txt
+        # check if the file exists
+        if [ -f $filename ]; then
+            # change the name of the file by adding a random number
+            RANDOM_NUMBER_2=$(($RANDOM % 1000))
+            filename = ${binary}_banshee_${RANDOM_NUMBER + RANDOM_NUMBER_2}.txt
+        fi
+        make run-banshee-$binary VERBOSE=${verbose} 2>&1 | tee ${filename}
+        # fi
+        echo "[BANSHEE] Saving output to file: ${binary}_banshee_${RANDOM_NUMBER}.txt"
+    else
+        make run-banshee-$binary VERBOSE=${verbose}
     fi
-    make run-banshee-$binary VERBOSE=${verbose} 2>&1 | tee ${filename}
-    # fi
-    echo "Saving output to file: ${binary}_banshee_${RANDOM_NUMBER}.txt"
 fi
 
 elapsed=$(( SECONDS - start_time ))
