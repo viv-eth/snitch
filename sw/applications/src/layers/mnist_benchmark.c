@@ -25,9 +25,9 @@ void mnist_benchmark(const network_benchmark_t *n){
     uint32_t OUT_CH = n->OUT_CH;
     uint32_t PREC = n->dtype;
 
-    if(cluster_id == 0 && compute_id == 0){
-        printf("precision: %d\n", PREC);
-    }
+    // if(cluster_id == 0 && compute_id == 0){
+    //     printf("precision: %d\n", PREC);
+    // }
 
     uint32_t setup_SSR = 1;
 
@@ -41,19 +41,19 @@ void mnist_benchmark(const network_benchmark_t *n){
     uint32_t loss_size = PREC;
 
     // cluster 0 variabels:
-    double *weights_cl0;
-    double *weight_grads_cl0;
-    double *biases_cl0;
-    double *images;
-    double *activations_cl0;
-    double *max;
+    void *weights_cl0;
+    void *weight_grads_cl0;
+    void *biases_cl0;
+    void *images;
+    void *activations_cl0;
+    void *max;
 
     // cluster 1 variabels:
-    double *weights_cl1; 
-    double *weight_grads_cl1;
-    double *bias_grads_cl1;
-    double *activations_cl1;
-    double *loss;
+    void *weights_cl1; 
+    void *weight_grads_cl1;
+    void *bias_grads_cl1;
+    void *activations_cl1;
+    void *loss;
     uint32_t *targets;
 
     void *ptr = (double *)snrt_cluster_memory().start;
@@ -131,7 +131,7 @@ void mnist_benchmark(const network_benchmark_t *n){
     }
 
     if(cluster_id){
-        loss[0] = 0;
+        ((double *)loss)[0] = 0;
     }
 
     snrt_cluster_hw_barrier();
@@ -151,18 +151,30 @@ void mnist_benchmark(const network_benchmark_t *n){
         volatile uint32_t ldW = compute_num * IN_CH;
         volatile uint32_t ldB = compute_num;
 
-        benchmark_get_cycle();
-        // benchmark_feedforward_fp64(IN_CH, div, 
-        //                 &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-        //                 ldB, images, compute_id);
-        benchmark_feedforward_fp64_ssrn(IN_CH, div, 
-                &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                ldB, images, compute_id,
-                setup_SSR);
-        benchmark_get_cycle();
-        benchmark_softmax_activation_fp64(div, 
-                                &activations_cl0[b_offset], ldB,
-                                compute_id, compute_num, max);
+        if(PREC == 8) {
+            benchmark_get_cycle();
+            // benchmark_feedforward_fp64(IN_CH, div, 
+            //                 &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
+            //                 ldB, images, compute_id);
+            benchmark_feedforward_fp64_ssrn(IN_CH, div, 
+                    &((double *)weights_cl0)[W_offset], ldW, &((double *)biases_cl0)[b_offset], &((double *)activations_cl0)[b_offset],
+                    ldB, (double *)images, compute_id,
+                    setup_SSR);
+            benchmark_get_cycle();
+            benchmark_softmax_activation_fp64(div, 
+                                    &((double *)activations_cl0)[b_offset], ldB,
+                                    compute_id, compute_num, max);
+        } else if (PREC == 4) {
+            benchmark_get_cycle();
+            benchmark_feedforward_fp32_opt(IN_CH, div, 
+                    &((float *)weights_cl0)[W_offset], ldW, &((float *)biases_cl0)[b_offset], &((float *)activations_cl0)[b_offset],
+                    ldB, (float *)images, compute_id,
+                    setup_SSR);
+            benchmark_get_cycle();
+            benchmark_softmax_activation_fp32(div, 
+                                    &((float *)activations_cl0)[b_offset], ldB,
+                                    compute_id, compute_num, max);
+        }
     } else {
         snrt_cluster_hw_barrier();
         snrt_cluster_hw_barrier();
@@ -173,11 +185,9 @@ void mnist_benchmark(const network_benchmark_t *n){
 
     if(snrt_is_dm_core() && cluster_id==1) {
 
+        void *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
+        void *img_ptr = ((uint32_t)images) - cluster_offset;
         snrt_dma_start_tracking();
-        // WARN: make sure that pointer types are according to network precision
-        double *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
-        double *img_ptr = ((uint32_t)images) - cluster_offset;
-
         // for SSRs we need to DMA transfer the cluster 0 data to cluster 1
         snrt_dma_txid_t txid_activations = 
             snrt_dma_start_1d(activations_cl1,                                 // destination
@@ -212,17 +222,28 @@ void mnist_benchmark(const network_benchmark_t *n){
         volatile uint32_t ldW = compute_num * IN_CH;
         volatile uint32_t ldB = compute_num;
 
-        double *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
-        double *img_ptr = ((uint32_t)images) - cluster_offset;
+        void *act_ptr = ((uint32_t)activations_cl1) - cluster_offset;
+        void *img_ptr = ((uint32_t)images) - cluster_offset;
             
-        // INFO: FP64 with SSRs
-        benchmark_get_cycle();
-        benchmark_gradient_update_fp64_ssr(IN_CH, div, 
-                            &weight_grads_cl1[W_offset], ldW, 
-                            &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                            ldB, images, targets, compute_id, 
-                            loss, setup_SSR);
-        benchmark_get_cycle();
+        if(PREC == 8) {
+            // INFO: FP64 with SSRs
+            benchmark_get_cycle();
+            benchmark_gradient_update_fp64_ssr(IN_CH, div, 
+                                &((double *)weight_grads_cl1)[W_offset], ldW, 
+                                &((double *)bias_grads_cl1)[b_offset], &((double *)activations_cl1)[b_offset], 
+                                ldB, (double *)images, targets, compute_id, 
+                                loss, setup_SSR);
+            benchmark_get_cycle();
+        } else if (PREC == 4) {
+            // INFO: FP32 with SSRs
+            benchmark_get_cycle();
+            benchmark_gradient_update_fp32_opt(IN_CH, div, 
+                                &((float *)weight_grads_cl1)[W_offset], ldW, 
+                                &((float *)bias_grads_cl1)[b_offset], &((float *)activations_cl1)[b_offset], 
+                                ldB, (float *)images, targets, compute_id, 
+                                loss, setup_SSR);
+            benchmark_get_cycle();
+        }
     } else if (!snrt_is_compute_core() && cluster_id == 1){
         snrt_cluster_hw_barrier();
     } 
@@ -246,17 +267,25 @@ void mnist_benchmark(const network_benchmark_t *n){
         volatile uint32_t ldW = compute_num * IN_CH;
         volatile uint32_t ldB = compute_num;
 
-        double *weight_grad_ptr = ((uint32_t)weights_cl0) + cluster_offset;
-        double *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
+        void *weight_grad_ptr = ((uint32_t)weights_cl0) + cluster_offset;
+        void *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
 
-        
-                // INFO: FP64 with SSRs
-                benchmark_get_cycle();
-                // WARN: assigning "wrong" values for RTL benchmarking
-                benchmark_training_step_fp64_ssr(IN_CH, div, 
-                                    &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
-                                    &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                                    compute_id, setup_SSR);
-                benchmark_get_cycle();
+        if(PREC == 8) {
+            // INFO: FP64 with SSRs
+            benchmark_get_cycle();
+            benchmark_training_step_fp64_ssr(IN_CH, div, 
+                                &((double *)weights_cl0)[W_offset], &((double *)weight_grad_ptr)[W_offset], ldW, 
+                                &((double *)biases_cl0)[b_offset], &((double *)bias_grad_ptr)[b_offset], ldB, 
+                                compute_id, setup_SSR);
+            benchmark_get_cycle();
+        } else if (PREC == 4) {
+            // INFO: FP32 with SSRs
+            benchmark_get_cycle();
+            benchmark_training_step_fp32_opt(IN_CH, div, 
+                                &((float *)weights_cl0)[W_offset], &((float *)weight_grad_ptr)[W_offset], ldW, 
+                                &((float *)biases_cl0)[b_offset], &((float *)bias_grad_ptr)[b_offset], ldB, 
+                                compute_id, setup_SSR);
+            benchmark_get_cycle();
+        }
     } 
 }

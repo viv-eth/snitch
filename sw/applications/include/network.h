@@ -155,10 +155,10 @@ typedef struct network_benchmark_t_ {
     uint32_t IN_CH;
     uint32_t OUT_CH;
 
-    double *b;
-    double *W;
+    void *b;
+    void *W;
 
-    double *images;
+    void *images;
     uint32_t *targets;
 
     precision_t dtype;

@@ -8,13 +8,24 @@
 // Correctness of results are checked automatically
 
 #include "mnist_benchmark.h"
-#include "data_fp64_benchmark.h" //--> For FP64 tests
 #include "network.h"
 #include "math.h"
 #include "perf_cnt.h"
 #include "printf.h"
 #include "snrt.h"
 #include "utils.h"
+
+#define PREC 32
+
+# if PREC == 64
+    #include "data_fp64_benchmark.h" //--> For FP64 tests
+# elif PREC == 32
+    #include "data_fp32_benchmark.h" //--> For FP32 tests
+# elif PREC == 16
+    #include "data_fp16_benchmark.h" //--> For FP16 tests
+# elif PREC == 8
+    #include "data_fp8_benchmark.h" //--> For FP8 tests
+# endif
 
 int main(){
 
