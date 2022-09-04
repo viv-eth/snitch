@@ -70,8 +70,6 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
 
     // const uint32_t unroll = 4;
     // register double acc_tot[unroll];
-
-    benchmark_get_cycle();
     for (uint32_t out = 0; out < OUT_CH; out++) {
 
         
@@ -94,6 +92,7 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
+        benchmark_get_cycle();
         // Start of SSR region
         snrt_ssr_enable();
         
@@ -141,9 +140,9 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+        benchmark_get_cycle();
 
     }
-    benchmark_get_cycle();
 
     // for (uint32_t out = 0; out < OUT_CH; out++) {
     //      printf("Benchmark FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
@@ -250,7 +249,6 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
 
     // the effective index is the iteration index of the biases variable
     // across all entries
-    benchmark_get_cycle();
     for(uint32_t out = 0; out < OUT_CH; out++){
 
         // W_checksum = 0.0;
@@ -282,6 +280,8 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
         // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &activations[ldB * out]); // ft1
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[ldW * out]); // ft1
         snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weight_grads[out*ldW]); // ft2
+
+        benchmark_get_cycle();
 
         b_grad_update = (idx_eff == target_n) ? activations[ldB * out] - 1 : activations[ldB * out];
 
@@ -323,10 +323,10 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
             
         bias_grads[ldB * out] = b_grad_update; 
+        benchmark_get_cycle();
         // printf("Benchmark GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", idx_eff, b_grad_update);
         // printf("Benchmark GRADIENT UPDATE FP64 with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
-    benchmark_get_cycle();
 
     snrt_cluster_hw_barrier();
 }
@@ -349,7 +349,6 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
     // volatile uint32_t idx_eff;
     // volatile uint32_t W_idx_eff;
     // const uint32_t unroll = 4;
-
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
@@ -376,6 +375,8 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, &weight_grads[out*ldW]); // ft0 
         snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weights[out*ldW]); // ft2
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]); // ft1
+
+        benchmark_get_cycle();
         
         biases[ldB * out] -= lr * bias_grads[ldB * out];
 
@@ -413,6 +414,7 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
         // End of the SSR region. 
         snrt_ssr_disable();
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+        benchmark_get_cycle();
         // printf("Benchmark TRAINING STEP FP64 with SSRs: weight_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
 }

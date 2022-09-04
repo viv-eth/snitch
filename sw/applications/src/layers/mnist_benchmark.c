@@ -25,6 +25,10 @@ void mnist_benchmark(const network_benchmark_t *n){
     uint32_t OUT_CH = n->OUT_CH;
     uint32_t PREC = n->dtype;
 
+    if(cluster_id == 0 && compute_id == 0){
+        printf("precision: %d\n", PREC);
+    }
+
     uint32_t setup_SSR = 1;
 
     
