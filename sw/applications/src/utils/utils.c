@@ -136,6 +136,7 @@ uint32_t check_layer(const conv_layer *l, double *checksum) {
  * @param value value to set
  * @param len number of bytes, must be multiple of DMA bus-width
  */
+ // FIXME: Does not work for FP16
 void dma_memset(void *ptr, uint8_t value, uint32_t len) {
     // set first 64bytes to value
     // memset(ptr, value, 64);

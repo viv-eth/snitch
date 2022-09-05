@@ -15,7 +15,7 @@
 #include "snrt.h"
 #include "utils.h"
 
-#define PREC 32
+#define PREC 16
 
 # if PREC == 64
     #include "data_fp64_benchmark.h" //--> For FP64 tests

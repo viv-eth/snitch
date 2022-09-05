@@ -9,6 +9,7 @@
 #include "utils.h"
 
 typedef float v2f32 __attribute__((vector_size(8)));
+typedef __fp16 v4f16 __attribute__((vector_size(8)));
 
 static inline double my_fabs(double x) {
     if(x < 0) {
@@ -42,7 +43,7 @@ static inline void benchmark_feedforward_fp64(uint32_t IN_CH, uint32_t OUT_CH,
                 uint32_t ldB, double *image, uint32_t compute_id){
     
     // Linear layer: OUT = X * W^T + B
-    benchmark_get_cycle();
+    // benchmark_get_cycle();
     for (uint32_t out = 0; out < OUT_CH; out++) {
         register double acc = biases[ldB * out];
         for(uint32_t in = 0; in < IN_CH; in++){
@@ -52,7 +53,7 @@ static inline void benchmark_feedforward_fp64(uint32_t IN_CH, uint32_t OUT_CH,
         activations[ldB * out] = acc;
         printf("Benchmarking: FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);  
     }
-    benchmark_get_cycle();
+    // benchmark_get_cycle();
 
 }
 
@@ -96,7 +97,7 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
         // all zeros due to the stream semantics
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
-        benchmark_get_cycle();
+        // benchmark_get_cycle();
         // Start of SSR region
         snrt_ssr_enable();
         
@@ -144,7 +145,7 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
-        benchmark_get_cycle();
+        // benchmark_get_cycle();
 
     }
 
@@ -285,7 +286,7 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[ldW * out]); // ft1
         snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weight_grads[out*ldW]); // ft2
 
-        benchmark_get_cycle();
+        // benchmark_get_cycle();
 
         // printf("activations[%u] = %.15f\n", idx_eff, activations[ldB * out]);
 
@@ -329,7 +330,7 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
             
         bias_grads[ldB * out] = b_grad_update; 
-        benchmark_get_cycle();
+        // benchmark_get_cycle();
         // printf("Benchmark GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", idx_eff, b_grad_update);
         // printf("Benchmark GRADIENT UPDATE FP64 with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
@@ -382,7 +383,7 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
         snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weights[out*ldW]); // ft2
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]); // ft1
 
-        benchmark_get_cycle();
+        // benchmark_get_cycle();
         
         biases[ldB * out] -= lr * bias_grads[ldB * out];
 
@@ -420,7 +421,7 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
         // End of the SSR region. 
         snrt_ssr_disable();
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
-        benchmark_get_cycle();
+        // benchmark_get_cycle();
         // printf("Benchmark TRAINING STEP FP64 with SSRs: weight_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
 }
@@ -465,6 +466,7 @@ static inline void benchmark_feedforward_fp32_opt(uint32_t IN_CH, uint32_t OUT_C
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
 
         snrt_ssr_enable();
+        // benchmark_get_cycle();
         acc = biases[ldB * out];
 
         asm volatile(
@@ -484,6 +486,7 @@ static inline void benchmark_feedforward_fp32_opt(uint32_t IN_CH, uint32_t OUT_C
     
 
         activations[ldB * out] = sum;
+        // benchmark_get_cycle();
         sum = 0.0;
 
 
@@ -700,7 +703,7 @@ static inline void benchmark_training_step_fp32_opt(uint32_t IN_CH, uint32_t OUT
                             IN_CH / 2, // number of iterations
                             sizeof(double));
 
-            // // SSR read setup of weights
+            // SSR read setup of weights
             snrt_ssr_loop_1d(SNRT_SSR_DM1, 
                             IN_CH / 2, // number of iterations
                             sizeof(double));
@@ -771,4 +774,320 @@ static inline void benchmark_training_step_fp32_opt(uint32_t IN_CH, uint32_t OUT
 
     }
 
+}
+
+static inline void benchmark_feedforward_fp16_opt(uint32_t IN_CH, uint32_t OUT_CH, 
+                __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
+                uint32_t ldB, __fp16 *image, uint32_t compute_id,
+                uint32_t setup_SSR){
+    
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
+    
+    
+    // INFO: for simplicity image is converted to dtype __fp16 
+    const register float zero = 0.0f;
+
+    __fp16 acc = 0.0f;
+
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+
+        register v2f32 reduce_reg;
+        register float sum = 0.0f;
+        register float tacc = 0.0f;
+
+        // SSR strides and bounds only have to be configured
+        // once in the beginning
+        // WARN In the RTL SSR strides MUST BE of size DOUBLE
+
+        if (setup_SSR) {
+
+            // setup of DATA MOVER input data (MNIST image)
+            snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                            IN_CH / 4, 
+                            sizeof(double));
+            
+            // setup of DATA MOVER for weights
+            snrt_ssr_loop_1d(SNRT_SSR_DM1, 
+                            IN_CH / 4, 
+                            sizeof(double));
+        }
+
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image);
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]);
+        
+        // Start of SSR region
+        snrt_ssr_enable();
+
+        acc = biases[ldB * out];
+            
+        // calculate the dot product of the image and the weights (increment by four columns in each iteration)
+        asm volatile(
+            "vfcpka.s.s       %[reduce_reg], %[zero], %[zero]\n"
+            "frep.o           %[n_frep], 1, 0, 0\n"
+            "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
+            "vfsum.s          %[sum], %[reduce_reg]\n"
+            "fadd.s           %[tacc], %[zero], %[sum] \n"
+        : [sum] "+f"(sum), [tacc] "+f"(tacc), 
+          [reduce_reg] "+&f"(reduce_reg)
+        : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
+        : "ft0", "ft1", "ft2"
+        );
+
+        // End of SSR region.
+        snrt_ssr_disable();
+        // snrt_fpu_fence();
+        acc += tacc;
+        activations[ldB * out] = acc;
+        acc = 0.0;
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+
+    }
+
+
+    // for (uint32_t out = 0; out < OUT_CH; out++) {
+    //     printf("Benchmark FP16 SIMD with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    // }
+
+    snrt_cluster_hw_barrier();
+
+}
+
+static inline void benchmark_softmax_activation_fp16(uint32_t OUT_CH, 
+                __fp16 *activations, uint32_t ldB, uint32_t compute_id, 
+                uint32_t compute_num, __fp16 *max){
+
+    __fp16 max_core;
+    __fp16 sum = 0.0f;
+    __fp16 *act_ptr;
+
+    max_core = activations[0];
+
+    volatile uint32_t idx_eff; 
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        idx_eff = compute_id + ldB * out;
+        if(!(idx_eff > OUT_CH * 5 - 1)){
+            if(activations[out * ldB] > max_core){
+                max_core = activations[out * ldB];
+            }
+        }
+    }
+
+    max[compute_id] = max_core;
+    
+    snrt_cluster_hw_barrier();
+
+//     //printf("Max value of compute core %u is %f\n", compute_id, max_core);
+
+    __fp16 max_global = max[0];
+
+    // Reduction on single core
+    if(compute_id == 0){
+        for(uint32_t core = 0; core < compute_num; core++){
+            if(max[core] > max_global){
+                max_global = max[core];
+            }
+        }
+
+        // FIXME: actually OUT_CH should be multiplied by number of compute cores
+        for(uint32_t out = 0; out < OUT_CH*compute_num; out++){
+            act_ptr = &activations[0];
+            if(act_ptr[out] != 0.0f){
+                act_ptr[out] = my_exp(act_ptr[out] - max_global);
+                sum += act_ptr[out];
+            } else {
+                act_ptr[out] = 0.0;
+            }
+        }
+
+
+        for(uint32_t out = 0; out < OUT_CH*compute_num; out++){
+            act_ptr[out] /= sum;
+            activations[out] = act_ptr[out];
+            // printf("Benchmark SOFTMAX FP16 (no SIMD): activation[%u] = %f\n", out + 1, activations[out]);
+        }
+    }
+
+    snrt_cluster_hw_barrier();
+}
+
+static inline void benchmark_gradient_update_fp16_opt(uint32_t IN_CH, uint32_t OUT_CH, 
+                __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
+                uint32_t ldB, __fp16 *image, uint32_t *target, 
+                uint32_t compute_id, __fp16 *loss, uint32_t setup_SSR) {
+
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+
+    register float b_grad_update = 0.0;
+    register v4f16 b_grad_update_reg;
+    register v4f16 W_grad_update_reg;
+    
+
+    // __fp16 W_checksum = 0.0;
+    __fp16 W_grad_update = 0.0;
+    uint16_t idx_eff;
+    
+
+    // get the value saved at target address
+    uint16_t target_n = target[0];
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        // W_checksum = 0.0;
+        
+        idx_eff = compute_id + ldB * out;
+
+        b_grad_update = (idx_eff == target_n) ? activations[ldB * out] - 1 : activations[ldB * out];
+        bias_grads[ldB * out] = b_grad_update;
+
+        // printf("Benchmark GRADIENT UPDATE FP16 SIMD with SSRs: bias_grads[%u] = %f\n", compute_id + out * ldB, bias_grads[ldB * out]);
+
+        if (setup_SSR) {
+
+                // READ setup of DATA MOVER input data (MNIST image)
+                snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                                IN_CH / 4, 
+                                sizeof(double));
+                
+                // READ setup of DATA MOVER for weight gradients
+                snrt_ssr_loop_1d(SNRT_SSR_DM1, 
+                                IN_CH / 4,  
+                                sizeof(double));
+
+                // WRITE setup of DATA MOVER for weight gradients
+                snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+                                IN_CH / 4,  
+                                sizeof(double));
+            }
+
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image); // read image ft0
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[out*ldW]); // read weight gradients ft1
+            snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weight_grads[out*ldW]); // write weight gradients ft2
+            
+            // Start of SSR region
+            snrt_ssr_enable();
+
+            asm volatile(
+                "vfcpka.h.s      %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.h.s      %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+                "frep.o          %[n_frep], 2, 0, 0 \n"
+                "vfmul.h         %[W_grad_update_reg], ft0, %[b_grad_update_reg] \n"
+                "vfadd.h         ft2, %[W_grad_update_reg], ft1 \n"
+                : [b_grad_update_reg] "+&f"(b_grad_update_reg), [W_grad_update_reg] "+&f"(W_grad_update_reg)
+                : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / 4 - 1)
+                : "ft0", "ft1", "ft2"
+            );
+
+            snrt_ssr_disable();
+            // INFO: after disabling the SSRs we can free the registers
+            asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+
+            // for(uint32_t in = 0; in < IN_CH;){
+            //     W_checksum += weight_grads[out*ldW + in + 0] + weight_grads[out*ldW + in + 1] 
+            //                 + weight_grads[out*ldW + in + 2] + weight_grads[out*ldW + in + 3];
+
+            //     in += 4;
+            // }
+
+            // printf("Benchmark GRADIENT UPDATE FP16 SIMD with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
+
+    }
+
+    snrt_cluster_hw_barrier();
+}
+
+static inline void benchmark_training_step_fp16_opt(uint32_t IN_CH, uint32_t OUT_CH, 
+                __fp16 *weights, __fp16 *weight_grads, uint32_t ldW, __fp16 *biases, __fp16 *bias_grads, 
+                uint32_t ldB, uint32_t compute_id, uint32_t setup_SSR) {
+
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+
+    float lr = 0.5;
+    // __fp16 W_checksum = 0.0;
+    uint16_t idx_eff;
+
+    register v4f16 lr_reg;
+
+    asm volatile (
+        "vfcpka.h.s      %[lr_reg], %[lr], %[lr] \n"
+        "vfcpkb.h.s      %[lr_reg], %[lr], %[lr] \n"
+        : [lr_reg] "+&f"(lr_reg)
+        : [lr] "f"(-lr)
+        : "ft0", "ft1", "ft2"
+    );
+    
+
+    
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+
+        // W_checksum = 0.0;
+        
+        // idx_eff = compute_id + ldB * out;
+
+        // SSR strides and bounds only have to be configured
+        // once in the beginning
+        if (setup_SSR) {
+            
+            // SSR read setup of weight gradients
+            snrt_ssr_loop_1d(SNRT_SSR_DM0, 
+                            IN_CH / 4, // number of iterations
+                            sizeof(double));
+
+            // SSR read setup of weights
+            snrt_ssr_loop_1d(SNRT_SSR_DM1, 
+                            IN_CH / 4, // number of iterations
+                            sizeof(double));
+
+            // SSR write setup of weights
+            snrt_ssr_loop_1d(SNRT_SSR_DM2, 
+                            IN_CH / 4, // number of iterations
+                            sizeof(double));
+        }
+
+        // SSR start addresses need to be configured each time
+        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, &weight_grads[out*ldW]); // weight gradients stored in ft0
+        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]); // weights stored in ft1 for read
+        snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weights[out*ldW]); // weights stored in ft2 for write   
+
+        biases[ldB * out] -= lr * bias_grads[ldB * out];
+
+        // printf("Benchmark TRAINING STEP FP16 SIMD with SSRs: biases[%u] = %f\n", idx_eff, biases[ldB * out]);
+        // printf("Benchmark TRAINING STEP FP16 SIMD with SSRs: bias_grads[%u] = %f\n", idx_eff, bias_grads[ldB * out]);
+
+        // Start of SSR region
+        snrt_ssr_enable();
+
+        asm volatile(
+            "frep.o          %[n_frep], 2, 0, 0 \n"
+            "vfmul.h         ft5, ft0, %[lr_vec] \n"
+            "vfadd.h         ft2, ft1, ft5 \n"
+            : 
+            : [n_frep] "r"(IN_CH / 4 - 1), [lr_vec] "f"(lr_reg)
+            : "ft0", "ft1", "ft2"
+        );
+
+        snrt_ssr_disable();
+        // INFO: after disabling the SSRs we can free the registers
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+
+        // for(uint32_t in = 0; in < IN_CH;){
+        //     W_checksum += weights[out*ldW + in + 0] + weights[out*ldW + in + 1] 
+        //                 + weights[out*ldW + in + 2] + weights[out*ldW + in + 3];
+
+        //     in += 4;
+        // }
+
+        // printf("Benchmark TRAINING STEP FP16 SIMD with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
+        
+    }
 }

@@ -56,7 +56,7 @@ void mnist_benchmark(const network_benchmark_t *n){
     void *loss;
     uint32_t *targets;
 
-    void *ptr = (double *)snrt_cluster_memory().start;
+    void *ptr = (void *)snrt_cluster_memory().start;
     // void *ptr_start = ptr;
     if(cluster_id == 0){
         weights_cl0 = ptr;
@@ -115,6 +115,8 @@ void mnist_benchmark(const network_benchmark_t *n){
 
     }
 
+    snrt_cluster_hw_barrier();
+
     if (snrt_is_dm_core() && cluster_id == 1) {
         snrt_dma_start_tracking();
         // On cluster 1 we load the labels which are needed for BP
@@ -123,19 +125,21 @@ void mnist_benchmark(const network_benchmark_t *n){
                                     n->targets,                  // source
                                     sizeof(uint32_t));                           // size
                 
-                dma_memset(weight_grads_cl1, 0, weight_mat_size);
-                dma_memset(bias_grads_cl1, 0, bias_mat_size);
+                
+                // WARN: dma memset fails for fp16 (discuss with GIM)
+                // dma_memset(weight_grads_cl1, 0, weight_mat_size);
+                // dma_memset(bias_grads_cl1, 0, bias_mat_size);
                 
                 snrt_dma_wait_all();
         snrt_dma_stop_tracking();
     }
 
-    if(cluster_id){
-        ((double *)loss)[0] = 0;
-    }
 
     snrt_cluster_hw_barrier();
 
+    if(cluster_id){
+        ((__fp16 *)loss)[0] = 0;
+    }
     if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num && cluster_id == 0) {
         
         // determine the row offset at which current compute cluster is
@@ -173,6 +177,16 @@ void mnist_benchmark(const network_benchmark_t *n){
             benchmark_get_cycle();
             benchmark_softmax_activation_fp32(div, 
                                     &((float *)activations_cl0)[b_offset], ldB,
+                                    compute_id, compute_num, max);
+        } else if (PREC == 2) {
+            benchmark_get_cycle();
+            benchmark_feedforward_fp16_opt(IN_CH, div, 
+                    &((__fp16 *)weights_cl0)[W_offset], ldW, &((__fp16 *)biases_cl0)[b_offset], &((__fp16 *)activations_cl0)[b_offset],
+                    ldB, (__fp16 *)images, compute_id,
+                    setup_SSR);
+            benchmark_get_cycle();
+            benchmark_softmax_activation_fp16(div, 
+                                    &((__fp16 *)activations_cl0)[b_offset], ldB,
                                     compute_id, compute_num, max);
         }
     } else {
@@ -243,6 +257,15 @@ void mnist_benchmark(const network_benchmark_t *n){
                                 ldB, (float *)images, targets, compute_id, 
                                 loss, setup_SSR);
             benchmark_get_cycle();
+        } else if (PREC == 2) {
+            // INFO: FP16 with SSRs
+            benchmark_get_cycle();
+            benchmark_gradient_update_fp16_opt(IN_CH, div, 
+                                &((__fp16 *)weight_grads_cl1)[W_offset], ldW, 
+                                &((__fp16 *)bias_grads_cl1)[b_offset], &((__fp16 *)activations_cl1)[b_offset], 
+                                ldB, (__fp16 *)images, targets, compute_id, 
+                                loss, setup_SSR);
+            benchmark_get_cycle();
         }
     } else if (!snrt_is_compute_core() && cluster_id == 1){
         snrt_cluster_hw_barrier();
@@ -284,6 +307,14 @@ void mnist_benchmark(const network_benchmark_t *n){
             benchmark_training_step_fp32_opt(IN_CH, div, 
                                 &((float *)weights_cl0)[W_offset], &((float *)weight_grad_ptr)[W_offset], ldW, 
                                 &((float *)biases_cl0)[b_offset], &((float *)bias_grad_ptr)[b_offset], ldB, 
+                                compute_id, setup_SSR);
+            benchmark_get_cycle();
+        } else if (PREC == 2) {
+            // INFO: FP16 with SSRs
+            benchmark_get_cycle();
+            benchmark_training_step_fp16_opt(IN_CH, div, 
+                                &((__fp16 *)weights_cl0)[W_offset], &((__fp16 *)weight_grad_ptr)[W_offset], ldW, 
+                                &((__fp16 *)biases_cl0)[b_offset], &((__fp16 *)bias_grad_ptr)[b_offset], ldB, 
                                 compute_id, setup_SSR);
             benchmark_get_cycle();
         }
