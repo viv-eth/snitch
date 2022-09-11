@@ -96,7 +96,7 @@ inline void feedforward_fp64n(uint32_t IN_CH, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", idx_eff, activations[ldB * out]); 
+        printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", idx_eff, activations[ldB * out]); 
     }
 
     snrt_cluster_hw_barrier();

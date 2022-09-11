@@ -282,7 +282,7 @@ void mnist_fp32(const network_fp32_t *n){
                 snrt_dma_txid_t txid_IMG = 
                     snrt_dma_start_1d(images,                                    // destination
                                     img_ptr,                                     // source
-                                    n->dtype * number_of_images * IN_CH);        // size
+                                    n->dtype * IN_CH);        // size
                 
                 snrt_dma_wait_all();
 
@@ -441,8 +441,8 @@ void mnist_fp32(const network_fp32_t *n){
                 // INFO: FP64 with SSRs
                 benchmark_get_cycle();
                 training_step_fp32_ssr_simdn(IN_CH, div, 
-                                            &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
-                                            &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                            &weights_cl0[W_offset], &weight_grads_cl0[W_offset], ldW, 
+                                            &biases_cl0[b_offset], &activations_cl0[b_offset], ldB, 
                                             compute_id, compute_num, setup_SSR);
                 benchmark_get_cycle();
             }
