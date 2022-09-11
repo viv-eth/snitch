@@ -36,6 +36,7 @@ sw/applications/data/*.csv
 sw/applications/*.pickle
 sw/applications/*20*
 sw/applications/src/*bin*
+sw/applications/src/*20*
 sw/applications/src/*test*
 sw/applications/src/*all*
 tmp/
