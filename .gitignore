@@ -41,3 +41,4 @@ sw/applications/src/*.bin
 sw/applications/src/*binary
 sw/applications/src/*bin*
 sw/applications/src/*test*
+docs/
