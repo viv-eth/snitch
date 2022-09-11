@@ -28,9 +28,9 @@
 #define RUN_FENGA 1
 
 // define NN properties
-#define NUM_EPOCHS 1 // 10: default epochs
-#define BATCH_SIZE 2// 256: default batch size
-#define NUM_BATCHES 10//(60000 / BATCH_SIZE)// (60000 / BATCH_SIZE): default number of batches
+#define NUM_EPOCHS 10 // 10: default epochs, 1: testing
+#define BATCH_SIZE 256// 256: default batch size, 2: testing
+#define NUM_BATCHES (60000 / BATCH_SIZE)// (60000 / BATCH_SIZE): default number of batches, 10: testing
 #define STEPS(batches) (int)NUM_EPOCHS*(batches)
 
 void mnist_fp32(const network_fp32_t *n){

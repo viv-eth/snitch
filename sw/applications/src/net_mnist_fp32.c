@@ -18,16 +18,16 @@
 
 int main(){
 
-    mini_mnist_t.W = (void *)mini_mnist_weights_dram;
-    mini_mnist_t.b = (void *)mini_mnist_biases_dram;
+    mnist_t.W = (void *)mnist_weights_dram;
+    mnist_t.b = (void *)mnist_biases_dram;
 
     // NOTE At the moment we are using five MNIST images only
     // for simulation purposes
-    mini_mnist_t.images = (void *)mini_mnist_images_dram;
-    mini_mnist_t.targets = (void *)mini_mnist_labels_dram;
+    mnist_t.images = (void *)mnist_images_dram;
+    mnist_t.targets = (void *)mnist_labels_dram;
     
     
-    mnist_fp32(&mini_mnist_t);
+    mnist_fp32(&mnist_t);
 
     snrt_global_barrier();
 
