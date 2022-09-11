@@ -83,10 +83,6 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         register double acc = biases[ldB * out];
         idx_eff = compute_id + ldB * out;
         for(uint32_t in = 0; in < IN_CH; in++){
-            // if(!compute_id){
-            //     printf("image[%u] = %f\n", in, image[in]);
-            // }
-            // acc += image[in] * weights[out * ldW + in];
             // INFO: If this is not set harts start reading outside the mem map
             // FIXME: Next harts should start computation of the subsequent image
             if(!(idx_eff > OUT_CH * 5 - 1)){
@@ -97,7 +93,7 @@ void feedforward_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        // printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
+        printf("new FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", 1 + idx_eff, activations[ldB * out]); 
     }
 
     snrt_cluster_hw_barrier();
@@ -147,25 +143,25 @@ void softmax_activation_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
         // FIXME: actually OUT_CH should be multiplied by number of compute cores
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
+
+            // printf("FF activation[%u] = %f\n", out, activations[out]);
+            
             if(activations[out]){
-                // reference = exp(activations[out] - max_global); //INFO: changing this to not use EXP, since exponential seem to fail in the RTL
-                // activations[out] = activations[out] - max_global; // this works in the RTL
-                activations[out] = my_exp(activations[out] - max_global); 
-                // if(activations[out]>1e-20){
-                //     err_cnt++;
-                //     temp_err += fabs(reference/activations[out]-1);
-                // }
+                activations[out] = exp(activations[out] - max_global); 
                 sum += activations[out];
             } else {
                 activations[out] = 0.0;
             }
+
+            // activations[out] /= sum;
+            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
         }
 
 
         for(uint32_t out = 0; out < OUT_CH * 5; out++){
             activations[out] /= sum;
-            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out + 1, activations[out]);
-            // printf("Mean relative error = %f %%\n", 100*(temp_err/err_cnt));
+            // printf("new SOFTMAX FP64 Baseline: activation[%u] = %f\n", out, activations[out]);
+            printf("FF softmax[%u] = %.10f\n", out, activations[out]);
         }
     }
 
@@ -184,11 +180,12 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     volatile uint32_t W_idx_eff;
     
     // Commented out for RTL
-    // double b_checksum = 0.0;
-    // double W_checksum = 0.0;
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
 
     double loss_val = 0.0;
     // double loss_wo_log;
+
 
 
     // get the value saved at target address
@@ -200,15 +197,19 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // compute the loss
     if(!compute_id){
+        // printf("target = %u\n", target_n);
+        // printf("activation[%u] = %f\n", target_n, activations[target_n]);
         loss_val = 0.0 - log(activations[target_n - compute_id]);
+        // printf("loss activation[target] = %f\n", activations[target_n - compute_id]);
+        printf("GU current loss = %f\n", loss_val);
+        // printf("GU activation[target = %u] = %.15f\n", target_n - compute_id, activations[target_n - compute_id]);
         // loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
         // printf("loss with math.h = %f\n", loss_val);
         // printf("loss with my_log = %f\n", loss_wo_log);
+        loss[0] += loss_val;
     } 
 
-    loss[0] += loss_val;
 
-    // printf("loss = %f\n", loss[0]);
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     
@@ -220,6 +221,7 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // printf("activations[%u] = %f\n", idx_eff, activations[ldB * out]);
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        W_checksum = 0.0;
 
         // add the update to the bias gradient checksum
         // b_checksum += b_grad_update;
@@ -227,39 +229,23 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         for(uint32_t in = 0; in < IN_CH; in++){
             
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
-
             W_grad_update = b_grad_update * image[in];
-            // if(!compute_id){
-            //     if(150 < in && in < 170){
-            //         printf("W_grad_update[%u] = %f\n", in, W_grad_update);
-            //     }
-            // }
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                // TODO: add also epoch count. Upon first iteration we 
-                // just assign the weight gradient update to initialize the values.
-                // On the next iterations, we take the sum of the previous and new updates.
-                // if(!compute_id){
-                //     if(150 < in && in < 170){
-                //         printf("before weight_grads[%u] = %f\n", W_idx_eff, weight_grads[out * ldW + in]);
-                //     }
-                // }
-                weight_grads[out * ldW + in] += W_grad_update; // NOTE: this causes trouble in the RTL ...
-                // weight_grads[out * ldW + in] = W_grad_update;
-                // W_checksum += W_grad_update;
-                // if(!compute_id){
-                //     if(150 < in && in < 170){
-                //         printf("after weight_grads[%u] = %f\n", W_idx_eff, weight_grads[out * ldW + in]);
-                //     }
-                // }
+                weight_grads[out * ldW + in] = W_grad_update; 
+                W_checksum += W_grad_update;
             }
+
         }
+        
             
         bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
+        printf("GU W_checksum[%u] = %f\n", idx_eff, W_checksum);
+        printf("GU bias_grads[%u] = %f\n", idx_eff, b_grad_update);
     }
 
-    // printf("GRADIENT UPDATE FP64 Baseline: b_checksum = %f\n", b_checksum);
-    // printf("GRADIENT UPDATE FP64 Baseline: W_checksum = %f\n", W_checksum);
+    // printf("GRADIENT UPDATE FP64 Baseline: b_checksum[%u] = %f\n", idx_eff, b_checksum);
+    // printf("GRADIENT UPDATE FP64 Baseline: W_checksum[%u] = %f\n", idx_eff, W_checksum);
 
     snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
 
@@ -270,9 +256,9 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images){
 
-    float lr = 0.5;
-    // double b_checksum = 0.0;
-    // double W_checksum = 0.0;
+    double lr = 0.5;
+    double b_checksum = 0.0;
+    double W_checksum = 0.0;
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     volatile uint32_t idx_eff;
@@ -285,32 +271,28 @@ void training_step_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
         // make sure that biases outside of the number of
         // output channels are zero
         if(!(idx_eff > OUT_CH * 5 - 1)){
-            biases[ldB * out] -= lr * bias_grads[ldB * out] / ((double) number_of_images);
+            biases[ldB * out] -= lr * bias_grads[ldB * out];
         } else {
             biases[ldB * out] = 0;
         }
 
+        W_checksum = 0.0;
+
         // b_checksum += biases[ldB * out];
+
+        printf("TS updated bias[%u] = %f\n", idx_eff, biases[ldB * out]);
 
         for(uint32_t in = 0; in < IN_CH; in++){
 
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                // if(!compute_id){
-                //     if(150 < in && in < 170){
-                //         printf("before weights[%u] = %f\n", W_idx_eff, weights[out * ldW + in]);
-                //     }
-                // }
-                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in] / ((double) number_of_images);
-                // if(!compute_id){
-                //     if(150 < in && in < 170){
-                //         printf("after weights[%u] = %f\n", W_idx_eff, weights[out * ldW + in]);
-                //     }
-                // }
-                // W_checksum += weights[out * ldW + in];
+                weights[out * ldW + in] -= lr * weight_grads[out * ldW + in]; // / ((double) number_of_images);
+                W_checksum += weights[out * ldW + in];
             } 
         }
+
+        printf("TS updated weight_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
 
     // printf("TRAINING STEP FP64 Baseline: b_checksum = %f\n", b_checksum);
@@ -408,9 +390,9 @@ void feedforward_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     }
 
-    // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //      printf("new FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
-    // }
+    for (uint32_t out = 0; out < OUT_CH; out++) {
+         printf("new FEEDFORWARD FP64 with SSRs: acc[%u] = %.10f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    }
     
     snrt_cluster_hw_barrier(); 
 
@@ -504,7 +486,7 @@ void softmax_activation_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
 
         for(uint32_t out = 0; out < OUT_CH*5; out++){
             activations[out] /= sum;
-            // printf("new SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
+            printf("new SOFTMAX FP64 with SSRs: activation[%u] = %f\n", out + 1, activations[out]);
         }
     }
 
@@ -528,9 +510,11 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     register double b_grad_update = 0.0;
     register double W_grad_update = 0.0;
     // double b_checksum = 0.0;
-    // double W_checksum = 0.0;
+    double W_checksum = 0.0;
     volatile uint32_t idx_eff;
     volatile uint32_t W_idx_eff;
+
+    double loss_val = 0.0;
 
     // const uint32_t unroll = 4;
     // register double W_grad_update_reg[unroll];
@@ -543,11 +527,12 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     // get the value saved at target address
     uint32_t target_n = *target;
     
-    // compute the loss
-    // double loss_val = 0.0 - log(activations[target_n -compute_id]);
-
-    // save the value into the loss pointer
-    // TODO: update according to baseline implementation
+    if(!compute_id){
+        loss_val = 0.0 - log(activations[target_n - compute_id]);
+        printf("GU current loss = %.5f\n", loss_val);
+        printf("GU activation[target = %u] = %.15f\n", target_n - compute_id, activations[target_n - compute_id]);
+        loss[0] += loss_val;
+    } 
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -572,6 +557,8 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
     // the effective index is the iteration index of the biases variable
     // across all entries
     for(uint32_t out = 0; out < OUT_CH; out++){
+
+        W_checksum = 0.0;
 
         // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image); // image stored in ft0
@@ -600,6 +587,10 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
                         [ zero ] "f"(zero)
                         : "ft0", "ft1", "ft2"
             );
+            // snrt_ssr_disable();
+            // printf("new GRADIENT UPDATE FP64 with SSRs: bias_grads[%u] = %f\n", idx_eff, b_grad_update);
+            // snrt_ssr_enable();
+            // b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
         }
         // b_checksum += b_grad_update;
 
@@ -628,26 +619,32 @@ void gradient_update_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH
             );
             
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                weight_grads[out * ldW + in + 0] += W_grad_update;
+                // asm volatile(
+                //         "fmul.d         %[W_grad_update], %[b_grad_update], ft0\n"
+                //         : [ W_grad_update ] "+&f"(W_grad_update)
+                //         : [ b_grad_update ] "f"(b_grad_update), [ zero ] "f"(zero)
+                //         : "ft0", "ft1", "ft2"
+                // );
+                weight_grads[out * ldW + in + 0] = W_grad_update;
                 // weight_grads[out * ldW + in + 0] += W_grad_update_reg[0];
                 // weight_grads[out * ldW + in + 1] += W_grad_update_reg[1];
                 // weight_grads[out * ldW + in + 2] += W_grad_update_reg[2];
                 // weight_grads[out * ldW + in + 3] += W_grad_update_reg[3];
                 // W_checksum += W_grad_update_reg[0] + W_grad_update_reg[1] + W_grad_update_reg[2] + W_grad_update_reg[3];
-                // W_checksum += W_grad_update;
+                W_checksum += W_grad_update;
             }
         }
             
-        bias_grads[ldB * out] = b_grad_update; // INFO: "+" only for debugging to check if bias_grads zero initialized!!
+        bias_grads[ldB * out] = b_grad_update; 
         
         // End of the SSR region. 
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+        
+        // printf("new GRADIENT UPDATE FP64 with SSRs: W_checksum[%u] = %f\n", idx_eff, W_checksum);
     }
 
-    // printf("new GRADIENT UPDATE FP64 with SSRs: b_checksum = %f\n", b_checksum);
-    // printf("new GRADIENT UPDATE FP64 with SSRs: W_checksum = %f\n", W_checksum);
 
     snrt_cluster_hw_barrier();
 
@@ -658,14 +655,17 @@ void training_step_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                 double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
                 uint32_t number_of_images, uint32_t setup_SSR){
+
+    register volatile double ft0 asm("ft0");
+    register volatile double ft1 asm("ft1");
+    register volatile double ft2 asm("ft2");
+    asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
     
     // FIXME: learning rate should be defined in network struct
     double lr = 0.5;
 
     double b_checksum = 0.0;
     double W_checksum = 0.0;
-
-    double nimg = ((double)number_of_images);
 
     // get the total number of input features
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
@@ -678,11 +678,9 @@ void training_step_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     if (setup_SSR) {
         
         // SSR setup of weight gradients
-        snrt_ssr_loop_2d(SNRT_SSR_DM0, 
+        snrt_ssr_loop_1d(SNRT_SSR_DM0, 
                         IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW);
+                        sizeof(double));
 
 
         // SSR setup of bias gradients
@@ -691,33 +689,42 @@ void training_step_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
                         sizeof(double));
 
         // SSR setup of weights
-        snrt_ssr_loop_2d(SNRT_SSR_DM2, 
-                        IN_CH, 
-                        OUT_CH, 
-                        sizeof(double), 
-                        sizeof(double) * ldW);
+        // snrt_ssr_loop_2d(SNRT_SSR_DM2, 
+        //                 IN_CH, 
+        //                 OUT_CH, 
+        //                 sizeof(double), 
+        //                 sizeof(double) * ldW);
     }
-
-    // Start of SSR region
-    snrt_ssr_enable();
 
     for(uint32_t out = 0; out < OUT_CH; out++){
 
+        register double acc_b = 0.0;
+        register double acc_w = 0.0;
+        const register double zero = 0.0;
+        // zero initialize the accumulators
+        asm volatile (
+            "vfcpka.s.s         %[acc_b], %[zero], %[zero]\n"
+            "vfcpka.s.s         %[acc_w], %[zero], %[zero]\n"
+            : [ acc_b ] "+&f"(acc_b), [ acc_w ] "+&f"(acc_w)
+            : [ zero ] "f"(zero)
+            : "ft0", "ft1", "ft2"
+        );
+
         idx_eff = compute_id + ldB * out;
-        // SSR start address need to be configured each time
-        snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_2D, &weight_grads[out*ldW]);
-        snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &bias_grads[out*ldB]);
-        snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);
+
+        // snrt_ssr_read(SNRT_SSR_DM2, SNRT_SSR_2D, &weights[out*ldW]);
         // collect the bias gradients in a reg
-        register double acc_b = bias_grads[ldB * out];
         // make sure that biases outside of the number of
         // output channels are zero
+        // Start of SSR region
+        snrt_ssr_enable();
         if(!(idx_eff > OUT_CH * 5 - 1)){
+            // SSR start address need to be configured each time
+            snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, &weight_grads[out*ldW]);
+            snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &bias_grads[out*ldB]);
             asm volatile(
                 "fmul.d        %[acc_b], %[lr], ft1 \n"             // acc = lr * bias_grads[ldB * out]
-                "fdiv.d        %[acc_b], %[acc_b], %[nimg] \n"      // acc = acc / nimg
-                //"fsub.d        %[acc_b], ft2, %[acc_b] \n"        // acc = biases[ldB * out] - acc
-                :[ acc_b ] "+f"(acc_b), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
+                :[ acc_b ] "+f"(acc_b), [ lr ] "+f"(lr)
                 :
                 :"ft0", "ft1", "ft2"
                 );
@@ -726,35 +733,41 @@ void training_step_fp64_ssrn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
             biases[ldB * out] = 0;
         }
 
-        b_checksum += biases[ldB * out];
+        W_checksum = 0.0;
+        // snrt_ssr_disable();
+        // printf("new Training Step FP64 with SSRs: bias_grads[%u] = %f\n", idx_eff, biases[ldB * out]);
+        // printf("BEFORE acc_w: weight_checksum[%u] = %f\n", idx_eff, W_checksum);
+        // snrt_ssr_enable();
+
+        // b_checksum += biases[ldB * out];
 
         for(uint32_t in = 0; in < IN_CH; in++){
             
             W_idx_eff = compute_id*IN_CH + out * ldW + in;
 
             if(!(W_idx_eff > IN_CH * OUT_CH * 5 - 1)){
-                register double acc_w = weight_grads[out * ldW + in];
+                // register double acc_w; // = weight_grads[out * ldW + in];
                 asm volatile(
                     "fmul.d        %[acc_w], %[lr], ft0 \n"             // acc = lr * weight_grads[out * ldW + in]
-                    // "fdiv.d        %[acc_w], %[acc_w], %[nimg] \n"      // acc = acc / nimg
-                    // "fsub.d        %[acc_w], %[acc_w], ft2 \n"          // acc = acc - weights[out * ldW + in]
-                    :[ acc_w ] "+f"(acc_w), [ nimg ] "+f"(nimg), [ lr ] "+f"(lr)
+                    :[ acc_w ] "+f"(acc_w), [ lr ] "+f"(lr)
                     :
                     :"ft0", "ft1", "ft2"
                 );
 
                 snrt_ssr_disable();
-                weights[out * ldW + in] -= acc_w / nimg;
+                weights[out * ldW + in] -= acc_w;
                 W_checksum += weights[out * ldW + in];
                 snrt_ssr_enable();
             } 
         }
+        // End of the SSR region. 
+        snrt_ssr_disable();
+        asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
+        
+        // printf("new TRAINING STEP FP64 with SSRs: weight_checksum[%u] = %f\n", idx_eff, W_checksum);
+        
     }
 
-    // End of the SSR region. 
-    snrt_ssr_disable();
-
-    printf("new TRAINING STEP FP64 with SSRs: b_checksum = %f\n", b_checksum);
-    printf("new TRAINING STEP FP64 with SSRs: W_checksum = %f\n", W_checksum);
+    // printf("new TRAINING STEP FP64 with SSRs: b_checksum = %f\n", b_checksum);
 } // RTL TODO
 // GIM: cannot store weight gradients AND weights in double precision on the same cluster

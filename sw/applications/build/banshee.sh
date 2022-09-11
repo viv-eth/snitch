@@ -1,4 +1,4 @@
-while getopts :c:r:t:d:f:h opt; do
+while getopts :c:r:t:d:f:v:s:h opt; do
   case "${opt}" in
     h)
       echo "[BANSHEE] Usage: banshee.sh [-h]"
@@ -13,6 +13,8 @@ while getopts :c:r:t:d:f:h opt; do
       echo "[BANSHEE]   -d: Set to one to remove all existing files in the build folder."
       echo "[BANSHEE] Usage: banshee.sh [-f]"
       echo "[BANSHEE]   -f: Select if only a specific binary should be built. If not set all binaries will be built."
+      echo "[BANSHEE] Usage: banshee.sh [-v]"
+      echo "[BANSHEE]   -v: Define whether verbose output should be enabled. Default is disabled."
       exit 1
       ;;
     c)
@@ -46,6 +48,14 @@ while getopts :c:r:t:d:f:h opt; do
         binary="${OPTARG}"
         echo "[BANSHEE] Building binary $binary"
         ;;
+    v) # verbose
+        verbose="${OPTARG}"
+        echo "[BANSHEE] Verbose mode is ${verbose}."
+        ;;
+    s) # SNITCH_LOG mode
+        snitch_log_mode="${OPTARG}"
+        echo "[BANSHEE] Setting SNITCH_LOG to $snitch_log_mode"
+        ;;
     \?)
       echo "[BANSHEE] Invalid option: -$OPTARG" >&2
       exit 1
@@ -56,6 +66,8 @@ done
 START_D=$( date "+%d/%m/%y" )
 START_H=$( date "+%H:%M:%S" )
 echo "[BANSHEE] Building binaries for new simulation at: $START_H on $START_D"
+export SNITCH_LOG=${snitch_log_mode}
+echo "[BANSHEE] Setting SNITCH_LOG to $SNITCH_LOG"
 
 # assign default values to variables if not set
 if [ -z $version ]; then
@@ -70,16 +82,32 @@ if [ -z $toolchain ]; then
     toolchain="llvm"
 fi
 
-start_time=$SECONDS
-cmake-$version -DSNITCH_RUNTIME=snRuntime-$runtime -DCMAKE_TOOLCHAIN_FILE=toolchain-$toolchain ../
+if [ -z $verbose ]; then
+    verbose="OFF"
+fi
 
+# generate a random number for the build folder name
+RANDOM_NUMBER=$(($RANDOM % 1000))
+
+
+start_time=$SECONDS
+cmake-$version -DSNITCH_RUNTIME=snRuntime-$runtime -DCMAKE_TOOLCHAIN_FILE=toolchain-$toolchain ../ 
 if [ -z $binary ]
   then
     echo "[BANSHEE] Building all binaries"
     make -j
 else
-echo "[BANSHEE] Building binary $binary"
-make run-banshee-$binary
+    echo "[BANSHEE] Building binary $binary"
+    filename=${binary}_banshee_${RANDOM_NUMBER}.txt
+    # check if the file exists
+    if [ -f $filename ]; then
+        # change the name of the file by adding a random number
+        RANDOM_NUMBER_2=$(($RANDOM % 1000))
+        filename = ${binary}_banshee_${RANDOM_NUMBER + RANDOM_NUMBER_2}.txt
+    fi
+    make run-banshee-$binary VERBOSE=${verbose} 2>&1 | tee ${filename}
+    # fi
+    echo "Saving output to file: ${binary}_banshee_${RANDOM_NUMBER}.txt"
 fi
 
 elapsed=$(( SECONDS - start_time ))
