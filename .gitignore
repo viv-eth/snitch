@@ -41,3 +41,4 @@ sw/applications/src/*test*
 sw/applications/src/*all*
 tmp/
 util/
+sw/applications/src/MNIST/

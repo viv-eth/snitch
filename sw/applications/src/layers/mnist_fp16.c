@@ -78,7 +78,7 @@ void mnist_fp16(const network_fp16_t *n){
     __fp16 *bias_grads_cl1;
     __fp16 *activations_cl1;
     __fp16 *loss;
-    __fp16 *targets;
+    uint32_t *targets;
 
     // INFO FP16 cluster memory setup
     // @brief Cluster Memory Structure for each cluster to ensure
