@@ -635,7 +635,7 @@ void training_step_fp32_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT
                                 IN_CH / 2, // number of iterations
                                 sizeof(double));
 
-                // // SSR read setup of weights
+                // SSR read setup of weights
                 snrt_ssr_loop_1d(SNRT_SSR_DM1, 
                                 IN_CH / 2, // number of iterations
                                 sizeof(double));
