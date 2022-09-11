@@ -14,7 +14,7 @@ sw/applications/build/
 sw/applications/MNIST/
 sw/applications/snRuntime/CMakeFiles/
 sw/applications/snRuntime/CTestTestfile.cmake
-sw/applications/demofile2.txt
+sw/applications/*.txt
 sw/applications/Makefile
 sw/applications/data/.data_gemm.h.swp
 snitch.sh
