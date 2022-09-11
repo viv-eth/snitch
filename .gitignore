@@ -31,3 +31,13 @@ docs/
 hw/system/occamy/
 sw/applications/archive/
 tmp/
+sw/applications/data/*.txt
+sw/applications/data/*.csv
+sw/applications/*.txt
+sw/applications/20_*
+sw/applications/src/20_*
+sw/applications/src/all*
+sw/applications/src/*.bin
+sw/applications/src/*binary
+sw/applications/src/*bin*
+sw/applications/src/*test*
