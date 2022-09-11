@@ -28,6 +28,7 @@ hw/system/occamy/src/
 hw/system/occamy/test/
 docs/
 hw/system/occamy/
+hw/system/occamy/src/*
 hw/system/occamy/addrmap/*
 sw/applications/archive/
 sw/applications/data/*.txt
