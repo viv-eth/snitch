@@ -27,7 +27,15 @@ hw/system/occamy/addrmap/addrmap.tex
 hw/system/occamy/src/
 hw/system/occamy/test/
 docs/
-docs/
 hw/system/occamy/
+hw/system/occamy/addrmap/*
 sw/applications/archive/
+sw/applications/data/*.txt
+sw/applications/data/*.csv
+sw/applications/*.pickle
+sw/applications/*20*
+sw/applications/src/*bin*
+sw/applications/src/*test*
+sw/applications/src/*all*
 tmp/
+util/
