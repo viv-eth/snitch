@@ -53,7 +53,7 @@ static inline double my_exp(double x)
 // INFO: start of FP32 baseline network implementation
 static inline void benchmark_feedforward_fp64(uint32_t IN_CH, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *biases, double *activations,
-                uint32_t ldB, double *image, uint32_t compute_id){
+                uint32_t ldB, double *image){
     
     // Linear layer: OUT = X * W^T + B
     // benchmark_get_cycle();
@@ -64,9 +64,95 @@ static inline void benchmark_feedforward_fp64(uint32_t IN_CH, uint32_t OUT_CH,
         }
         // OUT is accumulated in activations 
         activations[ldB * out] = acc;
-        printf("Benchmarking: FEEDFORWARD FP64 Baseline: acc[%u] = %f\n", compute_id + out * ldB, activations[ldB * out]);  
+        // printf("Benchmarking: FEEDFORWARD FP64 Baseline: acc = %f\n", activations[ldB * out]);  
     }
     // benchmark_get_cycle();
+
+    snrt_cluster_hw_barrier();
+
+}
+
+static inline void benchmark_gradient_update_fp64(uint32_t IN_CH, uint32_t OUT_CH, 
+                double *weight_grads, uint32_t ldW, double *bias_grads, double *activations, 
+                uint32_t ldB, double *image, uint32_t *target, 
+                uint32_t compute_id, double *loss){
+
+    
+    double b_grad_update = 0.0;
+    // double W_grad_update = 0.0;
+    volatile uint32_t idx_eff;
+    // volatile uint32_t W_idx_eff;
+    
+    // Commented out for RTL
+    // double W_checksum = 0.0;
+
+    // double loss_val = 0.0;
+
+
+    // get the value saved at target address
+    int32_t target_n = *target;
+
+    // NOTE: Part below is commented for the RTL,
+    // since math library is not supported, and hence it should 
+    // not be included in the benchmarking.
+
+    // compute the loss
+    // if(!compute_id){
+    //     // printf("target = %u\n", target_n);
+    //     // printf("activation[%u] = %f\n", target_n, activations[target_n]);
+    //     loss_val = 0.0 - log(activations[target_n - compute_id]);
+    //     // printf("loss activation[target] = %f\n", activations[target_n - compute_id]);
+    //     printf("GU current loss = %f\n", loss_val);
+    //     // printf("GU activation[target = %u] = %.15f\n", target_n - compute_id, activations[target_n - compute_id]);
+    //     // loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
+    //     // printf("loss with math.h = %f\n", loss_val);
+    //     // printf("loss with my_log = %f\n", loss_wo_log);
+    //     loss[0] += loss_val;
+    // } 
+    
+
+    // the effective index is the iteration index of the biases variable
+    // across all entries
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        idx_eff = compute_id + ldB * out;
+        // Gradient Calculation for SoftMax activation with Cross Entropy Loss
+        b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
+        // W_checksum = 0.0;
+
+        for(uint32_t in = 0; in < IN_CH; in++){
+            weight_grads[out * ldW + in] = b_grad_update * image[in]; 
+            // W_checksum += W_grad_update;
+        }
+            
+        bias_grads[ldB * out] = b_grad_update; 
+        // printf("GU FP64 Baseline W_checksum[%u] = %f\n", idx_eff, W_checksum);
+        // printf("GU FP64 Baseline bias_grads[%u] = %f\n", idx_eff, b_grad_update);
+    }
+
+    snrt_cluster_hw_barrier(); // INFO: target variable lost after HW barrier
+
+}
+
+static inline void benchmark_training_step_fp64(uint32_t IN_CH, uint32_t OUT_CH, 
+                double *weights, double *weight_grads, uint32_t ldW, double *biases, double *bias_grads,
+                uint32_t ldB){
+
+    float lr = 0.5;
+    // double W_checksum = 0.0;
+
+    for(uint32_t out = 0; out < OUT_CH; out++){
+        biases[ldB * out] -= lr * bias_grads[ldB * out];
+        // W_checksum = 0.0;
+
+        // printf("TS FP64 Baseline updated bias = %f\n", biases[ldB * out]);
+
+        for(uint32_t in = 0; in < IN_CH; in++){
+            weights[out * ldW + in] -= lr * weight_grads[out * ldW + in];
+            // W_checksum += weights[out * ldW + in];
+        }
+
+        // printf("TS FP64 Baseline updated weight_checksum = %f\n", W_checksum);
+    }
 
 }
 
@@ -86,7 +172,8 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
     register double acc = 0.0;
 
     // const uint32_t unroll = 4;
-    // register double acc_tot[unroll];
+    // register double acc_tot[unroll] = {0.0, 0.0, 0.0, 0.0};
+
     for (uint32_t out = 0; out < OUT_CH; out++) {
 
         
@@ -162,7 +249,7 @@ static inline void benchmark_feedforward_fp64_ssrn(uint32_t IN_CH, uint32_t OUT_
     }
 
     // for (uint32_t out = 0; out < OUT_CH; out++) {
-    //      printf("Benchmark FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", 1 + compute_id + out * ldB, activations[ldB * out]);
+    //      printf("Benchmark FEEDFORWARD FP64 with SSRs: acc[%u] = %f\n", activations[ldB * out]);
     // }   
     snrt_cluster_hw_barrier(); 
 } 
@@ -242,16 +329,6 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
 
     // double loss_val = 0.0;
 
-    /// UNROLLED VERSION
-    // const uint32_t unroll = 4;
-    // register double W_grad_update_reg[unroll];
-    // W_grad_update_reg[0] = 0.0;
-    // W_grad_update_reg[1] = 0.0;
-    // W_grad_update_reg[2] = 0.0;
-    // W_grad_update_reg[3] = 0.0;
-    /// UNROLLED VERSION
-
-
     // get the value saved at target address
     uint32_t target_n = *target;
     
@@ -294,7 +371,6 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
 
         // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, image); // ft0
-        // snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &activations[ldB * out]); // ft1
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weight_grads[ldW * out]); // ft1
         snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weight_grads[out*ldW]); // ft2
 
@@ -316,24 +392,38 @@ static inline void benchmark_gradient_update_fp64_ssr(uint32_t IN_CH, uint32_t O
         );
         /// NON-UNROLLED VERSION
 
+        /// UNROLLED VERSION
+        // asm volatile(
+        //             "frep.o      %[n_frep], 4, 0, 0 \n"
+        //             "fmadd.d     ft2, %[b_grad_update], ft0, ft1\n"
+        //             "fmadd.d     ft2, %[b_grad_update], ft0, ft1\n"
+        //             "fmadd.d     ft2, %[b_grad_update], ft0, ft1\n"
+        //             "fmadd.d     ft2, %[b_grad_update], ft0, ft1\n"
+        //             :
+        //             : [ b_grad_update ] "f"(b_grad_update), [ n_frep ] "r"(IN_CH / 4 - 1)
+        //             : "ft0", "ft1", "ft2"
+        // );
+        /// UNROLLED VERSION
         
         // for(uint32_t in = 0; in < IN_CH;){
 
-        //     // NON-UNROLLED VERSION
+        // //     // NON-UNROLLED VERSION
+        // //     snrt_ssr_disable();
+        // //     W_checksum += weight_grads[out * ldW + in + 0];
+        // //     snrt_ssr_enable();
+        // //     // NON-UNROLLED VERSION
+
+        //     /// UNROLLED VERSION
         //     snrt_ssr_disable();
-        //     W_checksum += weight_grads[out * ldW + in + 0];
+        //         W_checksum += weight_grads[out * ldW + in + 0] 
+        //                 + weight_grads[out * ldW + in + 1] 
+        //                 + weight_grads[out * ldW + in + 2] 
+        //                 + weight_grads[out * ldW + in + 3];
         //     snrt_ssr_enable();
-        //     // NON-UNROLLED VERSION
-
-        //     /// UNROLLED VERSION
-        //     //     W_checksum += weight_grads[out * ldW + in + 0] 
-        //     //             + weight_grads[out * ldW + in + 1] 
-        //     //             + weight_grads[out * ldW + in + 2] 
-        //     //             + weight_grads[out * ldW + in + 3];
         //     /// UNROLLED VERSION
 
-        //     in += 1;
-        //     // in += unroll;
+        // //     in += 1;
+        //     in += unroll;
         // }
 
         // End of the SSR region. 
@@ -392,8 +482,8 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
         }
                 // SSR start address need to be configured each time
         snrt_ssr_read(SNRT_SSR_DM0, SNRT_SSR_1D, &weight_grads[out*ldW]); // ft0 
-        snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weights[out*ldW]); // ft2
         snrt_ssr_read(SNRT_SSR_DM1, SNRT_SSR_1D, &weights[out*ldW]); // ft1
+        snrt_ssr_write(SNRT_SSR_DM2, SNRT_SSR_1D, &weights[out*ldW]); // ft2
 
         // benchmark_get_cycle();
         
@@ -416,25 +506,38 @@ static inline void benchmark_training_step_fp64_ssr(uint32_t IN_CH, uint32_t OUT
         );
         /// NON-UNROLLED VERSION
 
+        /// UNROLLED VERSION
+        // asm volatile(
+        //             "frep.o      %[n_frep], 4, 0, 0 \n"
+        //             "fmadd.d     ft2, %[lr], ft0, ft1\n"
+        //             "fmadd.d     ft2, %[lr], ft0, ft1\n"
+        //             "fmadd.d     ft2, %[lr], ft0, ft1\n"
+        //             "fmadd.d     ft2, %[lr], ft0, ft1\n"
+        //             :
+        //             :[ lr ] "f"(-lr), [ n_frep ] "r"(IN_CH / 4 - 1)
+        //             :"ft0", "ft1", "ft2"
+        // );
+        /// UNROLLED VERSION
+
         // for(uint32_t in = 0; in < IN_CH;){
 
         //     snrt_ssr_disable();
-        //     W_checksum += weights[out * ldW + in];
-        //     // W_checksum += weights[out * ldW + in]
-        //     //             + weights[out * ldW + in + 1]
-        //     //             + weights[out * ldW + in + 2]
-        //     //             + weights[out * ldW + in + 3];
+        // //     W_checksum += weights[out * ldW + in];
+        //     W_checksum += weights[out * ldW + in]
+        //                 + weights[out * ldW + in + 1]
+        //                 + weights[out * ldW + in + 2]
+        //                 + weights[out * ldW + in + 3];
         //     snrt_ssr_enable();
         
-        //     in += 1;
-        //     // in += unroll;
+        // //     in += 1;
+        //     in += unroll;
 
         // }
         // End of the SSR region. 
         snrt_ssr_disable();
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
         // benchmark_get_cycle();
-        // printf("Benchmark TRAINING STEP FP64 with SSRs: weight_checksum[%u] = %f\n", idx_eff, W_checksum);
+        // printf("Benchmark TRAINING STEP FP64 with SSRs: weight_checksum[%u] = %f\n", W_checksum);
     }
 }
 
@@ -454,8 +557,18 @@ static inline void benchmark_feedforward_fp32_opt(uint32_t IN_CH, uint32_t OUT_C
     for (uint32_t out = 0; out < OUT_CH; out++) {
         
         register float acc = 0.0;
-        register v2f32 reduce_reg;
+
+        /// UNROLLED VERSION
+        const uint32_t unroll = 4;
+        register v2f32 reduce_reg[unroll];
+        /// UNROLLED VERSION
+
+        /// NON-UNROLLED VERSION
+        // register v2f32 reduce_reg;
+        /// NON-UNROLLED VERSION
+
         register float sum = 0;
+
         
         if (setup_SSR) {
 
@@ -480,15 +593,42 @@ static inline void benchmark_feedforward_fp32_opt(uint32_t IN_CH, uint32_t OUT_C
         // benchmark_get_cycle();
         acc = biases[ldB * out];
 
+        /// UNROLLED VERSION
         asm volatile(
-            "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
-            "frep.o            %[n_frep], 1, 0, 0 \n"
-            "vfmac.s           %[reduce_reg], ft0, ft1 \n"             
-            "vfsum.s           %[sum], %[reduce_reg] \n"
+            "vfcpka.s.s        %[reduce_reg_0], %[acc], %[zero] \n"
+            "vfcpka.s.s        %[reduce_reg_1], %[zero], %[zero] \n"
+            "vfcpka.s.s        %[reduce_reg_2], %[zero], %[zero] \n"
+            "vfcpka.s.s        %[reduce_reg_3], %[zero], %[zero] \n"
+            "frep.o            %[n_frep], 4, 0, 0 \n"
+            "vfmac.s           %[reduce_reg_0], ft0, ft1 \n"
+            "vfmac.s           %[reduce_reg_1], ft0, ft1 \n"
+            "vfmac.s           %[reduce_reg_2], ft0, ft1 \n"
+            "vfmac.s           %[reduce_reg_3], ft0, ft1 \n"             
+            "vfsum.s           %[sum], %[reduce_reg_0] \n"
+            "vfsum.s           %[sum], %[reduce_reg_1] \n"
+            "vfsum.s           %[sum], %[reduce_reg_2] \n"
+            "vfsum.s           %[sum], %[reduce_reg_3] \n"
             // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
-            : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg ] "+f"(reduce_reg)
-            : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2 - 1)
-            : "ft0", "ft1", "ft2");
+            : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), 
+              [ reduce_reg_0 ] "+&f"(reduce_reg[0]), [ reduce_reg_1 ] "+&f"(reduce_reg[1]), 
+              [ reduce_reg_2 ] "+&f"(reduce_reg[2]), [ reduce_reg_3 ] "+&f"(reduce_reg[3])
+            : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / (2 * unroll) - 1)
+            : "ft0", "ft1", "ft2"
+        );
+        /// UNROLLED VERSION
+
+        /// NON-UNROLLED VERSION
+        // asm volatile(
+        //     "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
+        //     "frep.o            %[n_frep], 1, 0, 0 \n"
+        //     "vfmac.s           %[reduce_reg], ft0, ft1 \n"             
+        //     "vfsum.s           %[sum], %[reduce_reg] \n"
+        //     // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
+        //     : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg ] "+f"(reduce_reg)
+        //     : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2 - 1)
+        //     : "ft0", "ft1", "ft2"
+        // );
+        /// NON-UNROLLED VERSION
 
 
         // End of SSR region. 
@@ -746,7 +886,7 @@ static inline void benchmark_training_step_fp32_opt(uint32_t IN_CH, uint32_t OUT
                 : [lr_vec] "f"(lr_vec), 
                   [n_frep] "r"(IN_CH / 2 - 1)
                 : "ft0", "ft1", "ft2"
-                ); 
+        ); 
 
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers

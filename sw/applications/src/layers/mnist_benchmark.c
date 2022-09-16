@@ -10,6 +10,8 @@
 #include "snrt.h"
 #include "utils.h"
 
+#define BASELINE 0
+
 void mnist_benchmark(const network_benchmark_t *n){
 
     uint32_t cluster_num = snrt_cluster_num(); 
@@ -181,14 +183,19 @@ void mnist_benchmark(const network_benchmark_t *n){
         volatile uint32_t ldB = compute_num;
 
         if(PREC == 8) {
-            benchmark_get_cycle();
-            // benchmark_feedforward_fp64(IN_CH, div, 
-            //                 &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-            //                 ldB, images, compute_id);
-            benchmark_feedforward_fp64_ssrn(IN_CH, div, 
-                    &((double *)weights_cl0)[W_offset], ldW, &((double *)biases_cl0)[b_offset], &((double *)activations_cl0)[b_offset],
-                    ldB, (double *)images, setup_SSR);
-            benchmark_get_cycle();
+            if(BASELINE) {
+                benchmark_get_cycle();
+                benchmark_feedforward_fp64(IN_CH, div, 
+                        &((double *)weights_cl0)[W_offset], ldW, &((double *)biases_cl0)[b_offset], &((double *)activations_cl0)[b_offset],
+                        ldB, (double *)images);
+                benchmark_get_cycle();
+            } else {
+                benchmark_get_cycle();
+                benchmark_feedforward_fp64_ssrn(IN_CH, div, 
+                        &((double *)weights_cl0)[W_offset], ldW, &((double *)biases_cl0)[b_offset], &((double *)activations_cl0)[b_offset],
+                        ldB, (double *)images, setup_SSR);
+                benchmark_get_cycle();
+            }
             benchmark_softmax_activation_fp64(div, 
                                     &((double *)activations_cl0)[b_offset], ldB,
                                     compute_id, compute_num, max);
@@ -281,14 +288,25 @@ void mnist_benchmark(const network_benchmark_t *n){
         void *img_ptr = ((uint32_t)images) - cluster_offset;
             
         if(PREC == 8) {
-            // INFO: FP64 with SSRs
-            benchmark_get_cycle();
-            benchmark_gradient_update_fp64_ssr(IN_CH, div, 
-                                &((double *)weight_grads_cl1)[W_offset], ldW, 
-                                &((double *)bias_grads_cl1)[b_offset], &((double *)activations_cl1)[b_offset], 
-                                ldB, (double *)images, targets, compute_id, 
-                                loss, setup_SSR);
-            benchmark_get_cycle();
+            if(BASELINE) {
+                // INFO: FP64 baseline
+                benchmark_get_cycle();
+                benchmark_gradient_update_fp64(IN_CH, div, 
+                                    &((double *)weight_grads_cl1)[W_offset], ldW, 
+                                    &((double *)bias_grads_cl1)[b_offset], &((double *)activations_cl1)[b_offset], 
+                                    ldB, (double *)images, targets, compute_id, 
+                                    loss);
+                benchmark_get_cycle();
+            } else {
+                // INFO: FP64 with SSRs
+                benchmark_get_cycle();
+                benchmark_gradient_update_fp64_ssr(IN_CH, div, 
+                                    &((double *)weight_grads_cl1)[W_offset], ldW, 
+                                    &((double *)bias_grads_cl1)[b_offset], &((double *)activations_cl1)[b_offset], 
+                                    ldB, (double *)images, targets, compute_id, 
+                                    loss, setup_SSR);
+                benchmark_get_cycle();
+            }
         } else if (PREC == 4) {
             // INFO: FP32 with SSRs
             benchmark_get_cycle();
@@ -318,7 +336,7 @@ void mnist_benchmark(const network_benchmark_t *n){
             benchmark_get_cycle();
         }
     } else if (!snrt_is_compute_core() && cluster_id == 1){
-        // snrt_cluster_hw_barrier();
+        snrt_cluster_hw_barrier();
     } 
 
     snrt_global_barrier();
@@ -344,12 +362,20 @@ void mnist_benchmark(const network_benchmark_t *n){
         void *bias_grad_ptr = ((uint32_t)biases_cl0) + cluster_offset;
 
         if(PREC == 8) {
-            // INFO: FP64 with SSRs
-            benchmark_get_cycle();
-            benchmark_training_step_fp64_ssr(IN_CH, div, 
-                                &((double *)weights_cl0)[W_offset], &((double *)weight_grad_ptr)[W_offset], ldW, 
-                                &((double *)biases_cl0)[b_offset], &((double *)bias_grad_ptr)[b_offset], ldB, setup_SSR);
-            benchmark_get_cycle();
+            if(BASELINE) {
+                benchmark_get_cycle();
+                benchmark_training_step_fp64(IN_CH, div, 
+                                    &((double *)weights_cl0)[W_offset], &((double *)weight_grad_ptr)[W_offset], ldW, 
+                                    &((double *)biases_cl0)[b_offset], &((double *)bias_grad_ptr)[b_offset], ldB);
+                benchmark_get_cycle();
+            } else {
+                // INFO: FP64 with SSRs
+                benchmark_get_cycle();
+                benchmark_training_step_fp64_ssr(IN_CH, div, 
+                                    &((double *)weights_cl0)[W_offset], &((double *)weight_grad_ptr)[W_offset], ldW, 
+                                    &((double *)biases_cl0)[b_offset], &((double *)bias_grad_ptr)[b_offset], ldB, setup_SSR);
+                benchmark_get_cycle();
+            }
         } else if (PREC == 4) {
             // INFO: FP32 with SSRs
             benchmark_get_cycle();
