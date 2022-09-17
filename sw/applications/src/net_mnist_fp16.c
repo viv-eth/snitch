@@ -8,8 +8,8 @@
 // Correctness of results are checked automatically
 
 #include "mnist_fp16.h"
-// #include "data_fp16_mnist.h" //--> For FP16 tests
-#include "data_fp16_test_mnist.h" //--> For new FP16 tests
+#include "data_fp16_mnist.h" //--> For FP16 tests
+// #include "data_fp16_test_mnist.h" //--> For new FP16 tests
 #include "network.h"
 #include "math.h"
 #include "perf_cnt.h"
@@ -27,7 +27,9 @@ int main(){
     // mnist_t.images = (void *)mnist_images_dram;
     // mnist_t.targets = (void *)mnist_labels_dram;
     
+    // printf("Training MNIST with FP16 precision START\n");
     mnist_fp16(&mnist_t);
+    // printf("Training MNIST with FP16 precision END\n");
 
     snrt_global_barrier();
 

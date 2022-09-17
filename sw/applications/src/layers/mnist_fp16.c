@@ -16,7 +16,7 @@
 #define MAT_ROW_PADDING 0
 
 // define whether to run baseline network or not
-#define BASELINE 0
+#define BASELINE 1
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
@@ -29,8 +29,8 @@
 
 // define NN properties
 #define NUM_EPOCHS 1 // 10: default epochs, 1: testing
-#define BATCH_SIZE 2// 256: default batch size, 2: testing
-#define NUM_BATCHES 10// (60000 / BATCH_SIZE): default number of batches, 10: testing
+#define BATCH_SIZE 20// 256: default batch size, 10: testing
+#define NUM_BATCHES 1// (60000 / BATCH_SIZE): default number of batches, 2: testing
 #define STEPS(batches) (int)NUM_EPOCHS*(batches)
 
 void mnist_fp16(const network_fp16_t *n){
@@ -65,6 +65,9 @@ void mnist_fp16(const network_fp16_t *n){
     uint32_t image_size = IN_CH * n->dtype;
     // size for storing the maximum on each core of a cluster (only used on cluster 0)
     uint32_t max_size = compute_num * n->dtype;
+    // size of sum values for gradient norm clipping
+    uint32_t sum_size = compute_num * sizeof(float);
+    uint32_t scaling_size = compute_num * sizeof(float);
     // size of the target for image classification (0...9)
     uint32_t target_size = sizeof(uint32_t);
     // result of the cross entropy loss calculation
@@ -88,6 +91,8 @@ void mnist_fp16(const network_fp16_t *n){
     __fp16 *bias_grads_cl1;
     __fp16 *activations_cl1;
     __fp16 *loss;
+    float *sum;
+    float *scaling;
     uint32_t *targets;
 
     // INFO FP16 cluster memory setup
@@ -121,10 +126,14 @@ void mnist_fp16(const network_fp16_t *n){
         ptr += image_size * number_of_images;
         activations_cl1 = ptr;
         ptr += act_mat_size;
+        sum = ptr;
+        ptr += sum_size;
+        scaling = ptr;
+        ptr += scaling_size;
         loss = ptr;
         ptr += loss_size;
         targets = ptr;
-        ptr += target_size * number_of_images;
+        ptr += target_size;
     }
     // NOTE: following lines for debugging purposes only
     // void *ptr_end = (double *)snrt_cluster_memory().end;
@@ -151,6 +160,18 @@ void mnist_fp16(const network_fp16_t *n){
     // NOTE: this is only needed when preloading the DRAM in banshee
     __fp16 *images_dram = (void *)0x80040000;
     uint32_t *targets_dram = (void *)0x80108000;
+
+    // if(!cluster_id && !compute_id){
+    //     __fp16 image_data = 0.0196;
+    //     __fp16 b_grad_data = 0.0001;
+    //     printf("image_data: %f\n", image_data);
+    //     printf("b_grad_data: %f\n", b_grad_data);
+
+    //     __fp16 result;
+    //     result = image_data * b_grad_data;
+
+    //     printf("result: %f\n", result);
+    // } // WORKS, result = 0.000002
 
     // We load the GM weights and biases into cluster 0 memory 
     // together with the image data.
@@ -209,6 +230,10 @@ void mnist_fp16(const network_fp16_t *n){
 
                 // we calculate the pointer postion of the current image
                 uint32_t volatile curr_img = (batch*BATCH_SIZE + image) * IN_CH;
+
+                if(!compute_id && !cluster_id){
+                    printf("Image %u\n", batch * BATCH_SIZE + image);
+                }
 
                 // we calculate the pointer postion of the current target
                 uint32_t volatile curr_target = batch*BATCH_SIZE + image;
@@ -273,19 +298,19 @@ void mnist_fp16(const network_fp16_t *n){
                             // INFO: FP16 baseline
                         feedforward_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                         &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                        ldB, &images[curr_img], ldI, compute_id);
+                                        ldB, images, ldI, compute_id);
                         softmax_activation_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                    &images[curr_img], ldI, compute_id, compute_num, max);
+                                    images, ldI, compute_id, compute_num, max);
                         } else {
                             // INFO: FP16 with SSRs
                             feedforward_fp16_ssr_simd_frep(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &biases_cl0[b_offset], &activations_cl0[b_offset],
-                                ldB, &images[curr_img], ldI, compute_id,
-                                setup_SSR);
+                                ldB, images, ldI, compute_id,
+                                setup_SSR, batch * BATCH_SIZE + image);
                             softmax_activation_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                 &weights_cl0[W_offset], ldW, &activations_cl0[b_offset], ldB,
-                                &images[curr_img], ldI, compute_id, compute_num, max);
+                                images, ldI, compute_id, compute_num, max);
 
                         }
 
@@ -399,9 +424,13 @@ void mnist_fp16(const network_fp16_t *n){
                             // INFO: FP16 baseline
                             gradient_update_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
-                                        &bias_grads_cl1[b_offset], &act_ptr[b_offset], 
-                                        ldB, &img_ptr[curr_img], &targets[curr_img], ldI, compute_id, 
+                                        &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
+                                        ldB, img_ptr, targets, ldI, compute_id, 
                                         loss, compute_num);
+                            // gradient_norm_clip(n->IN_CH1, n->IN_CH2, div, 
+                            //             &weight_grads_cl1[W_offset], ldW, ldB,
+                            //             compute_id, compute_num,
+                            //             sum, 5.0, scaling);
                             if(!compute_id){
                                 if(image == 0){
                                     printf("BATCH average loss[%u] = %f\n", batch, loss[compute_id]);
@@ -414,8 +443,13 @@ void mnist_fp16(const network_fp16_t *n){
                             gradient_update_fp16_ssr_simdn(n->IN_CH1, n->IN_CH2, div, 
                                         &weight_grads_cl1[W_offset], ldW, 
                                         &bias_grads_cl1[b_offset], &activations_cl1[b_offset], 
-                                        ldB, &images[curr_img], &targets[curr_img], ldI, compute_id, 
+                                        ldB, img_ptr, targets, ldI, compute_id, 
                                         loss, compute_num, setup_SSR);
+                            // printf("Starting gradient norm clip\n");
+                            gradient_norm_clip(n->IN_CH1, n->IN_CH2, div, 
+                                        &weight_grads_cl1[W_offset], ldW, ldB,
+                                        compute_id, compute_num,
+                                        sum, 5.0, scaling);
                             if(!compute_id){
                                 if(image == 0){
                                     printf("BATCH average loss[%u] = %f\n", batch, loss[compute_id]);
@@ -437,8 +471,14 @@ void mnist_fp16(const network_fp16_t *n){
                         if(BASELINE){
                             // INFO: FP16 baseline
                             snrt_cluster_hw_barrier();
+                            // snrt_cluster_hw_barrier();
+                            // snrt_cluster_hw_barrier();
+                            // snrt_cluster_hw_barrier();
                         } else {
                             // INFO: FP16 with SSRs
+                            snrt_cluster_hw_barrier();
+                            snrt_cluster_hw_barrier();
+                            snrt_cluster_hw_barrier();
                             snrt_cluster_hw_barrier();
                         }
                     } else {
@@ -495,13 +535,13 @@ void mnist_fp16(const network_fp16_t *n){
                             training_step_fp16n(n->IN_CH1, n->IN_CH2, div, 
                                     &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
                                     &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
-                                    compute_id, compute_num, number_of_images);
+                                    compute_id, compute_num, 1);
                         } else {
                             // INFO: FP16 with SSRs
                             training_step_fp16_ssr_simdn(n->IN_CH1, n->IN_CH2, div, 
-                                    &weights_cl0[W_offset], &weight_grads_cl0[W_offset], ldW, 
-                                    &biases_cl0[b_offset], &activations_cl0[b_offset], ldB, 
-                                    compute_id, compute_num, number_of_images, setup_SSR);
+                                    &weights_cl0[W_offset], &weight_grad_ptr[W_offset], ldW, 
+                                    &biases_cl0[b_offset], &bias_grad_ptr[b_offset], ldB, 
+                                    compute_id, compute_num, 1, setup_SSR, batch * BATCH_SIZE + image);
                         }
 
                         if(!compute_id && !RUN_RTL){

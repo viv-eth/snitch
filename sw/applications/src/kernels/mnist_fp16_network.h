@@ -30,7 +30,7 @@ void training_step_fp16n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 void feedforward_fp16_ssr_simd_frep(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 __fp16 *weights, uint32_t ldW, __fp16 *biases, __fp16 *activations,
                 uint32_t ldB, __fp16 *image, uint32_t ldI, uint32_t compute_id,
-                uint32_t setup_SSR);
+                uint32_t setup_SSR, uint32_t curr_image);
 
 void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 __fp16 *weight_grads, uint32_t ldW, __fp16 *bias_grads, __fp16 *activations, 
@@ -40,5 +40,10 @@ void gradient_update_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t O
 void training_step_fp16_ssr_simdn(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
                 __fp16 *weights, volatile __fp16 *weight_grads, uint32_t ldW, volatile __fp16 *biases, __fp16 *bias_grads,
                 uint32_t ldB, uint32_t compute_id, uint32_t compute_num,
-                uint32_t number_of_images, uint32_t setup_SSR);
+                uint32_t number_of_images, uint32_t setup_SSR, uint32_t curr_image);
+
+void gradient_norm_clip(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH, 
+                        volatile __fp16 *weight_grads, uint32_t ldW, uint32_t ldB,
+                        uint32_t compute_id, uint32_t compute_num,
+                        __fp16 *sum, float max_norm, float *scaling);
 
