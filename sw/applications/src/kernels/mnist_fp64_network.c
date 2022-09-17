@@ -197,19 +197,11 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
 
     // compute the loss
     if(!compute_id){
-        // printf("target = %u\n", target_n);
-        // printf("activation[%u] = %f\n", target_n, activations[target_n]);
         loss_val = 0.0 - log(activations[target_n - compute_id]);
-        // printf("loss activation[target] = %f\n", activations[target_n - compute_id]);
-        printf("GU current loss = %f\n", loss_val);
-        // printf("GU activation[target = %u] = %.15f\n", target_n - compute_id, activations[target_n - compute_id]);
-        // loss_wo_log = 0.0 - my_log(activations[target_n - compute_id], 50);
-        // printf("loss with math.h = %f\n", loss_val);
-        // printf("loss with my_log = %f\n", loss_wo_log);
+        printf("GU current loss[%u] = %f\n", target_n - compute_id, loss_val);
+        printf("GU activation[target = %u] = %.15f\n", target_n - compute_id, activations[target_n - compute_id]);
         loss[0] += loss_val;
     } 
-
-
 
     const uint32_t IN_CH = IN_CH1 * IN_CH2;
     
@@ -217,8 +209,9 @@ void gradient_update_fp64n(uint32_t IN_CH1, uint32_t IN_CH2, uint32_t OUT_CH,
     // the effective index is the iteration index of the biases variable
     // across all entries
     for(uint32_t out = 0; out < OUT_CH; out++){
+        
         idx_eff = compute_id + ldB * out;
-        // printf("activations[%u] = %f\n", idx_eff, activations[ldB * out]);
+        
         // Gradient Calculation for SoftMax activation with Cross Entropy Loss
         b_grad_update = (idx_eff == *target) ? activations[ldB * out] - 1 : activations[ldB * out];
         W_checksum = 0.0;
