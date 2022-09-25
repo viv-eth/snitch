@@ -15,16 +15,30 @@
 #include "snrt.h"
 #include "utils.h"
 
-#define PREC 32
+#define PREC 8
+#define HIGH_DIM 1
 
 # if PREC == 64
     #include "data_fp64_benchmark.h" //--> For FP64 tests
 # elif PREC == 32
-    #include "data_fp32_benchmark.h" //--> For FP32 tests
+
+    # if HIGH_DIM == 0
+        #include "data_fp32_benchmark.h" //--> For FP32 tests
+    # else
+        #include "data_fp32_benchmark_high_dim.h" //--> For FP32 tests
+    # endif
 # elif PREC == 16
-    #include "data_fp16_benchmark.h" //--> For FP16 tests
+    # if HIGH_DIM == 0
+        #include "data_fp16_benchmark.h" //--> For FP16 tests
+    # else
+        #include "data_fp16_benchmark_high_dim.h" //--> For FP16 tests
+    # endif
 # elif PREC == 8
-    #include "data_fp8_benchmark.h" //--> For FP8 tests
+    # if HIGH_DIM == 0
+        #include "data_fp8_benchmark.h" //--> For FP8 tests
+    # else
+        #include "data_fp8_benchmark_high_dim.h" //--> For FP8 tests
+    # endif
 # endif
 
 int main(){

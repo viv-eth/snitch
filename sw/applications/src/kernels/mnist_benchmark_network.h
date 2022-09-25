@@ -18,6 +18,10 @@ typedef union {
 } v2s;
 typedef union {
     double f64;
+    v4f16 vec;
+} v4s;
+typedef union {
+    double f64;
     v8f8 vec;
 } v8s;
 
@@ -50,7 +54,7 @@ static inline double my_exp(double x)
     return sum; 
 } 
 
-// INFO: start of FP32 baseline network implementation
+// INFO: start of FP64 baseline network implementation
 static inline void benchmark_feedforward_fp64(uint32_t IN_CH, uint32_t OUT_CH, 
                 double *weights, uint32_t ldW, double *biases, double *activations,
                 uint32_t ldB, double *image){
@@ -559,12 +563,12 @@ static inline void benchmark_feedforward_fp32_opt(uint32_t IN_CH, uint32_t OUT_C
         register float acc = 0.0;
 
         /// UNROLLED VERSION
-        const uint32_t unroll = 4;
-        register v2f32 reduce_reg[unroll];
+        // const uint32_t unroll = 4;
+        // register v2f32 reduce_reg[unroll];
         /// UNROLLED VERSION
 
         /// NON-UNROLLED VERSION
-        // register v2f32 reduce_reg;
+        register v2f32 reduce_reg;
         /// NON-UNROLLED VERSION
 
         register float sum = 0;
@@ -594,40 +598,40 @@ static inline void benchmark_feedforward_fp32_opt(uint32_t IN_CH, uint32_t OUT_C
         acc = biases[ldB * out];
 
         /// UNROLLED VERSION
-        asm volatile(
-            "vfcpka.s.s        %[reduce_reg_0], %[acc], %[zero] \n"
-            "vfcpka.s.s        %[reduce_reg_1], %[zero], %[zero] \n"
-            "vfcpka.s.s        %[reduce_reg_2], %[zero], %[zero] \n"
-            "vfcpka.s.s        %[reduce_reg_3], %[zero], %[zero] \n"
-            "frep.o            %[n_frep], 4, 0, 0 \n"
-            "vfmac.s           %[reduce_reg_0], ft0, ft1 \n"
-            "vfmac.s           %[reduce_reg_1], ft0, ft1 \n"
-            "vfmac.s           %[reduce_reg_2], ft0, ft1 \n"
-            "vfmac.s           %[reduce_reg_3], ft0, ft1 \n"             
-            "vfsum.s           %[sum], %[reduce_reg_0] \n"
-            "vfsum.s           %[sum], %[reduce_reg_1] \n"
-            "vfsum.s           %[sum], %[reduce_reg_2] \n"
-            "vfsum.s           %[sum], %[reduce_reg_3] \n"
-            // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
-            : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), 
-              [ reduce_reg_0 ] "+&f"(reduce_reg[0]), [ reduce_reg_1 ] "+&f"(reduce_reg[1]), 
-              [ reduce_reg_2 ] "+&f"(reduce_reg[2]), [ reduce_reg_3 ] "+&f"(reduce_reg[3])
-            : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / (2 * unroll) - 1)
-            : "ft0", "ft1", "ft2"
-        );
+        // asm volatile(
+        //     "vfcpka.s.s        %[reduce_reg_0], %[acc], %[zero] \n"
+        //     "vfcpka.s.s        %[reduce_reg_1], %[zero], %[zero] \n"
+        //     "vfcpka.s.s        %[reduce_reg_2], %[zero], %[zero] \n"
+        //     "vfcpka.s.s        %[reduce_reg_3], %[zero], %[zero] \n"
+        //     "frep.o            %[n_frep], 4, 0, 0 \n"
+        //     "vfmac.s           %[reduce_reg_0], ft0, ft1 \n"
+        //     "vfmac.s           %[reduce_reg_1], ft0, ft1 \n"
+        //     "vfmac.s           %[reduce_reg_2], ft0, ft1 \n"
+        //     "vfmac.s           %[reduce_reg_3], ft0, ft1 \n"             
+        //     "vfsum.s           %[sum], %[reduce_reg_0] \n"
+        //     "vfsum.s           %[sum], %[reduce_reg_1] \n"
+        //     "vfsum.s           %[sum], %[reduce_reg_2] \n"
+        //     "vfsum.s           %[sum], %[reduce_reg_3] \n"
+        //     // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
+        //     : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), 
+        //       [ reduce_reg_0 ] "+&f"(reduce_reg[0]), [ reduce_reg_1 ] "+&f"(reduce_reg[1]), 
+        //       [ reduce_reg_2 ] "+&f"(reduce_reg[2]), [ reduce_reg_3 ] "+&f"(reduce_reg[3])
+        //     : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / (2 * unroll) - 1)
+        //     : "ft0", "ft1", "ft2"
+        // );
         /// UNROLLED VERSION
 
         /// NON-UNROLLED VERSION
-        // asm volatile(
-        //     "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
-        //     "frep.o            %[n_frep], 1, 0, 0 \n"
-        //     "vfmac.s           %[reduce_reg], ft0, ft1 \n"             
-        //     "vfsum.s           %[sum], %[reduce_reg] \n"
-        //     // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
-        //     : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg ] "+f"(reduce_reg)
-        //     : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2 - 1)
-        //     : "ft0", "ft1", "ft2"
-        // );
+        asm volatile(
+            "vfcpka.s.s        %[reduce_reg], %[acc], %[zero] \n"
+            "frep.o            %[n_frep], 1, 0, 0 \n"
+            "vfmac.s           %[reduce_reg], ft0, ft1 \n"             
+            "vfsum.s           %[sum], %[reduce_reg] \n"
+            // "vfcpka.s.s        %[acc], %[sum], %[zero] \n"
+            : [ acc ] "+&f"(acc), [ sum ] "+&f"(sum), [ reduce_reg ] "+f"(reduce_reg)
+            : [ zero ] "f"(zero), [ n_frep ] "r"(IN_CH / 2 - 1)
+            : "ft0", "ft1", "ft2"
+        );
         /// NON-UNROLLED VERSION
 
 
@@ -718,7 +722,16 @@ static inline void benchmark_gradient_update_fp32_opt(uint32_t IN_CH, uint32_t O
     
     float b_grad_update = 0.0;
     // register float W_checksum = 0.0;
+
+    /// NON-UNROLLED VERSION
     register v2f32 reduce_reg;
+    /// NON-UNROLLED VERSION
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 4;
+    // register v2s reduce_reg[unroll];
+    /// UNROLLED VERSION
+
     register float sum = 0.0;
     register v2f32 W_grad_update;
     // float loss_val = 0.0;
@@ -772,8 +785,9 @@ static inline void benchmark_gradient_update_fp32_opt(uint32_t IN_CH, uint32_t O
 
         // printf("Benchmark GRADIENT UPDATE FP32 with SSRs: bias_grads[%u] = %f\n", idx_eff, b_grad_update);
         
-        snrt_ssr_enable();  
+        snrt_ssr_enable();
 
+        /// NON-UNROLLED VERSION
         asm volatile(
             "vfcpka.s.s         %[reduce_reg], %[b_grad], %[b_grad] \n"       // load the bias gradient for each vector
             "frep.o             %[n_frep], 2, 0, 0 \n"
@@ -788,6 +802,39 @@ static inline void benchmark_gradient_update_fp32_opt(uint32_t IN_CH, uint32_t O
               [n_frep] "r"(IN_CH / 2 - 1)
             : "ft0", "ft1", "ft2"
         );
+        /// END OF NON-UNROLLED VERSION
+
+        /// UNROLLED VERSION
+        // asm volatile(
+        //             // "vfcpka.s.s         %[sum], %[zero_reg], %[zero_reg] \n" 
+        //             "vfcpka.s.s         %[reduce_reg_0], %[b_grad], %[b_grad] \n"       // load the bias gradient for each vector
+        //             "vfcpka.s.s         %[reduce_reg_1], %[b_grad], %[b_grad] \n" 
+        //             "vfcpka.s.s         %[reduce_reg_2], %[b_grad], %[b_grad] \n" 
+        //             "vfcpka.s.s         %[reduce_reg_3], %[b_grad], %[b_grad] \n" 
+        //             "frep.o             %[n_frep], 8, 0, 0 \n"
+        //             "vfmul.s            %[reduce_reg_0], %[reduce_reg_0], ft0 \n"         // compute weight update b_grad * image
+        //             "vfmul.s            %[reduce_reg_1], %[reduce_reg_1], ft0 \n"
+        //             "vfmul.s            %[reduce_reg_2], %[reduce_reg_2], ft0 \n"
+        //             "vfmul.s            %[reduce_reg_3], %[reduce_reg_3], ft0 \n"
+        //             "vfadd.s            ft2, %[reduce_reg_0], ft1 \n"         // add weight update to weight gradient
+        //             "vfadd.s            ft2, %[reduce_reg_1], ft1 \n"
+        //             "vfadd.s            ft2, %[reduce_reg_2], ft1 \n"
+        //             "vfadd.s            ft2, %[reduce_reg_3], ft1 \n"
+        //             // "vfadd.s            ft2, %[reduce_reg_0], %[zero_reg] \n"           // write the values into the weight gradients
+        //             // "vfsum.s            %[sum], %[reduce_reg_0]\n"             // compute the checksum of the weight gradients --> remove it for benchmarking
+        //             // "vfadd.s            ft2, %[reduce_reg_1], %[zero_reg] \n"
+        //             // "vfsum.s            %[sum], %[reduce_reg_1]\n"
+        //             // "vfadd.s            ft2, %[reduce_reg_2], %[zero_reg] \n"
+        //             // "vfsum.s            %[sum], %[reduce_reg_2]\n"
+        //             // "vfadd.s            ft2, %[reduce_reg_3], %[zero_reg] \n"
+        //             // "vfsum.s            %[sum], %[reduce_reg_3]\n"
+        //             : //[zero_reg] "+&f"(zero_reg), [ sum ] "+&f"(sum), 
+        //               [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64),
+        //               [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
+        //             : [b_grad] "f"(b_grad_update), [n_frep] "r"(IN_CH / (2 * unroll) - 1)
+        //             : "ft0", "ft1", "ft2"
+        // );
+        /// END OF UNROLLED VERSION
 
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
@@ -828,6 +875,13 @@ static inline void benchmark_training_step_fp32_opt(uint32_t IN_CH, uint32_t OUT
 
     // convert number of images to float for vectorized computation
     register v2f32 lr_vec;
+    register v2f32 W_update;
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 4;
+    // register v2s W_update_reg[unroll];
+    /// UNROLLED VERSION
+
     // pack the learning rate and number of images into a vector for vectorized computation
     asm volatile(
         "vfcpka.s.s          %[lr_vec], %[lr], %[lr] \n"
@@ -877,6 +931,7 @@ static inline void benchmark_training_step_fp32_opt(uint32_t IN_CH, uint32_t OUT
 
         snrt_ssr_enable();
 
+        /// NON-UNROLLED VERSION
         asm volatile(
                     "frep.o            %[n_frep], 2, 0, 0 \n"
                     "vfmul.s           ft5, ft0, %[lr_vec] \n"  // multiply the weight gradient with the learning rate
@@ -886,7 +941,30 @@ static inline void benchmark_training_step_fp32_opt(uint32_t IN_CH, uint32_t OUT
                 : [lr_vec] "f"(lr_vec), 
                   [n_frep] "r"(IN_CH / 2 - 1)
                 : "ft0", "ft1", "ft2"
-        ); 
+        );
+        /// END NON-UNROLLED VERSION 
+
+        /// UNROLLED VERSION
+        // asm volatile(
+        //             "frep.o              %[n_frep], 8, 0, 0 \n"
+        //             "vfmul.s             %[W_update_reg_0], %[lr_vec], ft0 \n"
+        //             "vfmul.s             %[W_update_reg_1], %[lr_vec], ft0 \n"
+        //             "vfmul.s             %[W_update_reg_2], %[lr_vec], ft0 \n"
+        //             "vfmul.s             %[W_update_reg_3], %[lr_vec], ft0 \n"
+        //             "vfadd.s             ft2, ft1, %[W_update_reg_0] \n"
+        //             "vfadd.s             ft2, ft1, %[W_update_reg_1] \n"
+        //             "vfadd.s             ft2, ft1, %[W_update_reg_2] \n"
+        //             "vfadd.s             ft2, ft1, %[W_update_reg_3] \n"
+        //             // "vfmul.s              %[reduce_reg_1], %[lr_vec], ft0 \n"
+        //             // "vfmul.s              %[reduce_reg_2], %[lr_vec], ft0 \n"
+        //             // "vfmul.s              %[reduce_reg_3], %[lr_vec], ft0 \n"
+        //         : [W_update_reg_0] "+&f"(W_update_reg[0].f64), [W_update_reg_1] "+&f"(W_update_reg[1].f64),
+        //           [W_update_reg_2] "+&f"(W_update_reg[2].f64), [W_update_reg_3] "+&f"(W_update_reg[3].f64)
+        //         : [lr_vec] "f"(lr_vec), 
+        //           [n_frep] "r"(IN_CH / (2 * unroll) - 1)
+        //         : "ft0", "ft1", "ft2"
+        // );
+        /// END UNROLLED VERSION
 
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
@@ -940,13 +1018,21 @@ static inline void benchmark_feedforward_fp16_opt(uint32_t IN_CH, uint32_t OUT_C
     // INFO: for simplicity image is converted to dtype __fp16 
     const register float zero = 0.0f;
 
+    /// NON-UNROLLED VERSION
+    register v2f32 reduce_reg;
+    /// END NON-UNROLLED VERSION
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 4;
+    // register v2s reduce_reg[unroll];
+    /// UNROLLED VERSION
+
     __fp16 acc = 0.0f;
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
 
-        register v2f32 reduce_reg;
         register float sum = 0.0f;
-        register float tacc = 0.0f;
+        // register float tacc = 0.0f;
 
         // SSR strides and bounds only have to be configured
         // once in the beginning
@@ -973,23 +1059,49 @@ static inline void benchmark_feedforward_fp16_opt(uint32_t IN_CH, uint32_t OUT_C
 
         acc = biases[ldB * out];
             
+        /// NON-UNROLLED VERSION
         // calculate the dot product of the image and the weights (increment by four columns in each iteration)
         asm volatile(
             "vfcpka.s.s       %[reduce_reg], %[zero], %[zero]\n"
             "frep.o           %[n_frep], 1, 0, 0\n"
             "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
             "vfsum.s          %[sum], %[reduce_reg]\n"
-            "fadd.s           %[tacc], %[zero], %[sum] \n"
-        : [sum] "+f"(sum), [tacc] "+f"(tacc), 
+            // "fadd.s           %[tacc], %[zero], %[sum] \n"
+        : [sum] "+f"(sum), //[tacc] "+f"(tacc), 
           [reduce_reg] "+&f"(reduce_reg)
         : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
         : "ft0", "ft1", "ft2"
         );
+        /// END NON-UNROLLED VERSION
+
+        /// UNROLLED VERSION
+        // asm volatile(
+        //     "vfcpka.s.s       %[reduce_reg_0], %[zero], %[zero]\n"
+        //     "vfcpka.s.s       %[reduce_reg_1], %[zero], %[zero]\n"
+        //     "vfcpka.s.s       %[reduce_reg_2], %[zero], %[zero]\n"
+        //     "vfcpka.s.s       %[reduce_reg_3], %[zero], %[zero]\n"
+        //     "frep.o           %[n_frep], 4, 0, 0\n"
+        //     "vfdotpex.s.h     %[reduce_reg_0], ft1, ft0 \n"
+        //     "vfdotpex.s.h     %[reduce_reg_1], ft1, ft0 \n"
+        //     "vfdotpex.s.h     %[reduce_reg_2], ft1, ft0 \n"
+        //     "vfdotpex.s.h     %[reduce_reg_3], ft1, ft0 \n"
+        //     "vfsum.s          %[sum], %[reduce_reg_0]\n"
+        //     "vfsum.s          %[sum], %[reduce_reg_1]\n"
+        //     "vfsum.s          %[sum], %[reduce_reg_2]\n"
+        //     "vfsum.s          %[sum], %[reduce_reg_3]\n"
+        //     // "fadd.s           %[tacc], %[zero], %[sum] \n"
+        // : [sum] "+f"(sum), //[tacc] "+f"(tacc), 
+        //   [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64),
+        //   [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
+        // : [zero] "f"(zero), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
+        // : "ft0", "ft1", "ft2"
+        // );
+        /// END UNROLLED VERSION
 
         // End of SSR region.
         snrt_ssr_disable();
         // snrt_fpu_fence();
-        acc += tacc;
+        acc += sum;
         activations[ldB * out] = acc;
         acc = 0.0;
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
@@ -1075,8 +1187,16 @@ static inline void benchmark_gradient_update_fp16_opt(uint32_t IN_CH, uint32_t O
     asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
 
     register float b_grad_update = 0.0;
-    register v4f16 b_grad_update_reg;
+    
+    /// NON-UNROLLED VERSION
+    register v4f16 reduce_reg;
     register v4f16 W_grad_update_reg;
+    /// END NON-UNROLLED VERSION
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 4;
+    // register v4s reduce_reg[unroll];
+    /// END UNROLLED VERSION
     
 
     // __fp16 W_checksum = 0.0;
@@ -1123,16 +1243,44 @@ static inline void benchmark_gradient_update_fp16_opt(uint32_t IN_CH, uint32_t O
             // Start of SSR region
             snrt_ssr_enable();
 
+            /// NON-UNROLLED VERSION
             asm volatile(
-                "vfcpka.h.s      %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
-                "vfcpkb.h.s      %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.h.s      %[reduce_reg], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.h.s      %[reduce_reg], %[b_grad_update], %[b_grad_update] \n"
                 "frep.o          %[n_frep], 2, 0, 0 \n"
-                "vfmul.h         %[W_grad_update_reg], ft0, %[b_grad_update_reg] \n"
+                "vfmul.h         %[W_grad_update_reg], ft0, %[reduce_reg] \n"
                 "vfadd.h         ft2, %[W_grad_update_reg], ft1 \n"
-                : [b_grad_update_reg] "+&f"(b_grad_update_reg), [W_grad_update_reg] "+&f"(W_grad_update_reg)
+                : [reduce_reg] "+&f"(reduce_reg), [W_grad_update_reg] "+&f"(W_grad_update_reg)
                 : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / 4 - 1)
                 : "ft0", "ft1", "ft2"
             );
+            /// END NON-UNROLLED VERSION
+
+            /// UNROLLED VERSION
+            // asm volatile(
+            //     "vfcpka.h.s      %[reduce_reg_0], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.h.s      %[reduce_reg_0], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpka.h.s      %[reduce_reg_1], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.h.s      %[reduce_reg_1], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpka.h.s      %[reduce_reg_2], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.h.s      %[reduce_reg_2], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpka.h.s      %[reduce_reg_3], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.h.s      %[reduce_reg_3], %[b_grad_update], %[b_grad_update] \n"
+            //     "frep.o          %[n_frep], 8, 0, 0 \n"
+            //     "vfmul.h         %[reduce_reg_0], ft0, %[reduce_reg_0] \n"
+            //     "vfmul.h         %[reduce_reg_1], ft0, %[reduce_reg_1] \n"
+            //     "vfmul.h         %[reduce_reg_2], ft0, %[reduce_reg_2] \n"
+            //     "vfmul.h         %[reduce_reg_3], ft0, %[reduce_reg_3] \n"
+            //     "vfadd.h         ft2, %[reduce_reg_0], ft1 \n"
+            //     "vfadd.h         ft2, %[reduce_reg_1], ft1 \n"
+            //     "vfadd.h         ft2, %[reduce_reg_2], ft1 \n"
+            //     "vfadd.h         ft2, %[reduce_reg_3], ft1 \n"
+            //     : [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64), 
+            //       [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
+            //     : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
+            //     : "ft0", "ft1", "ft2"
+            // );
+            /// END UNROLLED VERSION
 
             snrt_ssr_disable();
             // INFO: after disabling the SSRs we can free the registers
@@ -1166,6 +1314,11 @@ static inline void benchmark_training_step_fp16_opt(uint32_t IN_CH, uint32_t OUT
     uint16_t idx_eff;
 
     register v4f16 lr_reg;
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 4;
+    // register v4s W_update_reg[unroll];
+    /// END UNROLLED VERSION
 
     asm volatile (
         "vfcpka.h.s      %[lr_reg], %[lr], %[lr] \n"
@@ -1217,6 +1370,7 @@ static inline void benchmark_training_step_fp16_opt(uint32_t IN_CH, uint32_t OUT
         // Start of SSR region
         snrt_ssr_enable();
 
+        /// NON-UNROLLED VERSION
         asm volatile(
             "frep.o          %[n_frep], 2, 0, 0 \n"
             "vfmul.h         ft5, ft0, %[lr_vec] \n"
@@ -1225,6 +1379,25 @@ static inline void benchmark_training_step_fp16_opt(uint32_t IN_CH, uint32_t OUT
             : [n_frep] "r"(IN_CH / 4 - 1), [lr_vec] "f"(lr_reg)
             : "ft0", "ft1", "ft2"
         );
+        /// END NON-UNROLLED VERSION
+        
+        /// UNROLLED VERSION
+        // asm volatile(
+        //     "frep.o          %[n_frep], 8, 0, 0 \n"
+        //     "vfmul.h         %[W_update_reg_0], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_1], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_2], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_3], ft0, %[lr_vec] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_0] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_1] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_2] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_3] \n"
+        //     : [W_update_reg_0] "+&f"(W_update_reg[0].f64), [W_update_reg_1] "+&f"(W_update_reg[1].f64), 
+        //       [W_update_reg_2] "+&f"(W_update_reg[2].f64), [W_update_reg_3] "+&f"(W_update_reg[3].f64)
+        //     : [n_frep] "r"(IN_CH / (4 * unroll) - 1), [lr_vec] "f"(lr_reg)
+        //     : "ft0", "ft1", "ft2"
+        // );
+        /// END UNROLLED VERSION
 
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
@@ -1251,15 +1424,18 @@ static inline void benchmark_feedforward_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH
     register volatile double ft2 asm("ft2");
     asm volatile("" : "=f"(ft0), "=f"(ft1), "=f"(ft2));
 
-    char acc = 0b00000000;
-    // uint32_t idx_eff;
-
     const register float zero = 0.0;
-    register float acc_float;
-    register v8s convert_tofp32;
-    register v4f16 c;
-    register v4f16 bias_tofp16;
-    register v2f32 bias_tofp32;
+    register float acc_float = 0.0;
+
+    /// NON-UNROLLED VERSION
+    register v8s c_vec;
+    /// END NON-UNROLLED VERSION
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 7;
+    // register v8s c_vec[unroll];
+    /// END UNROLLED VERSION
+
     register v2s sum;
 
     for (uint32_t out = 0; out < OUT_CH; out++) {
@@ -1284,28 +1460,58 @@ static inline void benchmark_feedforward_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH
         // Start of SSR region
         snrt_ssr_enable();
 
-        acc = biases[ldB * out];
-
-        convert_tofp32.vec[0] = acc; 
-
+        /// NON-UNROLLED VERSION
+        c_vec = (v8s) {biases[ldB * out], 0, 0, 0, 0, 0, 0, 0}; 
 
         asm volatile(
             "vfcpka.s.s      %[sum], %[zero], %[zero] \n"
-            "vfcpka.s.s      %[c], %[zero], %[zero] \n"
             "vfcpka.s.s      %[acc_float], %[zero], %[zero] \n"
-            "vfcpka.s.s      %[bias_tofp16], %[zero], %[zero] \n"
-            "vfcpka.s.s      %[bias_tofp32], %[zero], %[zero] \n"
             "frep.o          %[n_frep], 1, 0, 0 \n"
-            "vfdotpex.h.b    %[c], ft1, ft0 \n"
-            "vfsumex.s.h     %[sum], %[c] \n"
+            "vfdotpex.h.b    %[c_vec], ft1, ft0 \n"
+            "vfsumex.s.h     %[sum], %[c_vec] \n"
             "vfsum.s         %[acc_float], %[sum] \n"
-            "vfsumex.h.b     %[bias_tofp16], %[convert_tofp32] \n"
-            "vfsumex.s.h     %[bias_tofp32], %[bias_tofp16] \n" 
-            : [acc_float] "+&f"(acc_float), [sum] "+&f"(sum.f64), [c] "+&f"(c),
-              [bias_tofp16] "+&f"(bias_tofp16), [bias_tofp32] "+&f"(bias_tofp32), [convert_tofp32] "+&f"(convert_tofp32.f64)
+            : [acc_float] "+&f"(acc_float), [sum] "+&f"(sum.f64), [c_vec] "+&f"(c_vec.f64)
             : [zero] "f"(zero), [n_frep] "r"(IN_CH / 8 - 1)
             : "ft0", "ft1", "ft2"
         );
+        /// END NON-UNROLLED VERSION
+
+        /// UNROLLED VERSION
+        // c_vec[0] = (v8s) {biases[ldB * out], 0, 0, 0, 0, 0, 0, 0}; 
+        // c_vec[1] = (v8s) {0, 0, 0, 0, 0, 0, 0, 0};
+        // c_vec[2] = (v8s) {0, 0, 0, 0, 0, 0, 0, 0};
+        // c_vec[3] = (v8s) {0, 0, 0, 0, 0, 0, 0, 0};
+        // c_vec[4] = (v8s) {0, 0, 0, 0, 0, 0, 0, 0};
+        // c_vec[5] = (v8s) {0, 0, 0, 0, 0, 0, 0, 0};
+        // c_vec[6] = (v8s) {0, 0, 0, 0, 0, 0, 0, 0};
+
+
+        // asm volatile(
+        //     "vfcpka.s.s      %[sum], %[zero], %[zero] \n"
+        //     // "vfcpka.s.s      %[acc_float], %[zero], %[zero] \n"
+        //     "frep.o          %[n_frep], 7, 0, 0 \n"
+        //     "vfdotpex.h.b    %[c_vec_0], ft1, ft0 \n"
+        //     "vfdotpex.h.b    %[c_vec_1], ft1, ft0 \n"
+        //     "vfdotpex.h.b    %[c_vec_2], ft1, ft0 \n"
+        //     "vfdotpex.h.b    %[c_vec_3], ft1, ft0 \n"
+        //     "vfdotpex.h.b    %[c_vec_4], ft1, ft0 \n"
+        //     "vfdotpex.h.b    %[c_vec_5], ft1, ft0 \n"
+        //     "vfdotpex.h.b    %[c_vec_6], ft1, ft0 \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_0] \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_1] \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_2] \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_3] \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_4] \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_5] \n"
+        //     "vfsumex.s.h     %[sum], %[c_vec_6] \n"
+        //     "vfsum.s         %[acc_float], %[sum] \n"
+        //     : [acc_float] "+&f"(acc_float), [sum] "+&f"(sum.f64), [c_vec_0] "+&f"(c_vec[0].f64), 
+        //       [c_vec_1] "+&f"(c_vec[1].f64), [c_vec_2] "+&f"(c_vec[2].f64), 
+        //       [c_vec_3] "+&f"(c_vec[3].f64), [c_vec_4] "+&f"(c_vec[4].f64), 
+        //       [c_vec_5] "+&f"(c_vec[5].f64), [c_vec_6] "+&f"(c_vec[6].f64)
+        //     : [zero] "f"(zero), [n_frep] "r"(IN_CH / (8 * unroll) - 1)
+        //     : "ft0", "ft1", "ft2"
+        // );
 
 
         snrt_ssr_disable();
@@ -1316,9 +1522,9 @@ static inline void benchmark_feedforward_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH
         //     acc_float = sum.vec[1] * 2;//0.0f;
         // }
 
-        
-        activations_fp32[ldB * out] = acc_float + bias_tofp32[0];
-        // printf("Benchmark FEEDFORWARD FP8 with SSRs again: activations_fp32[%u] = %f\n", idx_eff, activations_fp32[ldB * out]);
+        // printf("Benchmark FEEDFORWARD FP8 SIMD with SSRs: acc_float[%u] = %f\n", ldB * out, acc_float);
+        activations_fp32[ldB * out] = acc_float;
+        // printf("Benchmark FEEDFORWARD FP8 with SSRs again: activations_fp32[%u] = %f\n", ldB * out, activations_fp32[ldB * out]);
 
     }
 
@@ -1402,16 +1608,15 @@ static inline void benchmark_gradient_update_fp8_opt(uint32_t IN_CH, uint32_t OU
     // char W_grad_acc;
 
     register v8f8 b_grad_update_reg;
+
+    /// NON-UNROLLED VERSION
     register v8f8 W_grad_update_reg;
-    // register v8s W_checksum_fp8_reg;
-    // register v4f16 W_checksum_fp16_reg;
-    // register v2f32 W_checksum_fp32_reg;
+    /// END NON-UNROLLED VERSION
 
-    // register v8s W_acc_fp8_reg;
-    // register v4f16 W_acc_fp16_reg;
-    // register v2f32 W_acc_fp32_reg;
-
-    // register v4f16 c;
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 7;
+    // register v8s W_grad_update_reg[unroll];
+    /// END UNROLLED VERSION
 
 
     for(uint32_t out = 0; out < OUT_CH; out++){
@@ -1453,7 +1658,7 @@ static inline void benchmark_gradient_update_fp8_opt(uint32_t IN_CH, uint32_t OU
         b_grad_update = (idx_eff == *target) ? activations_fp32[ldB * out] - 1 : activations_fp32[ldB * out];
         bias_grads[ldB * out] = b_grad_update;
 
-        // printf("Benchmark GRADIENT UPDATE FP8 with SSRs: bias_grads[%u] = %f\n", idx_eff, bias_grads[ldB * out]);
+        // printf("Benchmark GRADIENT UPDATE FP8 with SSRs: bias_grads = %f\n", bias_grads[ldB * out]);
 
         snrt_ssr_enable();
 
@@ -1471,6 +1676,36 @@ static inline void benchmark_gradient_update_fp8_opt(uint32_t IN_CH, uint32_t OU
             : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0), [n_frep] "r"(IN_CH / 8 - 1)
             : "ft0", "ft1", "ft2"
         );
+
+        // asm volatile(
+        //     "vfcpka.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+        //     "vfcpkb.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+        //     "vfcpkc.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+        //     "vfcpkd.b.s       %[b_grad_update_reg], %[b_grad_update], %[b_grad_update] \n"
+        // //     // "vfcpka.s.s       %[W_grad_update_reg], %[zero], %[zero] \n"
+        //     "frep.o           %[n_frep], 14, 0, 0 \n"
+        // //     // "vfdotpex.h.b     %[c], ft1, ft0\n" // for debugging
+        //     "vfmul.b          %[W_grad_update_reg_0], %[b_grad_update_reg], ft0 \n" 
+        //     "vfmul.b          %[W_grad_update_reg_1], %[b_grad_update_reg], ft0 \n"
+        //     "vfmul.b          %[W_grad_update_reg_2], %[b_grad_update_reg], ft0 \n"
+        //     "vfmul.b          %[W_grad_update_reg_3], %[b_grad_update_reg], ft0 \n"
+        //     "vfmul.b          %[W_grad_update_reg_4], %[b_grad_update_reg], ft0 \n"
+        //     "vfmul.b          %[W_grad_update_reg_5], %[b_grad_update_reg], ft0 \n"
+        //     "vfmul.b          %[W_grad_update_reg_6], %[b_grad_update_reg], ft0 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_0], ft1 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_1], ft1 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_2], ft1 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_3], ft1 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_4], ft1 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_5], ft1 \n"
+        //     "vfadd.b          ft2, %[W_grad_update_reg_6], ft1 \n"
+        //     : [b_grad_update_reg] "+&f"(b_grad_update_reg), [W_grad_update_reg_0] "+&f"(W_grad_update_reg[0].f64), 
+        //       [W_grad_update_reg_1] "+&f"(W_grad_update_reg[1].f64), [W_grad_update_reg_2] "+&f"(W_grad_update_reg[2].f64), 
+        //       [W_grad_update_reg_3] "+&f"(W_grad_update_reg[3].f64), [W_grad_update_reg_4] "+&f"(W_grad_update_reg[4].f64), 
+        //       [W_grad_update_reg_5] "+&f"(W_grad_update_reg[5].f64), [W_grad_update_reg_6] "+&f"(W_grad_update_reg[6].f64)
+        //     : [b_grad_update] "f"(b_grad_update), [zero] "f"(0.0), [n_frep] "r"(IN_CH / (8 * unroll) - 1)
+        //     : "ft0", "ft1", "ft2"
+        // );
 
         snrt_ssr_disable();
         asm volatile("" ::"f"(ft0), "f"(ft1), "f"(ft2));
@@ -1550,6 +1785,8 @@ static inline void benchmark_gradient_update_fp8_opt(uint32_t IN_CH, uint32_t OU
 
     }
 
+    snrt_cluster_hw_barrier();
+
 }
 
 void benchmark_training_step_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH, 
@@ -1567,6 +1804,11 @@ void benchmark_training_step_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH,
     // uint16_t idx_eff;
 
     register v8f8 lr_reg;
+
+    /// UNROLLED VERSION
+    // const uint32_t unroll = 7;
+    // register v8s W_update_reg[unroll];
+    /// END UNROLLED VERSION
 
     asm volatile (
         "vfcpka.b.s     %[lr_reg], %[lr], %[lr] \n"
@@ -1604,6 +1846,8 @@ void benchmark_training_step_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH,
 
         biases[ldB * out] -= lr * bias_grads[ldB * out]; 
 
+        // printf("Benchmark TRAINING STEP FP8 with SSRs: bias_grads = %f\n", bias_grads[ldB * out]);
+
 
         // Start of SSR region
         snrt_ssr_enable();
@@ -1616,6 +1860,30 @@ void benchmark_training_step_fp8_opt(uint32_t IN_CH, uint32_t OUT_CH,
             : [n_frep] "r"(IN_CH / 8 - 1), [lr_vec] "f"(lr_reg)
             : "ft0", "ft1", "ft2"
         );
+
+        // asm volatile(
+        //     "frep.o          %[n_frep], 14, 0, 0 \n"
+        //     "vfmul.h         %[W_update_reg_0], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_1], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_2], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_3], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_4], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_5], ft0, %[lr_vec] \n"
+        //     "vfmul.h         %[W_update_reg_6], ft0, %[lr_vec] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_0] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_1] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_2] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_3] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_4] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_5] \n"
+        //     "vfadd.h         ft2, ft1, %[W_update_reg_6] \n"
+        //     : [W_update_reg_0] "+&f" (W_update_reg[0].f64), [W_update_reg_1] "+&f" (W_update_reg[1].f64),
+        //       [W_update_reg_2] "+&f" (W_update_reg[2].f64), [W_update_reg_3] "+&f" (W_update_reg[3].f64), 
+        //       [W_update_reg_4] "+&f" (W_update_reg[4].f64), [W_update_reg_5] "+&f" (W_update_reg[5].f64), 
+        //       [W_update_reg_6] "+&f" (W_update_reg[6].f64)
+        //     : [n_frep] "r"(IN_CH / (8 * unroll) - 1), [lr_vec] "f"(lr_reg)
+        //     : "ft0", "ft1", "ft2"
+        // );
 
         snrt_ssr_disable();
         // INFO: after disabling the SSRs we can free the registers
