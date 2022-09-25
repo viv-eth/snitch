@@ -212,6 +212,8 @@ struct BootromMultiCluster {
 
 // INFO: this part is taken from BootrmOccamy, except that we are defining 
 // multiple clusters 
+
+//FIXME: infer number of clusters for BootRom from the config file
 impl Default for BootromMultiCluster {
     fn default() -> Self {
         Self {
@@ -223,7 +225,7 @@ impl Default for BootromMultiCluster {
             tcdm_offset: AtomicU32::new(0x40000),
             global_mem_start: AtomicU64::new(0x80000000),
             global_mem_end: AtomicU64::new(0x100000000),
-            cluster_count: AtomicU32::new(2),
+            cluster_count: AtomicU32::new(1),
             s1_quadrant_count: AtomicU32::new(1),
             clint_base: AtomicU32::new(0x4000000),
         }
