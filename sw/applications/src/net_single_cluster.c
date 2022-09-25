@@ -10,11 +10,21 @@
 #include "snrt.h"
 #include "utils.h"
 
+// define in which precision to run the network
 #define PREC 64
-#define HIGH_DIM 1
+
+// define whether to use MNIST dataset size or full TCDM size
+#define HIGH_DIM 0
+
+// define which kernel to run
+#define FEEDFORWARD 1
+#define GRADIENT_UPDATE 0
+#define TRAINING_STEP 0
 
 # if PREC == 64
-    #include "data_fp64_benchmark.h" //--> For FP64 tests
+    # if HIGH_DIM == 0
+        #include "data_fp64_all_mnist.h"
+    # endif
 # elif PREC == 32
 
     # if HIGH_DIM == 0
@@ -39,7 +49,9 @@
 int main(){
 
     mnist_t.W = (void *)mnist_weights_dram;
+    mnist_t.W_grads = (void *)mnist_weight_grads_dram;
     mnist_t.b = (void *)mnist_biases_dram;
+    mnist_t.b_grads = (void *)mnist_bias_grads_dram;
 
     // NOTE At the moment we are using five MNIST images only
     // for simulation purposes

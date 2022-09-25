@@ -121,7 +121,6 @@ void mnist_benchmark(const network_benchmark_t *n){
                     snrt_dma_start_1d(biases_cl0,                 // destination
                                     n->b,                     // source
                                     PREC * OUT_CH);    // size
-                snrt_dma_wait_all();
 
                 // load weight data into Cluster 0 memory
                 snrt_dma_txid_t txid_W = 
@@ -138,6 +137,7 @@ void mnist_benchmark(const network_benchmark_t *n){
                                     PREC * IN_CH);       // size
 
         // wait until each DMA transfer done
+                snrt_dma_wait_all();
         snrt_dma_stop_tracking();
 
     }

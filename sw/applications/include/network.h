@@ -164,3 +164,20 @@ typedef struct network_benchmark_t_ {
     precision_t dtype;
     
 } network_benchmark_t;
+
+typedef struct network_single_cluster_t_ {
+    uint32_t IN_CH;
+    uint32_t OUT_CH;
+
+    void *b;
+    void *W;
+
+    void *b_grads;
+    void *W_grads;
+
+    void *images;
+    uint32_t *targets;
+
+    precision_t dtype;
+    
+} network_single_cluster_t;

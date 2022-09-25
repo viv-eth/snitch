@@ -10,4 +10,4 @@
  * @param n network_t struct holding all addresses and parameters
  */
 
-void single_cluster(const network_benchmark_t *n);
+void single_cluster(const network_single_cluster_t *n);
