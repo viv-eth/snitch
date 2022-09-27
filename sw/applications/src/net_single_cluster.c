@@ -17,9 +17,9 @@
 #define HIGH_DIM 0
 
 // define which kernel to run
-#define FEEDFORWARD 1
+#define FEEDFORWARD 0
 #define GRADIENT_UPDATE 0
-#define TRAINING_STEP 0
+#define TRAINING_STEP 1
 
 # if PREC == 64
     # if HIGH_DIM == 0

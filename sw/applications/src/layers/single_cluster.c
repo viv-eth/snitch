@@ -13,8 +13,8 @@
 #define BASELINE 1
 
 // define which kernel to run
-#define FEEDFORWARD 0
-#define GRADIENT_UPDATE 1
+#define FEEDFORWARD 1
+#define GRADIENT_UPDATE 0
 #define TRAINING_STEP 0
 
 // define whether RTL simulation is used
