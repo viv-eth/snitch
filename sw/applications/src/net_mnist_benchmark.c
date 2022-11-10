@@ -15,8 +15,8 @@
 #include "snrt.h"
 #include "utils.h"
 
-#define PREC 8
-#define HIGH_DIM 1
+#define PREC 16
+#define HIGH_DIM 0
 
 # if PREC == 64
     #include "data_fp64_benchmark.h" //--> For FP64 tests

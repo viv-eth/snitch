@@ -1019,12 +1019,12 @@ static inline void benchmark_feedforward_fp16_opt(uint32_t IN_CH, uint32_t OUT_C
     const register float zero = 0.0f;
 
     /// NON-UNROLLED VERSION
-    register v2f32 reduce_reg;
+    // register v2f32 reduce_reg;
     /// END NON-UNROLLED VERSION
 
     /// UNROLLED VERSION
-    // const uint32_t unroll = 4;
-    // register v2s reduce_reg[unroll];
+    const uint32_t unroll = 4;
+    register v2s reduce_reg[unroll];
     /// UNROLLED VERSION
 
     __fp16 acc = 0.0f;
@@ -1061,41 +1061,41 @@ static inline void benchmark_feedforward_fp16_opt(uint32_t IN_CH, uint32_t OUT_C
             
         /// NON-UNROLLED VERSION
         // calculate the dot product of the image and the weights (increment by four columns in each iteration)
-        asm volatile(
-            "vfcpka.s.s       %[reduce_reg], %[zero], %[zero]\n"
-            "frep.o           %[n_frep], 1, 0, 0\n"
-            "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
-            "vfsum.s          %[sum], %[reduce_reg]\n"
-            // "fadd.s           %[tacc], %[zero], %[sum] \n"
-        : [sum] "+f"(sum), //[tacc] "+f"(tacc), 
-          [reduce_reg] "+&f"(reduce_reg)
-        : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
-        : "ft0", "ft1", "ft2"
-        );
+        // asm volatile(
+        //     "vfcpka.s.s       %[reduce_reg], %[zero], %[zero]\n"
+        //     "frep.o           %[n_frep], 1, 0, 0\n"
+        //     "vfdotpex.s.h     %[reduce_reg], ft1, ft0 \n"
+        //     "vfsum.s          %[sum], %[reduce_reg]\n"
+        //     // "fadd.s           %[tacc], %[zero], %[sum] \n"
+        // : [sum] "+f"(sum), //[tacc] "+f"(tacc), 
+        //   [reduce_reg] "+&f"(reduce_reg)
+        // : [zero] "f"(zero), [n_frep] "r"(IN_CH / 4 - 1)
+        // : "ft0", "ft1", "ft2"
+        // );
         /// END NON-UNROLLED VERSION
 
         /// UNROLLED VERSION
-        // asm volatile(
-        //     "vfcpka.s.s       %[reduce_reg_0], %[zero], %[zero]\n"
-        //     "vfcpka.s.s       %[reduce_reg_1], %[zero], %[zero]\n"
-        //     "vfcpka.s.s       %[reduce_reg_2], %[zero], %[zero]\n"
-        //     "vfcpka.s.s       %[reduce_reg_3], %[zero], %[zero]\n"
-        //     "frep.o           %[n_frep], 4, 0, 0\n"
-        //     "vfdotpex.s.h     %[reduce_reg_0], ft1, ft0 \n"
-        //     "vfdotpex.s.h     %[reduce_reg_1], ft1, ft0 \n"
-        //     "vfdotpex.s.h     %[reduce_reg_2], ft1, ft0 \n"
-        //     "vfdotpex.s.h     %[reduce_reg_3], ft1, ft0 \n"
-        //     "vfsum.s          %[sum], %[reduce_reg_0]\n"
-        //     "vfsum.s          %[sum], %[reduce_reg_1]\n"
-        //     "vfsum.s          %[sum], %[reduce_reg_2]\n"
-        //     "vfsum.s          %[sum], %[reduce_reg_3]\n"
-        //     // "fadd.s           %[tacc], %[zero], %[sum] \n"
-        // : [sum] "+f"(sum), //[tacc] "+f"(tacc), 
-        //   [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64),
-        //   [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
-        // : [zero] "f"(zero), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
-        // : "ft0", "ft1", "ft2"
-        // );
+        asm volatile(
+            "vfcpka.s.s       %[reduce_reg_0], %[zero], %[zero]\n"
+            "vfcpka.s.s       %[reduce_reg_1], %[zero], %[zero]\n"
+            "vfcpka.s.s       %[reduce_reg_2], %[zero], %[zero]\n"
+            "vfcpka.s.s       %[reduce_reg_3], %[zero], %[zero]\n"
+            "frep.o           %[n_frep], 4, 0, 0\n"
+            "vfdotpex.s.h     %[reduce_reg_0], ft1, ft0 \n"
+            "vfdotpex.s.h     %[reduce_reg_1], ft1, ft0 \n"
+            "vfdotpex.s.h     %[reduce_reg_2], ft1, ft0 \n"
+            "vfdotpex.s.h     %[reduce_reg_3], ft1, ft0 \n"
+            "vfsum.s          %[sum], %[reduce_reg_0]\n"
+            "vfsum.s          %[sum], %[reduce_reg_1]\n"
+            "vfsum.s          %[sum], %[reduce_reg_2]\n"
+            "vfsum.s          %[sum], %[reduce_reg_3]\n"
+            // "fadd.s           %[tacc], %[zero], %[sum] \n"
+        : [sum] "+f"(sum), //[tacc] "+f"(tacc), 
+          [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64),
+          [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
+        : [zero] "f"(zero), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
+        : "ft0", "ft1", "ft2"
+        );
         /// END UNROLLED VERSION
 
         // End of SSR region.
@@ -1189,13 +1189,13 @@ static inline void benchmark_gradient_update_fp16_opt(uint32_t IN_CH, uint32_t O
     register float b_grad_update = 0.0;
     
     /// NON-UNROLLED VERSION
-    register v4f16 reduce_reg;
-    register v4f16 W_grad_update_reg;
+    // register v4f16 reduce_reg;
+    // register v4f16 W_grad_update_reg;
     /// END NON-UNROLLED VERSION
 
     /// UNROLLED VERSION
-    // const uint32_t unroll = 4;
-    // register v4s reduce_reg[unroll];
+    const uint32_t unroll = 4;
+    register v4s reduce_reg[unroll];
     /// END UNROLLED VERSION
     
 
@@ -1244,42 +1244,42 @@ static inline void benchmark_gradient_update_fp16_opt(uint32_t IN_CH, uint32_t O
             snrt_ssr_enable();
 
             /// NON-UNROLLED VERSION
-            asm volatile(
-                "vfcpka.h.s      %[reduce_reg], %[b_grad_update], %[b_grad_update] \n"
-                "vfcpkb.h.s      %[reduce_reg], %[b_grad_update], %[b_grad_update] \n"
-                "frep.o          %[n_frep], 2, 0, 0 \n"
-                "vfmul.h         %[W_grad_update_reg], ft0, %[reduce_reg] \n"
-                "vfadd.h         ft2, %[W_grad_update_reg], ft1 \n"
-                : [reduce_reg] "+&f"(reduce_reg), [W_grad_update_reg] "+&f"(W_grad_update_reg)
-                : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / 4 - 1)
-                : "ft0", "ft1", "ft2"
-            );
+            // asm volatile(
+            //     "vfcpka.h.s      %[reduce_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "vfcpkb.h.s      %[reduce_reg], %[b_grad_update], %[b_grad_update] \n"
+            //     "frep.o          %[n_frep], 2, 0, 0 \n"
+            //     "vfmul.h         %[W_grad_update_reg], ft0, %[reduce_reg] \n"
+            //     "vfadd.h         ft2, %[W_grad_update_reg], ft1 \n"
+            //     : [reduce_reg] "+&f"(reduce_reg), [W_grad_update_reg] "+&f"(W_grad_update_reg)
+            //     : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / 4 - 1)
+            //     : "ft0", "ft1", "ft2"
+            // );
             /// END NON-UNROLLED VERSION
 
             /// UNROLLED VERSION
-            // asm volatile(
-            //     "vfcpka.h.s      %[reduce_reg_0], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpkb.h.s      %[reduce_reg_0], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpka.h.s      %[reduce_reg_1], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpkb.h.s      %[reduce_reg_1], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpka.h.s      %[reduce_reg_2], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpkb.h.s      %[reduce_reg_2], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpka.h.s      %[reduce_reg_3], %[b_grad_update], %[b_grad_update] \n"
-            //     "vfcpkb.h.s      %[reduce_reg_3], %[b_grad_update], %[b_grad_update] \n"
-            //     "frep.o          %[n_frep], 8, 0, 0 \n"
-            //     "vfmul.h         %[reduce_reg_0], ft0, %[reduce_reg_0] \n"
-            //     "vfmul.h         %[reduce_reg_1], ft0, %[reduce_reg_1] \n"
-            //     "vfmul.h         %[reduce_reg_2], ft0, %[reduce_reg_2] \n"
-            //     "vfmul.h         %[reduce_reg_3], ft0, %[reduce_reg_3] \n"
-            //     "vfadd.h         ft2, %[reduce_reg_0], ft1 \n"
-            //     "vfadd.h         ft2, %[reduce_reg_1], ft1 \n"
-            //     "vfadd.h         ft2, %[reduce_reg_2], ft1 \n"
-            //     "vfadd.h         ft2, %[reduce_reg_3], ft1 \n"
-            //     : [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64), 
-            //       [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
-            //     : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
-            //     : "ft0", "ft1", "ft2"
-            // );
+            asm volatile(
+                "vfcpka.h.s      %[reduce_reg_0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.h.s      %[reduce_reg_0], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.h.s      %[reduce_reg_1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.h.s      %[reduce_reg_1], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.h.s      %[reduce_reg_2], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.h.s      %[reduce_reg_2], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpka.h.s      %[reduce_reg_3], %[b_grad_update], %[b_grad_update] \n"
+                "vfcpkb.h.s      %[reduce_reg_3], %[b_grad_update], %[b_grad_update] \n"
+                "frep.o          %[n_frep], 8, 0, 0 \n"
+                "vfmul.h         %[reduce_reg_0], ft0, %[reduce_reg_0] \n"
+                "vfmul.h         %[reduce_reg_1], ft0, %[reduce_reg_1] \n"
+                "vfmul.h         %[reduce_reg_2], ft0, %[reduce_reg_2] \n"
+                "vfmul.h         %[reduce_reg_3], ft0, %[reduce_reg_3] \n"
+                "vfadd.h         ft2, %[reduce_reg_0], ft1 \n"
+                "vfadd.h         ft2, %[reduce_reg_1], ft1 \n"
+                "vfadd.h         ft2, %[reduce_reg_2], ft1 \n"
+                "vfadd.h         ft2, %[reduce_reg_3], ft1 \n"
+                : [reduce_reg_0] "+&f"(reduce_reg[0].f64), [reduce_reg_1] "+&f"(reduce_reg[1].f64), 
+                  [reduce_reg_2] "+&f"(reduce_reg[2].f64), [reduce_reg_3] "+&f"(reduce_reg[3].f64)
+                : [b_grad_update] "f"(b_grad_update), [n_frep] "r"(IN_CH / (4 * unroll) - 1)
+                : "ft0", "ft1", "ft2"
+            );
             /// END UNROLLED VERSION
 
             snrt_ssr_disable();
@@ -1316,8 +1316,8 @@ static inline void benchmark_training_step_fp16_opt(uint32_t IN_CH, uint32_t OUT
     register v4f16 lr_reg;
 
     /// UNROLLED VERSION
-    // const uint32_t unroll = 4;
-    // register v4s W_update_reg[unroll];
+    const uint32_t unroll = 4;
+    register v4s W_update_reg[unroll];
     /// END UNROLLED VERSION
 
     asm volatile (
@@ -1371,32 +1371,32 @@ static inline void benchmark_training_step_fp16_opt(uint32_t IN_CH, uint32_t OUT
         snrt_ssr_enable();
 
         /// NON-UNROLLED VERSION
-        asm volatile(
-            "frep.o          %[n_frep], 2, 0, 0 \n"
-            "vfmul.h         ft5, ft0, %[lr_vec] \n"
-            "vfadd.h         ft2, ft1, ft5 \n"
-            : 
-            : [n_frep] "r"(IN_CH / 4 - 1), [lr_vec] "f"(lr_reg)
-            : "ft0", "ft1", "ft2"
-        );
+        // asm volatile(
+        //     "frep.o          %[n_frep], 2, 0, 0 \n"
+        //     "vfmul.h         ft5, ft0, %[lr_vec] \n"
+        //     "vfadd.h         ft2, ft1, ft5 \n"
+        //     : 
+        //     : [n_frep] "r"(IN_CH / 4 - 1), [lr_vec] "f"(lr_reg)
+        //     : "ft0", "ft1", "ft2"
+        // );
         /// END NON-UNROLLED VERSION
         
         /// UNROLLED VERSION
-        // asm volatile(
-        //     "frep.o          %[n_frep], 8, 0, 0 \n"
-        //     "vfmul.h         %[W_update_reg_0], ft0, %[lr_vec] \n"
-        //     "vfmul.h         %[W_update_reg_1], ft0, %[lr_vec] \n"
-        //     "vfmul.h         %[W_update_reg_2], ft0, %[lr_vec] \n"
-        //     "vfmul.h         %[W_update_reg_3], ft0, %[lr_vec] \n"
-        //     "vfadd.h         ft2, ft1, %[W_update_reg_0] \n"
-        //     "vfadd.h         ft2, ft1, %[W_update_reg_1] \n"
-        //     "vfadd.h         ft2, ft1, %[W_update_reg_2] \n"
-        //     "vfadd.h         ft2, ft1, %[W_update_reg_3] \n"
-        //     : [W_update_reg_0] "+&f"(W_update_reg[0].f64), [W_update_reg_1] "+&f"(W_update_reg[1].f64), 
-        //       [W_update_reg_2] "+&f"(W_update_reg[2].f64), [W_update_reg_3] "+&f"(W_update_reg[3].f64)
-        //     : [n_frep] "r"(IN_CH / (4 * unroll) - 1), [lr_vec] "f"(lr_reg)
-        //     : "ft0", "ft1", "ft2"
-        // );
+        asm volatile(
+            "frep.o          %[n_frep], 8, 0, 0 \n"
+            "vfmul.h         %[W_update_reg_0], ft0, %[lr_vec] \n"
+            "vfmul.h         %[W_update_reg_1], ft0, %[lr_vec] \n"
+            "vfmul.h         %[W_update_reg_2], ft0, %[lr_vec] \n"
+            "vfmul.h         %[W_update_reg_3], ft0, %[lr_vec] \n"
+            "vfadd.h         ft2, ft1, %[W_update_reg_0] \n"
+            "vfadd.h         ft2, ft1, %[W_update_reg_1] \n"
+            "vfadd.h         ft2, ft1, %[W_update_reg_2] \n"
+            "vfadd.h         ft2, ft1, %[W_update_reg_3] \n"
+            : [W_update_reg_0] "+&f"(W_update_reg[0].f64), [W_update_reg_1] "+&f"(W_update_reg[1].f64), 
+              [W_update_reg_2] "+&f"(W_update_reg[2].f64), [W_update_reg_3] "+&f"(W_update_reg[3].f64)
+            : [n_frep] "r"(IN_CH / (4 * unroll) - 1), [lr_vec] "f"(lr_reg)
+            : "ft0", "ft1", "ft2"
+        );
         /// END UNROLLED VERSION
 
         snrt_ssr_disable();
