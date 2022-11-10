@@ -3,7 +3,9 @@
 # SPDX-License-Identifier: SHL-0.51
 
 # Locate the banshee simulator for test execution.
-set(SNITCH_BANSHEE "${CMAKE_CURRENT_SOURCE_DIR}/../banshee/target/debug/banshee" CACHE PATH "Path to the banshee simulator for testing")
+# /usr/scratch/badile31/msc22f11/msc22f11/snitch/sw/banshee/target/debug/banshee
+# {CMAKE_CURRENT_SOURCE_DIR}/../banshee/target/debug/banshee
+set(SNITCH_BANSHEE "/usr/scratch/badile31/msc22f11/msc22f11/snitch/sw/banshee/target/debug/banshee" CACHE PATH "Path to the banshee simulator for testing")
 set(BANSHEE_TIMEOUT "360" CACHE STRING "Timeout when running tests on banshee")
 # set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=2" "--base-hartid=1" "--train-data-bin-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/src/one_batch_images_fp64_bin" "--train-data-mem-offset=0x80040000" "--train-labels-bin-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/src/one_batch_labels_bin" "--train-labels-mem-offset=0x80108000" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
 set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=1" "--base-hartid=1" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
