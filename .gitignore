@@ -50,4 +50,5 @@ sw/applications/src/*bin*
 sw/applications/src/*test*
 sw/applications/src/CMakeFiles
 sw/applications/src/CMakeCache.txt
+sw/applications/notebooks
 docs/

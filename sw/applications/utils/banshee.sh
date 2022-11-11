@@ -101,6 +101,7 @@ fi
 # generate a random number for the build folder name
 RANDOM_NUMBER=$(($RANDOM % 1000))
 
+cd ../build
 
 start_time=$SECONDS
 cmake-$version -DSNITCH_RUNTIME=snRuntime-$runtime -DCMAKE_TOOLCHAIN_FILE=toolchain-$toolchain ../ 
