@@ -1,4 +1,4 @@
-#OpenFile vsim.wlf
+#OpenFile vsim.wlf gives error
 
 onerror {resume}
 
