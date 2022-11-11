@@ -10,17 +10,7 @@ transcript
 
 gmon.out
 RISCV/
-sw/applications/build/*.txt
-sw/applications/build/*.cmake
-sw/applications/build/*.a 
-sw/applications/build/*.s
-sw/applications/build/*.swp 
-sw/applications/build/*.trace
-sw/applications/build/CMakeFiles/
-sw/applications/build/Makefile
-sw/applications/build/snRuntime
-sw/applications/build/mnist_*
-sw/applications/build/single_cluster
+sw/applications/build/
 sw/applications/MNIST/
 sw/applications/snRuntime/CMakeFiles/
 sw/applications/snRuntime/CTestTestfile.cmake
