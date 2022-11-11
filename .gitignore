@@ -48,4 +48,6 @@ sw/applications/src/*.bin
 sw/applications/src/*binary
 sw/applications/src/*bin*
 sw/applications/src/*test*
+sw/applications/src/CMakeFiles
+sw/applications/src/CMakeCache.txt
 docs/
