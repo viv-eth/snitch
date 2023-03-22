@@ -40,8 +40,8 @@ typedef union {
 */
 
 static inline void SoftMax_baseline(float *activations, int length) {
-// int length = LEN(activations);
-    printf("============= SoftMax feedforward start =============\n");
+
+    // printf("============= SoftMax feedforward start =============\n");
     float sum = 0;
     float max = activations[0];
     int correct, predict = 0;
@@ -62,10 +62,10 @@ static inline void SoftMax_baseline(float *activations, int length) {
     // compute softmax activations
     for (int i = 0; i < length; i++) {
         activations[i] /= sum;
-        printf("activations[%d] = %f\n", i, activations[i]);
+        // printf("activations[%d] = %f\n", i, activations[i]);
     }
 
-    printf("============= SoftMax feedforward end =============\n");
+    // printf("============= SoftMax feedforward end =============\n");
 
     // snrt_cluster_hw_barrier();
 }
@@ -76,31 +76,29 @@ static inline void SoftMax_baseline(float *activations, int length) {
 
 static inline void FeedForward_baseline(float *image, float *activations, float *biases, float *weights) {
 
-    printf("============= Feedforward pass start =============\n");
+    // printf("============= Feedforward pass start =============\n");
 
-    float checksum = 0;
-    float img_checksum = 0;
-    float weight_checksum = 0;
+    // float checksum = 0;
+    // float img_checksum = 0;
+    // float weight_checksum = 0;
     for (int i = 0; i < NUM_CLASSES; i++) {
-        // printf("biases[%d] = %f\n", i, biases[i]);
         activations[i] = biases[i];
         for (int j = 0; j < IN_CH; j++) {
-            // printf("image[%d] = %f\n", j, image[j]);
-            img_checksum += image[j];
-            weight_checksum += weights[i * IN_CH + j];
+            // img_checksum += image[j];
+            // weight_checksum += weights[i * IN_CH + j];
             activations[i] += weights[i * IN_CH + j] * image[j];
         }
 
-        checksum += activations[i];
+        // checksum += activations[i];
 
-        printf("activations[%d] = %f\n", i, activations[i]);
+        // printf("activations[%d] = %f\n", i, activations[i]);
     }
     
     // printf("Activation checksum = %f\n", checksum);
     // printf("Image FeedForward checksum = %f\n", img_checksum);
     // printf("Weight FeedForward checksum = %f\n", weight_checksum);
 
-    printf("============= Feedforward pass end =============\n");
+    // printf("============= Feedforward pass end =============\n");
 
     // snrt_cluster_hw_barrier();
     
@@ -149,26 +147,23 @@ static inline void TrainingStep_baseline(
             float *biases, float *weights, float *W_gradients, float *b_gradients,
             float learning_rate) {
 
-    float b_checksum = 0;
-    float W_checksum = 0;
-    float b_grad_checksum = 0;
-    float W_grad_checksum = 0;
+    // float b_checksum = 0;
+    // float W_checksum = 0;
+    // float b_grad_checksum = 0;
+    // float W_grad_checksum = 0;
     for(int i = 0; i < NUM_CLASSES; i++) {
-        // printf("biases before [%d] = %f\n", i, biases[i]);
-        // printf("biases gradients [%d] = %f\n", i, b_gradients[i]);
         biases[i] -= learning_rate * b_gradients[i] / BATCH_SIZE;
-        // printf("biases after [%d] = %f\n", i, biases[i]);
-        b_grad_checksum += b_gradients[i];
-        b_checksum += biases[i];
+        // b_grad_checksum += b_gradients[i];
+        // b_checksum += biases[i];
         for(int j = 0; j < IN_CH; j++) {
             weights[i * IN_CH + j] -= learning_rate * W_gradients[i * IN_CH + j] / BATCH_SIZE;
-            W_checksum += weights[i * IN_CH + j];
-            W_grad_checksum += W_gradients[i * IN_CH + j];
+            // W_checksum += weights[i * IN_CH + j];
+            // W_grad_checksum += W_gradients[i * IN_CH + j];
         }
     }
 
-    printf("b_checksum = %f\n", b_checksum);
-    printf("W_checksum = %f\n", W_checksum);
+    // printf("b_checksum = %f\n", b_checksum);
+    // printf("W_checksum = %f\n", W_checksum);
     // printf("b_grad_checksum = %f\n", b_grad_checksum);
     // printf("W_grad_checksum = %f\n", W_grad_checksum);
 
