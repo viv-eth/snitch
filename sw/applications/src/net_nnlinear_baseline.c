@@ -21,13 +21,8 @@ int main(){
     nn_linear_baseline_t.W = (void *)nn_linear_baseline_weights_dram;
     nn_linear_baseline_t.b = (void *)nn_linear_baseline_biases_dram;
     
+    // Run the baseline neural network
     nnlinear_backend_baseline(&nn_linear_baseline_t);
-
-    // INFO: replacing global barrier with custom barrier for RTL sims
-    uint32_t cluster_num = snrt_cluster_num();
-    uint32_t cluster_core_num = snrt_cluster_core_num();
-
-    // snrt_generic_cluster_barrier(cluster_num*cluster_core_num);
     snrt_global_barrier();
 
     return 0;
