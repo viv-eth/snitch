@@ -9,6 +9,7 @@ fn main() {
     // Prevent cargo from re-building everything by default.
     // Other subcommands can still emit their own rerun-if-changed lines.
     println!("cargo:rerun-if-changed=build/softfloat.rs");
+    println!("cargo:rustc-link-search=/scratch/vivianep/Downloads/usr/lib64");
 
     // Build the components.
     softfloat::build();
