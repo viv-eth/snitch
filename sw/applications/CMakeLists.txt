@@ -38,6 +38,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_library(layers src/layers/batchnorm_layer.c
                 src/layers/maxpool_layer.c
                 src/layers/conv2d_layer.c
+                src/layers/nnlinear_backend_baseline.c
                 src/layers/linear_layer.c
                 src/layers/softmax_layer.c
                 src/layers/celoss_layer.c
@@ -50,7 +51,6 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
                 src/layers/mnist_fp8.c
                 src/layers/mnist_benchmark.c
                 src/layers/single_cluster.c
-                src/layers/nnlinear_backend_baseline.c
                 src/layers/nnlinear_backend_fp16s.c )
     add_library(utils src/utils/utils.c)
 
@@ -63,6 +63,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_application_executable(conv2d)
     add_snitch_application_executable(gemm)
     add_snitch_application_executable(fusedconv)
+    add_snitch_application_executable(nnlinear_baseline)
     add_snitch_application_executable(linear)
     add_snitch_application_executable(softmax)
     add_snitch_application_executable(celoss)
@@ -75,7 +76,6 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_application_executable(mnist_benchmark)
     add_snitch_application_executable(single_cluster)
     add_snitch_application_executable(mnist)
-    add_snitch_application_executable(nnlinear_baseline)
     add_snitch_application_executable(nnlinear_fp16s)
 
     set(SNITCH_TEST_PREFIX snApplications-)
@@ -85,6 +85,7 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_raw_test_args(conv2d conv2d --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     add_snitch_raw_test_args(gemm gemm --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     add_snitch_raw_test_args(fusedconv fusedconv --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
+    add_snitch_raw_test_args(nnlinear_baseline nnlinear_baseline --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     add_snitch_raw_test_args(linear linear --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     add_snitch_raw_test_args(softmax softmax --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     add_snitch_raw_test_args(celoss celoss --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
@@ -96,7 +97,6 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_raw_test_args(mnist_fp8 mnist_fp8 --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     add_snitch_raw_test_args(mnist_benchmark mnist_benchmark --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     add_snitch_raw_test_args(single_cluster single_cluster --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
-    add_snitch_raw_test_args(nnlinear_baseline nnlinear_baseline --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     add_snitch_raw_test_args(nnlinear_fp16s nnlinear_fp16s --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     # message(STATUS "nnlinear_baseline uses configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml")
     add_snitch_raw_test_args(mnist mnist --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
