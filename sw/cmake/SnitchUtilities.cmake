@@ -5,10 +5,19 @@
 # Locate the banshee simulator for test execution.
 # /usr/scratch/badile31/msc22f11/msc22f11/snitch/sw/banshee/target/debug/banshee
 # {CMAKE_CURRENT_SOURCE_DIR}/../banshee/target/debug/banshee
-set(SNITCH_BANSHEE "/usr/scratch/badile31/msc22f11/msc22f11/snitch/sw/banshee/target/debug/banshee" CACHE PATH "Path to the banshee simulator for testing")
+set(SNITCH_BANSHEE "/scratch/vivianep/master_thesis/snitch/sw/banshee/target/debug/banshee" CACHE PATH "Path to the banshee simulator for testing")
 set(BANSHEE_TIMEOUT "360" CACHE STRING "Timeout when running tests on banshee")
 # set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=2" "--base-hartid=1" "--train-data-bin-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/src/one_batch_images_fp64_bin" "--train-data-mem-offset=0x80040000" "--train-labels-bin-file-path=/scratch/msc22f11/msc22f11/snitch/sw/applications/src/one_batch_labels_bin" "--train-labels-mem-offset=0x80108000" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
-set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=1" "--base-hartid=1" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
+# set(RUN_BANSHEE_ARGS "--num-cores=9" "--num-clusters=1" "--base-hartid=1" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
+# set(RUN_BANSHEE_ARGS "--num-cores=2" "--num-clusters=1" "--base-hartid=1" "--train-data-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/20_features_float32" "--train-data-mem-offset=0x80040000" "--train-labels-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/20_labels_int" "--train-labels-mem-offset=0x80108000" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
+set(RUN_BANSHEE_ARGS "--num-cores=2" "--num-clusters=1" 
+                     "--base-hartid=1" 
+                     "--train-data-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_features_float16" 
+                     "--train-data-mem-offset=0x80040000" 
+                     "--train-labels-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_labels_int" 
+                     "--train-labels-mem-offset=0x80108000" 
+                    #  "--emit-llvm=/scratch/vivianep/master_thesis/snitch/sw/applications/utils/llvm.ir" 
+                     CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
 set(SNITCH_RUNTIME "snRuntime-banshee" CACHE STRING "Target name of the snRuntime flavor to link against")
 set(SNITCH_SIMULATOR "" CACHE PATH "Command to run a binary in an RTL simulation")
 set(SIMULATOR_TIMEOUT "1800" CACHE STRING "Timeout when running tests on RTL simulation")
@@ -48,7 +57,7 @@ macro(add_snitch_executable name)
     # Run target for banshee
     if (SNITCH_RUNTIME STREQUAL "snRuntime-banshee")
         add_custom_target( run-banshee-${name}
-            COMMAND ${SNITCH_BANSHEE} --no-opt-llvm --no-opt-jit ${RUN_BANSHEE_ARGS} --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml --trace $<TARGET_FILE:${name}> > $<TARGET_FILE:${name}>.trace
+            COMMAND ${SNITCH_BANSHEE} --no-opt-llvm --no-opt-jit ${RUN_BANSHEE_ARGS} --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml $<TARGET_FILE:${name}> --trace > $<TARGET_FILE:${name}>.trace
             COMMAND cat $<TARGET_FILE:${name}>.trace | ${SPIKE_DASM} > $<TARGET_FILE:${name}>.trace.txt
             COMMAND awk -F\" \" '{print>\"${name}\"$$3\".txt\"}' $<TARGET_FILE:${name}>.trace.txt
             DEPENDS $<TARGET_FILE:${name}>)
