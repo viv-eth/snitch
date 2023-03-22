@@ -162,7 +162,7 @@ impl Default for BootromCluster {
             tcdm_offset: AtomicU32::new(0x0),
             global_mem_start: AtomicU64::new(0x80000000),
             global_mem_end: AtomicU64::new(0x100000000),
-            cluster_count: AtomicU32::new(2),
+            cluster_count: AtomicU32::new(1),
             s1_quadrant_count: AtomicU32::new(1),
             clint_base: AtomicU32::new(0xffff0000),
         }
@@ -218,7 +218,7 @@ impl Default for BootromMultiCluster {
     fn default() -> Self {
         Self {
             boot_addr: AtomicU32::new(0x1000000),
-            core_count: AtomicU32::new(9),
+            core_count: AtomicU32::new(2),
             hartid_base: AtomicU32::new(1),
             tcdm_start: AtomicU32::new(0x10000000),
             tcdm_size: AtomicU32::new(0x20000),
