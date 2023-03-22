@@ -37,6 +37,9 @@ hw/system/occamy/sw/snRuntime
 hw/system/occamy/wave
 docs/
 sw/applications/archive/
+sw/applications/src/2560*
+sw/applications/src/512*
+sw/applications/src/6000*
 tmp/
 sw/applications/data/*.txt
 sw/applications/data/*.csv
