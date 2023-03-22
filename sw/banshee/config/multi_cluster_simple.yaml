@@ -58,21 +58,3 @@ memory:
     callbacks:
     - name: zero-memory
       size: 64000 
-# - dram:
-#     start: 0x80000000
-#     size: 0x70000000 # dram end address: 0xF0000000
-#     offset: 0x0 # dram is global for all clusters
-#     latency: 4
-#   tcdm:
-#     start: 0x100000 # cluster "num_clusters" start address
-#     size: 0x20000   # size of the TCDM
-#     offset: 0x20000 # offset to next cluster is start + size + offset
-#     latency: 5
-#   periphs:
-#     start: 0x130000 # cluster "num_clusters" start address
-#     size: 0x10000   # size of the peripheral memory space
-#     offset: 0x40000 # offset to start address of next cluster
-#     latency: 2
-#     callbacks:
-#     - name: zero-memory
-#       size: 64000
