@@ -12,10 +12,12 @@ set(BANSHEE_TIMEOUT "360" CACHE STRING "Timeout when running tests on banshee")
 # set(RUN_BANSHEE_ARGS "--num-cores=2" "--num-clusters=1" "--base-hartid=1" "--train-data-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/20_features_float32" "--train-data-mem-offset=0x80040000" "--train-labels-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/20_labels_int" "--train-labels-mem-offset=0x80108000" CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
 set(RUN_BANSHEE_ARGS "--num-cores=2" "--num-clusters=1" 
                      "--base-hartid=1" 
-                     "--train-data-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_features_float16" 
-                     "--train-data-mem-offset=0x80040000" 
-                     "--train-labels-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_labels_int" 
-                     "--train-labels-mem-offset=0x80108000" 
+                     "--file-paths=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_features_float16,/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_labels_int"
+                     "--mem-offsets=0x80040000,0x80108000"
+                    #  "--train-data-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_features_float16" 
+                    #  "--train-data-mem-offset=0x80040000" 
+                    #  "--train-labels-bin-file-path=/scratch/vivianep/master_thesis/snitch/sw/applications/src/512_labels_int" 
+                    #  "--train-labels-mem-offset=0x80108000" 
                     #  "--emit-llvm=/scratch/vivianep/master_thesis/snitch/sw/applications/utils/llvm.ir" 
                      CACHE PATH "Arguments passed to the banshee sim for the run-banshee target")
 set(SNITCH_RUNTIME "snRuntime-banshee" CACHE STRING "Target name of the snRuntime flavor to link against")
