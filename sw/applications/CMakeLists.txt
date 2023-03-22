@@ -35,7 +35,23 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     include_directories(${SNRUNTIME_INCLUDE_DIRS})
 
     add_library(kernels src/kernels/batchnorm.c src/kernels/maxpool.c src/kernels/gemm.c src/kernels/conv2d.c src/kernels/linear.c src/kernels/softmax.c src/kernels/celoss.c src/kernels/simple.c src/kernels/cnn.c src/kernels/mnist_network.c src/kernels/mnist_fp16_network.c src/kernels/mnist_fp8_network.c)
-    add_library(layers src/layers/batchnorm_layer.c src/layers/maxpool_layer.c src/layers/conv2d_layer.c src/layers/linear_layer.c src/layers/softmax_layer.c src/layers/celoss_layer.c src/layers/mnist_fp64.c src/layers/simple_layer.c src/layers/mnist_cnn.c src/layers/mnist.c src/layers/mnist_fp32.c src/layers/mnist_fp16.c src/layers/mnist_fp8.c src/layers/mnist_benchmark.c src/layers/single_cluster.c)
+    add_library(layers src/layers/batchnorm_layer.c
+                src/layers/maxpool_layer.c
+                src/layers/conv2d_layer.c
+                src/layers/linear_layer.c
+                src/layers/softmax_layer.c
+                src/layers/celoss_layer.c
+                src/layers/mnist_fp64.c
+                src/layers/simple_layer.c
+                src/layers/mnist_cnn.c
+                src/layers/mnist.c
+                src/layers/mnist_fp32.c
+                src/layers/mnist_fp16.c
+                src/layers/mnist_fp8.c
+                src/layers/mnist_benchmark.c
+                src/layers/single_cluster.c
+                src/layers/nnlinear_backend_baseline.c
+                src/layers/nnlinear_backend_fp16s.c )
     add_library(utils src/utils/utils.c)
 
     target_link_libraries(kernels ${SNITCH_RUNTIME})
@@ -59,6 +75,8 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_application_executable(mnist_benchmark)
     add_snitch_application_executable(single_cluster)
     add_snitch_application_executable(mnist)
+    add_snitch_application_executable(nnlinear_baseline)
+    add_snitch_application_executable(nnlinear_fp16s)
 
     set(SNITCH_TEST_PREFIX snApplications-)
 
@@ -78,6 +96,9 @@ if (CMAKE_C_COMPILER_ID STREQUAL "Clang")
     add_snitch_raw_test_args(mnist_fp8 mnist_fp8 --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     add_snitch_raw_test_args(mnist_benchmark mnist_benchmark --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
     add_snitch_raw_test_args(single_cluster single_cluster --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
+    add_snitch_raw_test_args(nnlinear_baseline nnlinear_baseline --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
+    add_snitch_raw_test_args(nnlinear_fp16s nnlinear_fp16s --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml)
+    # message(STATUS "nnlinear_baseline uses configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/multi_cluster_simple.yaml")
     add_snitch_raw_test_args(mnist mnist --configuration ${CMAKE_CURRENT_SOURCE_DIR}/../banshee/config/occ_multi_cluster.yaml)
     
 endif()
