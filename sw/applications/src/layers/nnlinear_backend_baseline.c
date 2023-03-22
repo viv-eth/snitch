@@ -20,26 +20,29 @@
 #define NUM_EPOCHS 1
 #define BATCH_SIZE 256
 #define DATASET_SIZE 512//60000
-// #define STEPS(batches) (int)(batches)
+#define INFO 1
 
 void nnlinear_backend_baseline(const network_fp32_t *n) {
     
-    uint32_t cluster_num = snrt_cluster_num(); // Total number of clusters
-    uint32_t cluster_core_num = snrt_cluster_core_num(); // Total cores per cluster
-    uint32_t cluster_id = snrt_cluster_idx(); // Cluster ID
-    uint32_t compute_num = snrt_cluster_compute_core_num(); // Number of compute cores per cluster 
-    uint32_t global_compute_num = snrt_global_core_num(); // Total cores incl. DM core per cluster 
-    uint32_t compute_id = snrt_cluster_compute_core_idx(); // Core ID of each compute core
-    uint32_t dm_id = snrt_cluster_dm_core_idx(); // DM core ID of each cluster
-    uint32_t global_compute_id = snrt_global_core_idx(); // Core ID of each core on all clusters
+    uint32_t cluster_num = snrt_cluster_num();                          // Total number of clusters
+    uint32_t cluster_core_num = snrt_cluster_core_num();                // Total cores per cluster
+    uint32_t cluster_id = snrt_cluster_idx();                           // Cluster ID
+    uint32_t compute_num = snrt_cluster_compute_core_num();             // Number of compute cores per cluster 
+    uint32_t global_compute_num = snrt_global_core_num();               // Total cores incl. DM core per cluster 
+    uint32_t compute_id = snrt_cluster_compute_core_idx();              // Core ID of each compute core
+    uint32_t dm_id = snrt_cluster_dm_core_idx();                        // DM core ID of each cluster
+uint32_t global_compute_id = snrt_global_core_idx();                    // Core ID of each core on all clusters
 
-    if (compute_id == 0) {
-        printf("======================== System Info ========================\n");
-        printf("Total number of clusters: %d\n", cluster_num);
-        printf("Total cores per cluster: %d\n", cluster_core_num);
-        printf("Number of compute cores per cluster: %d\n", compute_num);
-        printf("Total cores incl. DM core per cluster: %d\n", global_compute_num);
-        printf("=============================================================\n");
+    if (INFO == 1) {
+        if (compute_id == 0) {
+            printf("======================== System Info ========================\n");
+            printf("Total number of clusters: %d\n", cluster_num);
+            printf("Total cores per cluster: %d\n", cluster_core_num);
+            printf("Number of compute cores per cluster: %d\n", compute_num);
+            printf("Total cores incl. DM core per cluster: %d\n", global_compute_num);
+            printf("=============================================================\n");
+        }
+
     }
 
     snrt_cluster_hw_barrier();
@@ -89,10 +92,6 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
         snrt_dma_txid_t txid_B = snrt_dma_start_1d(biases, 
                                                     n->b, 
                                                     biases_size);
-
-        // for(uint32_t i = 0; i < NUM_CLASSES; i++){
-        //     printf("b[%d] = %f\n", i, biases[i]);
-        // }
         snrt_dma_wait_all();
         snrt_dma_txid_t txid_W = snrt_dma_start_2d(weights,
                                                     n->W,
@@ -117,13 +116,19 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
     int batches = DATASET_SIZE / BATCH_SIZE;
 
     for (int epoch = 0; epoch < NUM_EPOCHS; epoch++){
-        printf("======================== EPOCH [%d/%d] start. ========================\n", (epoch + 1), NUM_EPOCHS);
+        if (INFO == 1) {
+            if (compute_id == 0) {
+                printf("======================== EPOCH [%d/%d] start. ========================\n", (epoch + 1), NUM_EPOCHS);
+            }
+        }
         for(int batch = 0; batch < batches; batch++){
             batch_loss = 0;
             batch_acc = 0;
             correct = 0;
             if(snrt_is_compute_core()) {
-                printf("======================== BATCH [%d/%d] ========================\n", (batch + 1) % batches, batches);
+                if (INFO == 1) {
+                    printf("======================== BATCH [%d/%d] start. ========================\n", (batch + 1), batches);
+                }
                 /* Zero out the gradients 
                 * TODO: make this more efficient!
                 */
@@ -135,7 +140,9 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
 
                 }
 
-                printf("INFO: Gradients have been zeroed out.\n");
+                if (INFO == 1) {
+                    printf("INFO: Gradients have been zeroed out.\n");
+                }
 
                 snrt_cluster_hw_barrier();
 
@@ -155,24 +162,10 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
                                                 n->dtype * IN_CH);                          // size
                         snrt_dma_wait_all();
                         snrt_dma_txid_t txid_target = 
-                                snrt_dma_start_1d(targets,                                   // destination
+                                snrt_dma_start_1d(targets,                                  // destination
                                                 &targets_dram[curr_target],                 // source
-                                                sizeof(uint32_t));                                  // size
-                        
-                        // printf("======================== Image %u ========================\n", image);
-                        // for(int i = 0; i < IN_CH; i++){
-                        //     // printf("image[%u][%u] = %f\n", image, i, images[i]);
-                        //     img_checksum += images[i];
-                        // }
-                        // printf("Image checksum[%d] = %f\n", image, img_checksum);
-                        // printf("=============================================================\n");
-                        // printf("Image: %u, Target: %u\n", image, targets[0]);
+                                                sizeof(uint32_t));                          // size
                         snrt_dma_wait_all();
-                        // if (curr_img / 784 == 261) {
-                        //     for(int i = 0; i < IN_CH; i++){
-                        //             printf("image[%u][%u] = %f\n", image, i, images[i]);
-                        //         }
-                        // }
                 }
 
                 snrt_cluster_hw_barrier();
@@ -216,10 +209,11 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
                 batch_acc = (float)correct / (float)BATCH_SIZE;
                 epoch_acc += batch_acc;
                 epoch_loss += batch_loss / BATCH_SIZE;
-                printf("A total of [%d/%d] images were predicted correctly in batch %d\n", correct, BATCH_SIZE, batch + 1);
-                printf("batch acc = %.6f\n", batch_acc * 100);
-                printf("batch loss = %.6f\n", batch_loss / BATCH_SIZE);
-
+                if (INFO == 1) {
+                    printf("A total of [%d/%d] images were predicted correctly in batch %d\n", correct, BATCH_SIZE, batch + 1);
+                    printf("batch acc = %.6f\n", batch_acc * 100);
+                    printf("batch loss = %.6f\n", batch_loss / BATCH_SIZE);
+                }
 
                 TrainingStep_baseline(biases, weights, weight_grads, bias_grads, n->learning_rate);
                 
@@ -228,9 +222,11 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
                     epoch_count++;
                     mean_epoch_loss = epoch_loss/batches;
                     mean_epoch_acc = epoch_acc/batches;
-                    printf("===========================  EPOCH %u done. ===========================\n", epoch_count);
-                    printf("===========================  Epoch  Acc %.3f  ===========================\n", mean_epoch_acc * 100);
-                    printf("===========================  Epoch  Loss %.3f  ===========================\n", mean_epoch_loss);
+                    if (INFO == 1) {
+                        printf("===========================  EPOCH %u done. ===========================\n", epoch_count);
+                        printf("===========================  Epoch  Acc %.3f  ===========================\n", mean_epoch_acc * 100);
+                        printf("===========================  Epoch  Loss %.3f  ===========================\n", mean_epoch_loss);
+                    }
                     epoch_loss = 0;
                     epoch_acc = 0;
 
