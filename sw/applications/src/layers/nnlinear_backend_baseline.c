@@ -9,6 +9,7 @@
 #include "printf.h"
 #include "snrt.h"
 #include "utils.h"
+// #include "math.h"
 
 // define which parts of the network to run
 #define RUN_FEEDFORWARD 1
@@ -114,6 +115,34 @@ uint32_t global_compute_id = snrt_global_core_idx();                    // Core 
     loss[0] = 0.0f;
 
     int batches = DATASET_SIZE / BATCH_SIZE;
+
+    if (INFO == 1) {
+        float sin = sin(0.5);
+        float cos = cos(0.5);
+        float tan = tan(0.5);
+        float exp = exp(0.5);
+        float log = log(0.5);
+        float sqrt = sqrt(0.5);
+        float pow = pow(0.5, 2);
+        float fabs = fabs(-0.5);
+        float ceil = ceil(0.5);
+        float floor = floor(0.5);
+        float fmod = fmod(0.5, 2);
+
+        printf("Testing musl math library...\n");
+        printf("sin(0.5) = %f\n", sin);
+        printf("cos(0.5) = %f\n", cos);
+        printf("tan(0.5) = %f\n", tan);
+        printf("exp(0.5) = %f\n", exp);
+        printf("log(0.5) = %f\n", log);
+        printf("sqrt(0.5) = %f\n", sqrt);
+        printf("pow(0.5, 2) = %f\n", pow);
+        printf("fabs(-0.5) = %f\n", fabs);
+        printf("ceil(0.5) = %f\n",  ceil);
+        printf("floor(0.5) = %f\n", floor);
+        printf("fmod(0.5, 2) = %f\n", fmod); 
+        printf("Done testing musl math library...\n")
+    }
 
     for (int epoch = 0; epoch < NUM_EPOCHS; epoch++){
         if (INFO == 1) {
