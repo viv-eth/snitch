@@ -7,8 +7,6 @@
 #include <stdint.h>
 #include "layer.h"
 
-//typedef enum { FP64 = 8, FP32 = 4, FP16 = 2, FP8 = 1 } precision_t;
-
 /**
  * @struct network_t_
  * @brief This structure contains all parameters necessary for building a simple neural netowork.
@@ -39,20 +37,7 @@ typedef struct network_t_ {
     float *W;
     float *b_grad;
     float *W_grad;
-
-    // __fp16 *b;
-    // __fp16 *W;
-    // __fp16 *b_grad;
-    // __fp16 *W_grad;
-
-    // double *b;
-    // double *W;
-    // double *b_grad;
-    // double *W_grad;
-
-    // double *images;
     float *images;
-    // __fp16 *images;
     uint32_t *targets;
 
     precision_t dtype;
