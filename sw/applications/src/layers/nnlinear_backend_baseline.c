@@ -22,6 +22,7 @@
 #define BATCH_SIZE 256
 #define DATASET_SIZE 512//60000
 #define INFO 1
+#define DEBUG 1
 
 void nnlinear_backend_baseline(const network_fp32_t *n) {
     
@@ -32,19 +33,19 @@ void nnlinear_backend_baseline(const network_fp32_t *n) {
     uint32_t global_compute_num = snrt_global_core_num();               // Total cores incl. DM core per cluster 
     uint32_t compute_id = snrt_cluster_compute_core_idx();              // Core ID of each compute core
     uint32_t dm_id = snrt_cluster_dm_core_idx();                        // DM core ID of each cluster
-uint32_t global_compute_id = snrt_global_core_idx();                    // Core ID of each core on all clusters
+    uint32_t global_compute_id = snrt_global_core_idx();                    // Core ID of each core on all clusters
 
-    if (INFO == 1) {
-        if (compute_id == 0) {
-            printf("======================== System Info ========================\n");
-            printf("Total number of clusters: %d\n", cluster_num);
-            printf("Total cores per cluster: %d\n", cluster_core_num);
-            printf("Number of compute cores per cluster: %d\n", compute_num);
-            printf("Total cores incl. DM core per cluster: %d\n", global_compute_num);
-            printf("=============================================================\n");
-        }
+    // if (INFO == 1) {
+    //     if (compute_id == 0) {
+    //         printf("======================== System Info ========================\n");
+    //         printf("Total number of clusters: %d\n", cluster_num);
+    //         printf("Total cores per cluster: %d\n", cluster_core_num);
+    //         printf("Number of compute cores per cluster: %d\n", compute_num);
+    //         printf("Total cores incl. DM core per cluster: %d\n", global_compute_num);
+    //         printf("=============================================================\n");
+    //     }
 
-    }
+    // }
 
     snrt_cluster_hw_barrier();
 
@@ -117,162 +118,165 @@ uint32_t global_compute_id = snrt_global_core_idx();                    // Core 
     int batches = DATASET_SIZE / BATCH_SIZE;
 
     if (INFO == 1) {
-        float sin = sin(0.5);
-        float cos = cos(0.5);
-        float tan = tan(0.5);
-        float exp = exp(0.5);
-        float log = log(0.5);
-        float sqrt = sqrt(0.5);
-        float pow = pow(0.5, 2);
-        float fabs = fabs(-0.5);
-        float ceil = ceil(0.5);
-        float floor = floor(0.5);
-        float fmod = fmod(0.5, 2);
+        float xysin = sin(0.5);
+        // float xycos = cos(0.5);
+        // float xytan = tan(0.5);
+        // float xyexp = exp(0.5);
+        // float xylog = log(0.5);
+        // float xysqrt = sqrt(0.5);
+        // float xypow = pow(0.5, 2);
+        // float xyfabs = fabs(-0.5);
+        // float xyceil = ceil(0.5);
+        // float xyfloor = floor(0.5);
+        // float xyfmod = fmod(0.5, 2);
 
-        printf("Testing musl math library...\n");
-        printf("sin(0.5) = %f\n", sin);
-        printf("cos(0.5) = %f\n", cos);
-        printf("tan(0.5) = %f\n", tan);
-        printf("exp(0.5) = %f\n", exp);
-        printf("log(0.5) = %f\n", log);
-        printf("sqrt(0.5) = %f\n", sqrt);
-        printf("pow(0.5, 2) = %f\n", pow);
-        printf("fabs(-0.5) = %f\n", fabs);
-        printf("ceil(0.5) = %f\n",  ceil);
-        printf("floor(0.5) = %f\n", floor);
-        printf("fmod(0.5, 2) = %f\n", fmod); 
-        printf("Done testing musl math library...\n")
+        // printf("Testing musl math library...\n");
+        printf("sin(0.5) = %f\n", xysin);
+        // printf("cos(0.5) = %f\n", xycos);
+        // printf("tan(0.5) = %f\n", xytan);
+        // printf("exp(0.5) = %f\n", xyexp);
+        // printf("log(0.5) = %f\n", xylog);
+        // printf("sqrt(0.5) = %f\n", xysqrt);
+        // printf("pow(0.5, 2) = %f\n", xypow);
+        // printf("fabs(-0.5) = %f\n", xyfabs);
+        // printf("ceil(0.5) = %f\n", xyceil);
+        // printf("floor(0.5) = %f\n", xyfloor);
+        // printf("fmod(0.5, 2) = %f\n", xyfmod); 
+        // printf("Done testing musl math library...\n");
     }
 
-    for (int epoch = 0; epoch < NUM_EPOCHS; epoch++){
-        if (INFO == 1) {
-            if (compute_id == 0) {
-                printf("======================== EPOCH [%d/%d] start. ========================\n", (epoch + 1), NUM_EPOCHS);
-            }
-        }
-        for(int batch = 0; batch < batches; batch++){
-            batch_loss = 0;
-            batch_acc = 0;
-            correct = 0;
-            if(snrt_is_compute_core()) {
-                if (INFO == 1) {
-                    printf("======================== BATCH [%d/%d] start. ========================\n", (batch + 1), batches);
+    if (DEBUG == 0) {
+        for (int epoch = 0; epoch < NUM_EPOCHS; epoch++){
+            if (INFO == 1) {
+                if (compute_id == 0) {
+                    printf("======================== EPOCH [%d/%d] start. ========================\n", (epoch + 1), NUM_EPOCHS);
                 }
-                /* Zero out the gradients 
-                * TODO: make this more efficient!
-                */
-                for (int i = 0; i < NUM_CLASSES; i++) {
-                    bias_grads[i] = 0;
-                    for (int j = 0; j < IN_CH; j++) {
-                        weight_grads[i * IN_CH + j] = 0;
+            }
+            for(int batch = 0; batch < batches; batch++){
+                batch_loss = 0;
+                batch_acc = 0;
+                correct = 0;
+                if(snrt_is_compute_core()) {
+                    if (INFO == 1) {
+                        printf("======================== BATCH [%d/%d] start. ========================\n", (batch + 1), batches);
                     }
-
-                }
-
-                if (INFO == 1) {
-                    printf("INFO: Gradients have been zeroed out.\n");
-                }
-
-                snrt_cluster_hw_barrier();
-
-            } else if(!snrt_is_compute_core()) {
-                snrt_cluster_hw_barrier();
-            }
-            for(uint32_t image = 0; image < BATCH_SIZE; image++){
-                uint32_t volatile curr_img = image * IN_CH + batch * BATCH_SIZE * IN_CH;
-                // printf("======================== Image %d ========================\n", curr_img / 784);
-                uint32_t volatile curr_target = image + batch * BATCH_SIZE;
-                if (snrt_is_dm_core()) {
-                        float img_checksum = 0;
-                        snrt_dma_start_tracking();
-                        snrt_dma_txid_t txid_img = 
-                                snrt_dma_start_1d(images,                                   // destination
-                                                &images_dram[curr_img],                     // source
-                                                n->dtype * IN_CH);                          // size
-                        snrt_dma_wait_all();
-                        snrt_dma_txid_t txid_target = 
-                                snrt_dma_start_1d(targets,                                  // destination
-                                                &targets_dram[curr_target],                 // source
-                                                sizeof(uint32_t));                          // size
-                        snrt_dma_wait_all();
-                }
-
-                snrt_cluster_hw_barrier();
-
-                if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num) {
-
-                    GradientUpdate_baseline(images, activations, biases, weights, weight_grads, bias_grads, targets[0], loss); 
-                    snrt_cluster_hw_barrier();
-                    batch_loss += *loss;
-                    /* Accuracy Calculation */
-                    float max_activation = activations[0];
-                    predict = 0;
+                    /* Zero out the gradients 
+                    * TODO: make this more efficient!
+                    */
                     for (int i = 0; i < NUM_CLASSES; i++) {
-                        if(max_activation < activations[i]) {
-                            max_activation = activations[i];
-                            predict = i;
+                        bias_grads[i] = 0;
+                        for (int j = 0; j < IN_CH; j++) {
+                            weight_grads[i * IN_CH + j] = 0;
                         }
+
                     }
 
-                    if(predict == targets[0]) {
-                        correct++;
+                    if (INFO == 1) {
+                        printf("INFO: Gradients have been zeroed out.\n");
                     }
+
                     snrt_cluster_hw_barrier();
 
-                    // printf("pred = %d, target = %d\n", predict, targets[0]);
+                } else if(!snrt_is_compute_core()) {
+                    snrt_cluster_hw_barrier();
+                }
+                for(uint32_t image = 0; image < BATCH_SIZE; image++){
+                    uint32_t volatile curr_img = image * IN_CH + batch * BATCH_SIZE * IN_CH;
+                    // printf("======================== Image %d ========================\n", curr_img / 784);
+                    uint32_t volatile curr_target = image + batch * BATCH_SIZE;
+                    if (snrt_is_dm_core()) {
+                            float img_checksum = 0;
+                            snrt_dma_start_tracking();
+                            snrt_dma_txid_t txid_img = 
+                                    snrt_dma_start_1d(images,                                   // destination
+                                                    &images_dram[curr_img],                     // source
+                                                    n->dtype * IN_CH);                          // size
+                            snrt_dma_wait_all();
+                            snrt_dma_txid_t txid_target = 
+                                    snrt_dma_start_1d(targets,                                  // destination
+                                                    &targets_dram[curr_target],                 // source
+                                                    sizeof(uint32_t));                          // size
+                            snrt_dma_wait_all();
+                    }
+
+                    snrt_cluster_hw_barrier();
+
+                    if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num) {
+
+                        GradientUpdate_baseline(images, activations, biases, weights, weight_grads, bias_grads, targets[0], loss); 
+                        snrt_cluster_hw_barrier();
+                        batch_loss += *loss;
+                        /* Accuracy Calculation */
+                        float max_activation = activations[0];
+                        predict = 0;
+                        for (int i = 0; i < NUM_CLASSES; i++) {
+                            if(max_activation < activations[i]) {
+                                max_activation = activations[i];
+                                predict = i;
+                            }
+                        }
+
+                        if(predict == targets[0]) {
+                            correct++;
+                        }
+                        snrt_cluster_hw_barrier();
+
+                        // printf("pred = %d, target = %d\n", predict, targets[0]);
+
+
+                    } else if (!snrt_is_compute_core()) {
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                        snrt_cluster_hw_barrier();
+                    }
+                }
+
+                snrt_cluster_hw_barrier();
+
+                // After one epoch we update the weights
+                if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num) {
+                    
+                    batch_acc = (float)correct / (float)BATCH_SIZE;
+                    epoch_acc += batch_acc;
+                    epoch_loss += batch_loss / BATCH_SIZE;
+                    if (INFO == 1) {
+                        printf("A total of [%d/%d] images were predicted correctly in batch %d\n", correct, BATCH_SIZE, batch + 1);
+                        printf("batch acc = %.6f\n", batch_acc * 100);
+                        printf("batch loss = %.6f\n", batch_loss / BATCH_SIZE);
+                    }
+
+                    TrainingStep_baseline(biases, weights, weight_grads, bias_grads, n->learning_rate);
+                    
+                    if(batch%(batches - 1)==0 && batch!=0) {
+
+                        epoch_count++;
+                        mean_epoch_loss = epoch_loss/batches;
+                        mean_epoch_acc = epoch_acc/batches;
+                        if (INFO == 1) {
+                            printf("===========================  EPOCH %u done. ===========================\n", epoch_count);
+                            printf("===========================  Epoch  Acc %.3f  ===========================\n", mean_epoch_acc * 100);
+                            printf("===========================  Epoch  Loss %.3f  ===========================\n", mean_epoch_loss);
+                        }
+                        epoch_loss = 0;
+                        epoch_acc = 0;
+
+                    }
 
 
                 } else if (!snrt_is_compute_core()) {
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                    snrt_cluster_hw_barrier();
-                }
-            }
 
-            snrt_cluster_hw_barrier();
-
-            // After one epoch we update the weights
-            if (snrt_is_compute_core() && snrt_cluster_compute_core_idx() < compute_num) {
-                
-                batch_acc = (float)correct / (float)BATCH_SIZE;
-                epoch_acc += batch_acc;
-                epoch_loss += batch_loss / BATCH_SIZE;
-                if (INFO == 1) {
-                    printf("A total of [%d/%d] images were predicted correctly in batch %d\n", correct, BATCH_SIZE, batch + 1);
-                    printf("batch acc = %.6f\n", batch_acc * 100);
-                    printf("batch loss = %.6f\n", batch_loss / BATCH_SIZE);
-                }
-
-                TrainingStep_baseline(biases, weights, weight_grads, bias_grads, n->learning_rate);
-                
-                if(batch%(batches - 1)==0 && batch!=0) {
-
-                    epoch_count++;
-                    mean_epoch_loss = epoch_loss/batches;
-                    mean_epoch_acc = epoch_acc/batches;
-                    if (INFO == 1) {
-                        printf("===========================  EPOCH %u done. ===========================\n", epoch_count);
-                        printf("===========================  Epoch  Acc %.3f  ===========================\n", mean_epoch_acc * 100);
-                        printf("===========================  Epoch  Loss %.3f  ===========================\n", mean_epoch_loss);
-                    }
-                    epoch_loss = 0;
-                    epoch_acc = 0;
+                    snrt_cluster_hw_barrier();
 
                 }
-
-
-            } else if (!snrt_is_compute_core()) {
 
                 snrt_cluster_hw_barrier();
 
+
             }
-
-            snrt_cluster_hw_barrier();
-
-
         }
     }
+    // printf("Done...\n");
     snrt_global_barrier();
 
 }
